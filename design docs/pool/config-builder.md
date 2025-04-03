@@ -2,28 +2,6 @@
 
 The `PoolConfigBuilder` provides a validated way to configure memory pool behavior for **dynamic object reuse**.
 
-It helps avoid excessive allocations, improve performance, and gives full control over memory behavior.
-
----
-
-## 🚀 Quick Start
-
-```go
-builder := mem.NewPoolConfigBuilder()
-
-config, err := builder.
-	SetInitialCapacity(128).
-	SetGrowthPercent(0.5).
-	SetShrinkAggressiveness(mem.AggressivenessBalanced).
-	Build()
-
-if err != nil {
-	log.Fatal(err)
-}
-```
-
----
-
 ## ⚙️ Builder Features
 
 ### ✅ Growth Parameters
@@ -65,25 +43,6 @@ Control how and when the pool shrinks based on utilization and idleness.
 
 ---
 
-## 🧪 Example: Manual Shrink Configuration
-
-```go
-config, err := mem.NewPoolConfigBuilder().
-	DisableAutoShrink().
-	SetInitialCapacity(64).
-	SetShrinkCheckInterval(5 * time.Second).
-	SetIdleThreshold(15 * time.Second).
-	SetMinIdleBeforeShrink(2).
-	SetShrinkCooldown(30 * time.Second).
-	SetMinUtilizationBeforeShrink(0.4).
-	SetStableUnderutilizationRounds(3).
-	SetShrinkStepPercent(0.25).
-	SetMinShrinkCapacity(8).
-	Build()
-```
-
----
-
 ## 🧼 Validation Rules (Applied in `Build()`)
 
 | Field                        | Rule                                                              |
@@ -112,5 +71,42 @@ Calling `SetShrinkAggressiveness(level)` applies a pre-defined shrink strategy b
 | `3`   | `AggressivenessAggressive`     | Faster shrink, suitable for low-latency systems.                      |
 | `4`   | `AggressivenessVeryAggressive` | Highly responsive shrinking.                                          |
 | `5`   | `AggressivenessExtreme`        | Shrinks as fast as possible under pressure.                           |
+
+---
+
+## 🚀 Quick Start
+
+```go
+builder := mem.NewPoolConfigBuilder()
+
+config, err := builder.
+	SetInitialCapacity(128).
+	SetGrowthPercent(0.5).
+	SetShrinkAggressiveness(mem.AggressivenessBalanced).
+	Build()
+
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+---
+
+## 🧪 Example: Manual Shrink Configuration
+
+```go
+config, err := mem.NewPoolConfigBuilder().
+	DisableAutoShrink().
+	SetInitialCapacity(64).
+	SetShrinkCheckInterval(5 * time.Second).
+	SetIdleThreshold(15 * time.Second).
+	SetMinIdleBeforeShrink(2).
+	SetShrinkCooldown(30 * time.Second).
+	SetMinUtilizationBeforeShrink(0.4).
+	SetStableUnderutilizationRounds(3).
+	SetShrinkStepPercent(0.25).
+	SetMinShrinkCapacity(8).
+	Build()
+```
 
 ---
