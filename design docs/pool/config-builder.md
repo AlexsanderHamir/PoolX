@@ -1,4 +1,4 @@
-# 🧠 `PoolConfigBuilder` – Memory Pool
+# 🧠 `PoolConfigBuilder` 
 
 The `PoolConfigBuilder` provides a validated way to configure memory pool behavior for **dynamic object reuse**.
 
