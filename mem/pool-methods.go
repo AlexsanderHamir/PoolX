@@ -7,18 +7,20 @@ import (
 	"time"
 )
 
+type AggressivenessLevel int
+
 const (
-	aggressivenessDisabled            = 0
-	aggressivenessConservative        = 1
-	aggressivenessBalanced            = 2
-	aggressivenessAggressive          = 3
-	aggressivenessVeryAggressive      = 4
-	aggressivenessExtreme             = 5
-	defaultPoolCapacity               = 64
-	defaultExponentialThresholdFactor = 4.0
-	defaultGrowthPercent              = 0.5
-	defaultFixedGrowthFactor          = 1.0
-	defaultMinCapacity                = 8
+	aggressivenessDisabled            AggressivenessLevel = 0
+	aggressivenessConservative        AggressivenessLevel = 1
+	aggressivenessBalanced            AggressivenessLevel = 2
+	aggressivenessAggressive          AggressivenessLevel = 3
+	aggressivenessVeryAggressive      AggressivenessLevel = 4
+	aggressivenessExtreme             AggressivenessLevel = 5
+	defaultPoolCapacity                                   = 64
+	defaultExponentialThresholdFactor                     = 4.0
+	defaultGrowthPercent                                  = 0.5
+	defaultFixedGrowthFactor                              = 1.0
+	defaultMinCapacity                                    = 8
 )
 
 func (pObj *Pool) get() any {
@@ -97,64 +99,58 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 	switch p.AggressivenessLevel {
 	case aggressivenessDisabled:
 		p.EnableAutoShrink = false
-		p.ShrinkStrategy = ""
 		p.CheckInterval = 0
 		p.IdleThreshold = 0
 		p.MinIdleBeforeShrink = 0
 		p.ShrinkCooldown = 0
 		p.MinUtilizationBeforeShrink = 0
 		p.StableUnderutilizationRounds = 0
-		p.ShrinkStepPercent = 0
+		p.ShrinkPercent = 0
 
 	case aggressivenessConservative:
-		p.ShrinkStrategy = ShrinkStrategyStep
 		p.CheckInterval = 5 * time.Minute
 		p.IdleThreshold = 10 * time.Minute
 		p.MinIdleBeforeShrink = 3
 		p.ShrinkCooldown = 10 * time.Minute
 		p.MinUtilizationBeforeShrink = 0.20
 		p.StableUnderutilizationRounds = 3
-		p.ShrinkStepPercent = 0.10
+		p.ShrinkPercent = 0.10
 
 	case aggressivenessBalanced:
-		p.ShrinkStrategy = ShrinkStrategyStep
 		p.CheckInterval = 2 * time.Minute
 		p.IdleThreshold = 5 * time.Minute
 		p.MinIdleBeforeShrink = 2
 		p.ShrinkCooldown = 5 * time.Minute
 		p.MinUtilizationBeforeShrink = 0.30
 		p.StableUnderutilizationRounds = 3
-		p.ShrinkStepPercent = 0.25
+		p.ShrinkPercent = 0.25
 
 	case aggressivenessAggressive:
-		p.ShrinkStrategy = ShrinkStrategyStep
 		p.CheckInterval = 1 * time.Minute
 		p.IdleThreshold = 2 * time.Minute
 		p.MinIdleBeforeShrink = 2
 		p.ShrinkCooldown = 2 * time.Minute
 		p.MinUtilizationBeforeShrink = 0.40
 		p.StableUnderutilizationRounds = 2
-		p.ShrinkStepPercent = 0.50
+		p.ShrinkPercent = 0.50
 
 	case aggressivenessVeryAggressive:
-		p.ShrinkStrategy = ShrinkStrategyStep
 		p.CheckInterval = 30 * time.Second
 		p.IdleThreshold = 1 * time.Minute
 		p.MinIdleBeforeShrink = 1
 		p.ShrinkCooldown = 1 * time.Minute
 		p.MinUtilizationBeforeShrink = 0.50
 		p.StableUnderutilizationRounds = 1
-		p.ShrinkStepPercent = 0.75
+		p.ShrinkPercent = 0.65
 
 	case aggressivenessExtreme:
-		p.ShrinkStrategy = ShrinkStrategyHalve
 		p.CheckInterval = 10 * time.Second
 		p.IdleThreshold = 20 * time.Second
 		p.MinIdleBeforeShrink = 1
 		p.ShrinkCooldown = 30 * time.Second
 		p.MinUtilizationBeforeShrink = 0.60
 		p.StableUnderutilizationRounds = 1
-		p.ShrinkStepPercent = 1.00
+		p.ShrinkPercent = 0.80
 	}
 
 	if p.MinCapacity == 0 {

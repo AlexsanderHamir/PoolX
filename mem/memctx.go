@@ -114,5 +114,5 @@ func (mm *MemoryContext) GetPool(objectType reflect.Type) *Pool {
 		return nil
 	}
 
-	return &poolObj
+	return poolObj
 }

@@ -19,11 +19,7 @@ Shrink behavior is controlled via the `PoolShrinkParameters` configuration. The 
 
 ### Shrinking Behavior
 
-- Once a shrink is triggered, the pool reduces its capacity based on the selected strategy:
-  - `"step"`: Shrinks by a percentage (`ShrinkStepPercent`)
-  - `"halve"`: Shrinks to 50% of the current capacity
-  - `"reset"`: Resets capacity to the minimum (`MinCapacity`)
-- Shrinks are never allowed to reduce capacity below `MinCapacity`.
+- Once a shrink is triggered, the pool reduces its capacity based on the selected `ShrinkPercent`
 
 ---
 

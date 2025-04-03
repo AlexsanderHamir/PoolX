@@ -5,14 +5,6 @@ import (
 	"time"
 )
 
-type ShrinkStrategy string
-
-const (
-	ShrinkStrategyStep  ShrinkStrategy = "step"  // Shrink by a percentage (ShrinkStepPercent)
-	ShrinkStrategyHalve ShrinkStrategy = "halve" // Shrink to 50% of current capacity
-	ShrinkStrategyReset ShrinkStrategy = "reset" // Reset to MinCapacity
-)
-
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type Pool struct {
@@ -62,8 +54,14 @@ type PoolStats struct {
 }
 
 type PoolConfig struct {
-	InitialCapacity      int
+	// Pool initial capacity which avoids resizing the slice,
+	// until it reaches the defined capacity.
+	InitialCapacity int
+
+	// Determines how the pool grows.
 	PoolGrowthParameters *PoolGrowthParameters
+
+	// Determines how the pool shrinks.
 	PoolShrinkParameters *PoolShrinkParameters
 }
 
@@ -77,14 +75,7 @@ type PoolShrinkParameters struct {
 	// shrink sensitivity and timing behavior. Valid values range from 0 (disabled)
 	// to higher levels (1–5), where higher levels cause faster and more frequent shrinking.
 	// This can override individual parameter values.
-	AggressivenessLevel int
-
-	// ShrinkStrategy defines how the pool should reduce capacity.
-	// Accepted values might include:
-	// - "step": shrink by a fixed percentage (ShrinkStepPercent)
-	// - "halve": shrink the pool to 50% of its current capacity
-	// - "reset": shrink back to MinCapacity immediately
-	ShrinkStrategy ShrinkStrategy
+	AggressivenessLevel AggressivenessLevel
 
 	// CheckInterval controls how frequently the background shrink goroutine runs.
 	// This determines how often the pool is evaluated for possible shrink conditions.
@@ -116,8 +107,7 @@ type PoolShrinkParameters struct {
 
 	// ShrinkStepPercent determines how much of the pool should be reduced
 	// when a shrink operation is triggered (e.g. 0.25 = shrink by 25%).
-	// Only used when ShrinkStrategy is "step".
-	ShrinkStepPercent float64
+	ShrinkPercent float64
 
 	// MinCapacity defines the lowest allowed capacity after shrinking.
 	// The pool will never shrink below this value, even under aggressive conditions.
