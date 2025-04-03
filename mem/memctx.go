@@ -1,10 +1,9 @@
 package mem
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
-	"sync/atomic"
-	"unsafe"
 )
 
 type MemoryContext struct {
@@ -14,19 +13,10 @@ type MemoryContext struct {
 	name     string
 	parent   *MemoryContext
 	children []*MemoryContext
-	pools    map[reflect.Type]Pool
-
-	stats *MemContextStats
+	pools    map[reflect.Type]*Pool
 
 	contextType   MemoryContextType
 	allocStrategy AllocationStrategy
-}
-
-type MemContextStats struct {
-	totalAllocated uint64
-	totalFreed     uint64
-	peakUsage      uint64
-	currentUsage   uint64
 }
 
 type MemoryContextConfig struct {
@@ -42,8 +32,7 @@ func NewMemoryContext(config MemoryContextConfig) *MemoryContext {
 		parent:        config.Parent,
 		contextType:   config.ContextType,
 		allocStrategy: config.AllocationStrat,
-		pools:         make(map[reflect.Type]Pool),
-		stats:         &MemContextStats{},
+		pools:         make(map[reflect.Type]*Pool),
 	}
 
 	return mc
@@ -74,40 +63,17 @@ func (mc *MemoryContext) RegisterChild(child *MemoryContext) {
 
 // Object Methods
 // checking github username update
-func (mc *MemoryContext) CreatePool(objectType reflect.Type, allocator func() any, cleaner func(any), capacity int) {
+func (mc *MemoryContext) CreatePool(objectType reflect.Type, config *PoolConfig, allocator func() any, cleaner func(any)) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
-	poolObj := Pool{
-		pool:      make([]any, 0, capacity),
-		capacity:  capacity,
-		mu:        &sync.Mutex{},
-		allocator: allocator,
-		cleaner:   cleaner,
-	}
-
-	for range capacity {
-		obj := allocator()
-		size := unsafe.Sizeof(obj)
-
-		atomic.AddUint64(&mc.stats.totalAllocated, uint64(size))
-		atomic.AddUint64(&mc.stats.currentUsage, uint64(size))
-
-		for {
-			current := atomic.LoadUint64(&mc.stats.currentUsage)
-			peak := atomic.LoadUint64(&mc.stats.peakUsage)
-			if current <= peak {
-				break
-			}
-			if atomic.CompareAndSwapUint64(&mc.stats.peakUsage, peak, current) {
-				break
-			}
-		}
-
-		poolObj.pool = append(poolObj.pool, obj)
+	poolObj, err := NewPool(config, allocator, cleaner)
+	if err != nil {
+		return fmt.Errorf("NewPool failed: %w", err)
 	}
 
 	mc.pools[objectType] = poolObj
+	return nil
 }
 
 func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
@@ -121,20 +87,6 @@ func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
 
 	obj := poolObj.get()
 	mm.pools[objectType] = poolObj
-
-	size := unsafe.Sizeof(obj)
-	atomic.AddUint64(&mm.stats.totalAllocated, uint64(size))
-	current := atomic.AddUint64(&mm.stats.currentUsage, uint64(size))
-
-	for {
-		peak := atomic.LoadUint64(&mm.stats.peakUsage)
-		if current <= peak {
-			break
-		}
-		if atomic.CompareAndSwapUint64(&mm.stats.peakUsage, peak, current) {
-			break
-		}
-	}
 
 	return obj
 }
@@ -150,11 +102,6 @@ func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
 
 	poolObj.put(obj)
 	mm.pools[objectType] = poolObj
-
-	size := unsafe.Sizeof(obj)
-	atomic.AddUint64(&mm.stats.totalFreed, uint64(size))
-	atomic.AddUint64(&mm.stats.currentUsage, -uint64(size))
-
 	return true
 }
 
@@ -168,46 +115,4 @@ func (mm *MemoryContext) GetPool(objectType reflect.Type) *Pool {
 	}
 
 	return &poolObj
-}
-
-// ### Stats
-func MemorySnap(rootCtx *MemoryContext) *MemContextStats {
-	var s MemContextStats
-
-	rootCtx.mu.RLock()
-	defer rootCtx.mu.RUnlock()
-
-	collectStats(rootCtx.stats, &s)
-
-	for _, child := range rootCtx.children {
-		childStats(child, &s)
-	}
-
-	return &s
-}
-
-func childStats(ctx *MemoryContext, destination *MemContextStats) {
-	if ctx == nil {
-		return
-	}
-
-	ctx.mu.RLock()
-
-	collectStats(ctx.stats, destination)
-
-	children := make([]*MemoryContext, len(ctx.children))
-	copy(children, ctx.children)
-
-	ctx.mu.RUnlock()
-
-	for _, child := range children {
-		childStats(child, destination)
-	}
-}
-
-func collectStats(source, destination *MemContextStats) {
-	destination.currentUsage += source.currentUsage
-	destination.totalAllocated += source.totalAllocated
-	destination.totalFreed += source.totalFreed
-	destination.peakUsage += source.peakUsage
 }
