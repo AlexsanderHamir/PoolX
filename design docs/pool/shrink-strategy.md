@@ -27,6 +27,4 @@ Shrink behavior is controlled via the `PoolShrinkParameters` configuration. The 
 
 - **Hooks Support**: Adding hooks for events like `OnGrow`, `OnShrink`, `OnGet`, and `OnPut` may enhance observability and flexibility in production. This should be tested in high-throughput workloads to determine value before adding complexity.
 
-- **Library Exposion**: There are many internal parts of the library that are exposed, we should be careful to what we're exposing to the user.
-
 ---
