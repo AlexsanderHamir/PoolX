@@ -1,6 +1,6 @@
-# 🧠 `PoolConfigBuilder` – Memory Pool Configuration for Go
+# 🧠 `PoolConfigBuilder` – Memory Pool
 
-The `PoolConfigBuilder` provides a fluent, type-safe, and validated way to configure memory pool behavior for **dynamic object reuse**, including growth and shrink strategies.
+The `PoolConfigBuilder` provides a validated way to configure memory pool behavior for **dynamic object reuse**.
 
 It helps avoid excessive allocations, improve performance, and gives full control over memory behavior.
 
@@ -50,7 +50,7 @@ Control how and when the pool shrinks based on utilization and idleness.
 | `SetShrinkCooldown(d time.Duration)`                 | Minimum time between two shrink operations.                          |
 | `SetMinUtilizationBeforeShrink(v float64)`           | Trigger shrink if utilization is below this. Must be `0 < v <= 1.0`. |
 | `SetStableUnderutilizationRounds(n int)`             | Rounds the pool must stay underutilized before shrinking.            |
-| `SetShrinkStepPercent(p float64)`                    | Shrink by a percentage (e.g. `0.25 = shrink 25%`). Must be `< 1.0`.  |
+| `SetShrinkPercent(p float64)`                        | Shrink by a percentage (e.g. `0.25 = shrink 25%`). Must be `<= 1.0`. |
 | `SetMinShrinkCapacity(n int)`                        | Defines the lowest allowed capacity after shrinking.                 |
 
 ---
@@ -69,8 +69,8 @@ Control how and when the pool shrinks based on utilization and idleness.
 
 ```go
 config, err := mem.NewPoolConfigBuilder().
-	SetInitialCapacity(64).
 	DisableAutoShrink().
+	SetInitialCapacity(64).
 	SetShrinkCheckInterval(5 * time.Second).
 	SetIdleThreshold(15 * time.Second).
 	SetMinIdleBeforeShrink(2).

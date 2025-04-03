@@ -137,7 +137,7 @@ func (b *PoolConfigBuilder) Build() (*PoolConfig, error) {
 		case psp.StableUnderutilizationRounds <= 0:
 			return nil, fmt.Errorf("StableUnderutilizationRounds must be greater than 0")
 		case psp.ShrinkPercent <= 0 || psp.ShrinkPercent > 1.0:
-			return nil, fmt.Errorf("ShrinkStepPercent must be between 0 and 1.0")
+			return nil, fmt.Errorf("ShrinkPercent must be between 0 and 1.0")
 		case psp.MinCapacity <= 0:
 			return nil, fmt.Errorf("MinCapacity must be greater than 0")
 		}
