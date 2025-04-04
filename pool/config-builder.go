@@ -50,7 +50,7 @@ func (b *PoolConfigBuilder) SetFixedGrowthFactor(factor float64) *PoolConfigBuil
 func (b *PoolConfigBuilder) EnforceCustomConfig() *PoolConfigBuilder {
 	b.config.PoolShrinkParameters.EnforceCustomConfig = true
 	b.config.PoolShrinkParameters.AggressivenessLevel = aggressivenessDisabled
-	b.config.PoolShrinkParameters.ApplyDefaults()
+	b.config.PoolShrinkParameters.ApplyDefaults(getShrinkDefaults())
 	return b
 }
 
@@ -68,7 +68,7 @@ func (b *PoolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *
 	}
 
 	b.config.PoolShrinkParameters.AggressivenessLevel = level
-	b.config.PoolShrinkParameters.ApplyDefaults()
+	b.config.PoolShrinkParameters.ApplyDefaults(getShrinkDefaults())
 	return b
 }
 

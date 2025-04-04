@@ -20,6 +20,17 @@ type Pool struct {
 	isShrinkBlocked bool
 }
 
+type shrinkDefaults struct {
+	interval      time.Duration
+	idle          time.Duration
+	minIdle       int
+	cooldown      time.Duration
+	utilization   float64
+	underutilized int
+	percent       float64
+	maxShrinks    int
+}
+
 type PoolStats struct { // x
 	ObjectsInUse          uint64  // x
 	UtilizationPercentage float64 // x

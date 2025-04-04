@@ -31,13 +31,14 @@ func (p *Pool) Get() any {
 	now := time.Now()
 	var obj any
 
+	log.Printf("[POOL] Get() called | Current pool size: %d | In-use: %d | Capacity: %d", len(p.pool), p.Stats.ObjectsInUse, p.Stats.CurrentCapacity)
+
 	if len(p.pool) == 0 {
-		p.grow()
-		p.Stats.MissCount++
-		p.Stats.TotalGrowthEvents++
-		p.Stats.LastGrowTime = now
+		p.grow(&now)
+		log.Printf("[POOL] Pool was empty — triggered grow() | New pool size: %d", len(p.pool))
 	} else {
 		p.Stats.HitCount++
+		log.Println("[POOL] Reused object from pool")
 	}
 
 	p.Stats.LastTimeCalledGet = now
@@ -48,7 +49,10 @@ func (p *Pool) Get() any {
 	obj = p.pool[last]
 	p.pool = p.pool[:last]
 
+	log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
+
 	if p.isShrinkBlocked {
+		log.Println("[POOL] Shrink logic was blocked — unblocking via cond.Broadcast()")
 		p.cond.Broadcast()
 	}
 
@@ -65,6 +69,8 @@ func (p *Pool) Put(obj any) {
 	p.Stats.TotalPuts++
 	p.Stats.ObjectsInUse--
 	p.Stats.LastTimeCalledPut = time.Now()
+
+	log.Printf("[POOL] Put() called | Object returned to pool | Pool size: %d | In-use: %d", len(p.pool), p.Stats.ObjectsInUse)
 }
 
 func (p *Pool) shrink() {
@@ -115,109 +121,61 @@ func (p *Pool) shrink() {
 	}
 }
 
-func (pObj *Pool) grow() {
-	exponentialThresholdFactor := pObj.config.PoolGrowthParameters.ExponentialThresholdFactor
-	fixedStepFactor := pObj.config.PoolGrowthParameters.FixedGrowthFactor
-	growthPercent := pObj.config.PoolGrowthParameters.GrowthPercent
+func (p *Pool) grow(now *time.Time) {
+	cfg := p.config.PoolGrowthParameters
+	initialCap := p.config.InitialCapacity
 
-	initialCap := pObj.config.InitialCapacity
-	exponentialThreshold := int(float64(initialCap) * exponentialThresholdFactor)
-	fixedStep := int(float64(initialCap) * fixedStepFactor)
+	exponentialThreshold := int(float64(initialCap) * cfg.ExponentialThresholdFactor)
+	fixedStep := int(float64(initialCap) * cfg.FixedGrowthFactor)
 
 	var newCapacity int
-	if pObj.Stats.CurrentCapacity < exponentialThreshold {
-		growth := max(int(float64(pObj.Stats.CurrentCapacity)*growthPercent), 1)
-		newCapacity = pObj.Stats.CurrentCapacity + growth
+	if p.Stats.CurrentCapacity < exponentialThreshold {
+		growth := max(int(float64(p.Stats.CurrentCapacity)*cfg.GrowthPercent), 1)
+		newCapacity = p.Stats.CurrentCapacity + growth
+		log.Printf("[GROW] Using exponential growth: +%d → %d", growth, newCapacity)
 	} else {
-		newCapacity = pObj.Stats.CurrentCapacity + fixedStep
+		newCapacity = p.Stats.CurrentCapacity + fixedStep
+		log.Printf("[GROW] Using fixed-step growth: +%d → %d", fixedStep, newCapacity)
 	}
 
-	newPool := make([]any, len(pObj.pool), newCapacity)
-	copy(newPool, pObj.pool)
+	newPool := make([]any, len(p.pool), newCapacity)
+	copy(newPool, p.pool)
 
-	newObjsQty := newCapacity - pObj.Stats.CurrentCapacity
+	newObjsQty := newCapacity - p.Stats.CurrentCapacity
 	for range newObjsQty {
-		newPool = append(newPool, pObj.allocator())
+		newPool = append(newPool, p.allocator())
 	}
 
-	pObj.pool = newPool
-	pObj.Stats.CurrentCapacity = newCapacity
-	pObj.Stats.AvailableObjects += uint64(newObjsQty)
+	p.pool = newPool
+	p.Stats.CurrentCapacity = newCapacity
+	p.Stats.AvailableObjects += uint64(newObjsQty)
+	p.Stats.MissCount++
+	p.Stats.TotalGrowthEvents++
+	p.Stats.LastGrowTime = *now
+
+	log.Printf("[GROW] Pool grew to capacity %d (added %d new objects)", newCapacity, newObjsQty)
 }
 
-func (p *PoolShrinkParameters) ApplyDefaults() {
-	if p.AggressivenessLevel < 0 {
-		p.AggressivenessLevel = 0
+func (p *PoolShrinkParameters) ApplyDefaultsFromTable(table map[AggressivenessLevel]*shrinkDefaults) {
+	if p.AggressivenessLevel < aggressivenessDisabled {
+		p.AggressivenessLevel = aggressivenessDisabled
 	}
-	if p.AggressivenessLevel > 5 {
-		p.AggressivenessLevel = 5
+	if p.AggressivenessLevel > aggressivenessExtreme {
+		p.AggressivenessLevel = aggressivenessExtreme
 	}
-
-	switch p.AggressivenessLevel {
-	case aggressivenessDisabled:
-		p.CheckInterval = 0
-		p.IdleThreshold = 0
-		p.MinIdleBeforeShrink = 0
-		p.ShrinkCooldown = 0
-		p.MinUtilizationBeforeShrink = 0
-		p.StableUnderutilizationRounds = 0
-		p.ShrinkPercent = 0
-		p.MaxConsecutiveShrinks = 0
-
-	case aggressivenessConservative:
-		p.CheckInterval = 5 * time.Minute
-		p.IdleThreshold = 10 * time.Minute
-		p.MinIdleBeforeShrink = 3
-		p.ShrinkCooldown = 10 * time.Minute
-		p.MinUtilizationBeforeShrink = 0.20
-		p.StableUnderutilizationRounds = 3
-		p.ShrinkPercent = 0.10
-		p.MaxConsecutiveShrinks = 1
-
-	case aggressivenessBalanced:
-		p.CheckInterval = 2 * time.Minute
-		p.IdleThreshold = 5 * time.Minute
-		p.MinIdleBeforeShrink = 2
-		p.ShrinkCooldown = 5 * time.Minute
-		p.MinUtilizationBeforeShrink = 0.30
-		p.StableUnderutilizationRounds = 3
-		p.ShrinkPercent = 0.25
-		p.MaxConsecutiveShrinks = 2
-
-	case aggressivenessAggressive:
-		p.CheckInterval = 1 * time.Minute
-		p.IdleThreshold = 2 * time.Minute
-		p.MinIdleBeforeShrink = 2
-		p.ShrinkCooldown = 2 * time.Minute
-		p.MinUtilizationBeforeShrink = 0.40
-		p.StableUnderutilizationRounds = 2
-		p.ShrinkPercent = 0.50
-		p.MaxConsecutiveShrinks = 3
-
-	case aggressivenessVeryAggressive:
-		p.CheckInterval = 30 * time.Second
-		p.IdleThreshold = 1 * time.Minute
-		p.MinIdleBeforeShrink = 1
-		p.ShrinkCooldown = 1 * time.Minute
-		p.MinUtilizationBeforeShrink = 0.50
-		p.StableUnderutilizationRounds = 1
-		p.ShrinkPercent = 0.65
-		p.MaxConsecutiveShrinks = 4
-
-	case aggressivenessExtreme:
-		p.CheckInterval = 10 * time.Second
-		p.IdleThreshold = 20 * time.Second
-		p.MinIdleBeforeShrink = 1
-		p.ShrinkCooldown = 30 * time.Second
-		p.MinUtilizationBeforeShrink = 0.60
-		p.StableUnderutilizationRounds = 1
-		p.ShrinkPercent = 0.80
-		p.MaxConsecutiveShrinks = 5
+	def, ok := table[p.AggressivenessLevel]
+	if !ok {
+		return
 	}
 
-	if p.MinCapacity == 0 {
-		p.MinCapacity = defaultMinCapacity
-	}
+	p.CheckInterval = def.interval
+	p.IdleThreshold = def.idle
+	p.MinIdleBeforeShrink = def.minIdle
+	p.ShrinkCooldown = def.cooldown
+	p.MinUtilizationBeforeShrink = def.utilization
+	p.StableUnderutilizationRounds = def.underutilized
+	p.ShrinkPercent = def.percent
+	p.MaxConsecutiveShrinks = def.maxShrinks
 }
 
 func DefaultPoolShrinkParameters() *PoolShrinkParameters {
@@ -225,9 +183,33 @@ func DefaultPoolShrinkParameters() *PoolShrinkParameters {
 		AggressivenessLevel: aggressivenessBalanced,
 	}
 
-	psp.ApplyDefaults()
+	psp.ApplyDefaults(getShrinkDefaults())
 
 	return psp
+}
+
+func (p *PoolShrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDefaults) {
+	if p.AggressivenessLevel < aggressivenessDisabled {
+		p.AggressivenessLevel = aggressivenessDisabled
+	}
+
+	if p.AggressivenessLevel > aggressivenessExtreme {
+		p.AggressivenessLevel = aggressivenessExtreme
+	}
+
+	def, ok := table[p.AggressivenessLevel]
+	if !ok {
+		return
+	}
+
+	p.CheckInterval = def.interval
+	p.IdleThreshold = def.idle
+	p.MinIdleBeforeShrink = def.minIdle
+	p.ShrinkCooldown = def.cooldown
+	p.MinUtilizationBeforeShrink = def.utilization
+	p.StableUnderutilizationRounds = def.underutilized
+	p.ShrinkPercent = def.percent
+	p.MaxConsecutiveShrinks = def.maxShrinks
 }
 
 func DefaultPoolGrowthParameters() *PoolGrowthParameters {
@@ -346,6 +328,7 @@ func (p *Pool) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
 			*shrinkPermissionIdleness = true
 		}
 	} else {
+		// Combat random drops in get calls
 		if *idles > 0 {
 			*idles--
 		}
@@ -365,7 +348,7 @@ func (p *Pool) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUti
 			*shrinkPermissionUtilization = true
 		}
 	} else {
-		// Combat random drops in usage
+		// Combat random drops in pool usage
 		if *underutilizationRounds > 0 {
 			*underutilizationRounds--
 		}
@@ -393,4 +376,27 @@ func (p *Pool) ShrinkExecution() {
 
 	p.performShrink(newCapacity)
 
+}
+
+func getShrinkDefaults() map[AggressivenessLevel]*shrinkDefaults {
+	return map[AggressivenessLevel]*shrinkDefaults{
+		aggressivenessDisabled: {
+			0, 0, 0, 0, 0, 0, 0, 0,
+		},
+		aggressivenessConservative: {
+			5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.20, 3, 0.10, 1,
+		},
+		aggressivenessBalanced: {
+			2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.30, 3, 0.25, 2,
+		},
+		aggressivenessAggressive: {
+			1 * time.Minute, 2 * time.Minute, 2, 2 * time.Minute, 0.40, 2, 0.50, 3,
+		},
+		aggressivenessVeryAggressive: {
+			30 * time.Second, 1 * time.Minute, 1, 1 * time.Minute, 0.50, 1, 0.65, 4,
+		},
+		aggressivenessExtreme: {
+			10 * time.Second, 20 * time.Second, 1, 30 * time.Second, 0.60, 1, 0.80, 5,
+		},
+	}
 }
