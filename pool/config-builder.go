@@ -6,12 +6,12 @@ import (
 )
 
 type PoolConfigBuilder struct {
-	config *PoolConfig
+	config *poolConfig
 }
 
 func NewPoolConfigBuilder() *PoolConfigBuilder {
 	return &PoolConfigBuilder{
-		config: &PoolConfig{
+		config: &poolConfig{
 			InitialCapacity:      defaultPoolCapacity,
 			PoolShrinkParameters: DefaultPoolShrinkParameters(),
 			PoolGrowthParameters: DefaultPoolGrowthParameters(),
@@ -45,9 +45,10 @@ func (b *PoolConfigBuilder) SetFixedGrowthFactor(factor float64) *PoolConfigBuil
 	return b
 }
 
-// Disables auto shrink. When called, all shrink parameters must be set manually.
-// For partial overrides, leave auto shrink enabled and set values directly.
-func (b *PoolConfigBuilder) DisableAutoShrink() *PoolConfigBuilder {
+// When called, all shrink parameters must be set manually.
+// For partial overrides, leave EnforceCustomConfig to its default and set values directly.
+func (b *PoolConfigBuilder) EnforceCustomConfig() *PoolConfigBuilder {
+	b.config.PoolShrinkParameters.EnforceCustomConfig = true
 	b.config.PoolShrinkParameters.AggressivenessLevel = aggressivenessDisabled
 	b.config.PoolShrinkParameters.ApplyDefaults()
 	return b
@@ -56,10 +57,10 @@ func (b *PoolConfigBuilder) DisableAutoShrink() *PoolConfigBuilder {
 // This controls how quickly and frequently the pool will shrink when underutilized, or idle.
 // Calling this will override individual shrink settings by applying preset defaults.
 // Use levels between aggressivenessConservative (1) and AggressivenessExtreme (5).
-// (can't call this function if you disable auto shrink)
+// (can't call this function if you enable EnforceCustomConfig)
 func (b *PoolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *PoolConfigBuilder {
-	if !b.config.PoolShrinkParameters.EnableAutoShrink {
-		panic("can't set AggressivenessLevel if previously called DisableAutoShrink")
+	if b.config.PoolShrinkParameters.EnforceCustomConfig {
+		panic("can't set AggressivenessLevel if EnforceCustomConfig is active")
 	}
 
 	if level <= aggressivenessDisabled || level > aggressivenessExtreme {
@@ -111,14 +112,14 @@ func (b *PoolConfigBuilder) SetMinShrinkCapacity(minCap int) *PoolConfigBuilder 
 	return b
 }
 
-func (b *PoolConfigBuilder) Build() (*PoolConfig, error) {
+func (b *PoolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.InitialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
 	}
 
 	psp := b.config.PoolShrinkParameters
 
-	if !psp.EnableAutoShrink {
+	if psp.EnforceCustomConfig {
 		switch {
 		case psp.CheckInterval <= 0:
 			return nil, fmt.Errorf("CheckInterval must be greater than 0")

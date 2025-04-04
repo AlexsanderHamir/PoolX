@@ -13,47 +13,38 @@ type Pool struct {
 	pool      []any
 
 	// Pass nil if you would like default config.
-	config *PoolConfig
-	stats  *PoolStats
+	config *poolConfig
+	Stats  *PoolStats
 	mu     *sync.RWMutex
 }
 
-type PoolStats struct {
-	ObjectsInUse          uint64
-	UtilizationPercentage float64
-	AvailableObjects      uint64
-	PeakInUse             uint64
+type PoolStats struct { // x
+	ObjectsInUse          uint64  // x
+	UtilizationPercentage float64 // x
+	AvailableObjects      uint64  // x
+	PeakInUse             uint64  // x
 
-	TotalGets  uint64
-	TotalPuts  uint64
-	HitCount   uint64
-	MissCount  uint64
-	HitRate    float64
-	MissRate   float64
-	ReuseRatio float64
+	TotalGets  uint64  // x
+	TotalPuts  uint64  // x
+	HitCount   uint64  // x
+	MissCount  uint64  // x
+	HitRate    float64 // x
+	MissRate   float64 // x
+	ReuseRatio float64 // x
 
-	TotalGrowthEvents uint64
-	TotalShrinkEvents uint64
+	TotalGrowthEvents uint64 // x
+	TotalShrinkEvents uint64 // x
 
-	CurrentCapacity int
-	InitialCapacity int
+	CurrentCapacity int // x
+	InitialCapacity int // x
 
-	LastTimeCalledGet time.Time
-	LastTimeCalledPut time.Time
-	LastShrinkTime    time.Time
-	LastGrowTime      time.Time
-
-	AverageObjTimeInUse time.Duration
-	MaxObjTimeInUse     time.Duration
-	TimeSinceLastGet    time.Duration
-	TimeSinceLastPut    time.Duration
-
-	LeakSuspected bool
-	OverAllocated bool
-	HealthStatus  string
+	LastTimeCalledGet time.Time // x
+	LastTimeCalledPut time.Time // x
+	LastShrinkTime    time.Time // x
+	LastGrowTime      time.Time // x
 }
 
-type PoolConfig struct {
+type poolConfig struct {
 	// Pool initial capacity which avoids resizing the slice,
 	// until it reaches the defined capacity.
 	InitialCapacity int
@@ -65,11 +56,12 @@ type PoolConfig struct {
 	PoolShrinkParameters *PoolShrinkParameters
 }
 
-type PoolShrinkParameters struct {
-	// EnableAutoShrink controls whether the pool automatically manages shrinking behavior.
-	// When enabled (default), the pool uses the configured aggressiveness level
-	// to determine when and how to shrink. To configure shrink behavior manually, disable this flag.
-	EnableAutoShrink bool
+type PoolShrinkParameters struct { // x
+	// EnforceCustomConfig controls whether the pool requires explicit configuration.
+	// When set to true, the user must manually provide all configuration values (e.g., shrink/growth parameters).
+	// If set to false (default), the pool will fall back to built-in default configurations when values are missing.
+	// This flag does not disable auto-shrink behavior—it only governs configuration strictness.
+	EnforceCustomConfig bool
 
 	// AggressivenessLevel is an optional high-level control that adjusts
 	// shrink sensitivity and timing behavior. Valid values range from 0 (disabled)
@@ -79,39 +71,39 @@ type PoolShrinkParameters struct {
 
 	// CheckInterval controls how frequently the background shrink goroutine runs.
 	// This determines how often the pool is evaluated for possible shrink conditions.
-	CheckInterval time.Duration
+	CheckInterval time.Duration // x
 
 	// IdleThreshold is the minimum duration the pool must remain idle
-	// (no successful calls to Get) before it can be considered for shrinking.
-	IdleThreshold time.Duration
+	// (no calls to Get) before it can be considered for shrinking.
+	IdleThreshold time.Duration // x
 
 	// MinIdleBeforeShrink defines how many consecutive idle checks
 	// (based on IdleThreshold and CheckInterval) must occur before a shrink is allowed.
 	// This prevents shrinking during short idle spikes.
-	MinIdleBeforeShrink int
+	MinIdleBeforeShrink int // x
 
 	// ShrinkCooldown is the minimum amount of time that must pass between
 	// two consecutive shrink operations. This prevents excessive or aggressive shrinking.
-	ShrinkCooldown time.Duration
+	ShrinkCooldown time.Duration // x
 
 	// MinUtilizationBeforeShrink defines the threshold for utilization ratio
 	// (ObjectsInUse / CurrentCapacity) under which the pool is considered underutilized.
 	// If the utilization stays below this value for StableUnderutilizationRounds,
 	// the pool becomes a shrink candidate.
-	MinUtilizationBeforeShrink float64
+	MinUtilizationBeforeShrink float64 // x
 
 	// StableUnderutilizationRounds defines how many consecutive background checks
 	// must detect underutilization before a shrink is triggered.
 	// This avoids false positives caused by temporary usage dips.
-	StableUnderutilizationRounds int
+	StableUnderutilizationRounds int // x
 
 	// ShrinkStepPercent determines how much of the pool should be reduced
 	// when a shrink operation is triggered (e.g. 0.25 = shrink by 25%).
-	ShrinkPercent float64
+	ShrinkPercent float64 // x
 
 	// MinCapacity defines the lowest allowed capacity after shrinking.
 	// The pool will never shrink below this value, even under aggressive conditions.
-	MinCapacity int
+	MinCapacity int // x
 }
 
 type PoolGrowthParameters struct {

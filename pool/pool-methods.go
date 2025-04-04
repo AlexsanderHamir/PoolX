@@ -23,41 +23,77 @@ const (
 	defaultMinCapacity                                    = 8
 )
 
-func (pObj *Pool) get() any {
-	pObj.mu.Lock()
-	defer pObj.mu.Unlock()
+func (p *Pool) Get() any {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	if len(pObj.pool) == 0 {
-		pObj.grow()
+	now := time.Now()
+	var obj any
+
+	if len(p.pool) == 0 {
+		p.grow()
+		p.Stats.MissCount++
+		p.Stats.TotalGrowthEvents++
+		p.Stats.LastGrowTime = now
+	} else {
+		p.Stats.HitCount++
 	}
 
-	obj := pObj.pool[len(pObj.pool)-1]
-	pObj.pool = pObj.pool[:len(pObj.pool)-1]
+	p.Stats.LastTimeCalledGet = now
+	p.updateUsageStats()
+	p.updateDerivedStats()
+
+	last := len(p.pool) - 1
+	obj = p.pool[last]
+	p.pool = p.pool[:last]
 
 	return obj
 }
 
-// x
-func (pObj *Pool) put(obj any) {
-	pObj.mu.Lock()
-	defer pObj.mu.Unlock()
+func (p *Pool) Put(obj any) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	pObj.cleaner(obj)
-	pObj.pool = append(pObj.pool, obj)
+	p.cleaner(obj)
+	p.pool = append(p.pool, obj)
+
+	p.Stats.TotalPuts++
+	p.Stats.LastTimeCalledPut = time.Now()
 }
+func (p *Pool) shrink() {
+	shrinkParams := p.config.PoolShrinkParameters
+	ticker := time.NewTicker(shrinkParams.CheckInterval)
+	defer ticker.Stop()
 
-func (pObj *Pool) shrink() {
-	if pObj.stats.CurrentCapacity <= 1 {
-		return
+	var (
+		idles                       int
+		underutilizationRounds      int
+		shrinkPermissionIdleness    bool
+		shrinkPermissionUtilization bool
+	)
+
+	for range ticker.C {
+		p.mu.Lock()
+
+		if time.Since(p.Stats.LastShrinkTime) < shrinkParams.ShrinkCooldown {
+			p.mu.Unlock()
+			continue
+		}
+
+		p.IndleCheck(&idles, &shrinkPermissionIdleness)
+		p.UtilizationCheck(&underutilizationRounds, &shrinkPermissionUtilization)
+
+		if shrinkPermissionIdleness && shrinkPermissionUtilization {
+			p.ShrinkExecution()
+		}
+
+		idles = 0
+		underutilizationRounds = 0
+		shrinkPermissionIdleness = false
+		shrinkPermissionUtilization = false
+
+		p.mu.Unlock()
 	}
-
-	newCapacity := pObj.stats.CurrentCapacity / 2
-
-	newPool := make([]any, newCapacity)
-	newPool = append(newPool, pObj.pool[:newCapacity]...)
-
-	pObj.stats.CurrentCapacity = newCapacity
-	pObj.pool = newPool
 }
 
 func (pObj *Pool) grow() {
@@ -70,22 +106,24 @@ func (pObj *Pool) grow() {
 	fixedStep := int(float64(initialCap) * fixedStepFactor)
 
 	var newCapacity int
-	if pObj.stats.CurrentCapacity < exponentialThreshold {
-		growth := max(int(float64(pObj.stats.CurrentCapacity)*growthPercent), 1)
-		newCapacity = pObj.stats.CurrentCapacity + growth
+	if pObj.Stats.CurrentCapacity < exponentialThreshold {
+		growth := max(int(float64(pObj.Stats.CurrentCapacity)*growthPercent), 1)
+		newCapacity = pObj.Stats.CurrentCapacity + growth
 	} else {
-		newCapacity = pObj.stats.CurrentCapacity + fixedStep
+		newCapacity = pObj.Stats.CurrentCapacity + fixedStep
 	}
 
 	newPool := make([]any, len(pObj.pool), newCapacity)
 	copy(newPool, pObj.pool)
 
-	for range newCapacity - pObj.stats.CurrentCapacity {
+	newObjsQty := newCapacity - pObj.Stats.CurrentCapacity
+	for range newObjsQty {
 		newPool = append(newPool, pObj.allocator())
 	}
 
 	pObj.pool = newPool
-	pObj.stats.CurrentCapacity = newCapacity
+	pObj.Stats.CurrentCapacity = newCapacity
+	pObj.Stats.AvailableObjects += uint64(newObjsQty)
 }
 
 func (p *PoolShrinkParameters) ApplyDefaults() {
@@ -98,7 +136,6 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 
 	switch p.AggressivenessLevel {
 	case aggressivenessDisabled:
-		p.EnableAutoShrink = false
 		p.CheckInterval = 0
 		p.IdleThreshold = 0
 		p.MinIdleBeforeShrink = 0
@@ -160,7 +197,6 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 
 func DefaultPoolShrinkParameters() *PoolShrinkParameters {
 	psp := &PoolShrinkParameters{
-		EnableAutoShrink:    true,
 		AggressivenessLevel: aggressivenessBalanced,
 	}
 
@@ -177,9 +213,9 @@ func DefaultPoolGrowthParameters() *PoolGrowthParameters {
 	}
 }
 
-func NewPool(config *PoolConfig, allocator func() any, cleaner func(any)) (*Pool, error) {
+func NewPool(config *poolConfig, allocator func() any, cleaner func(any)) (*Pool, error) {
 	if config == nil {
-		config = &PoolConfig{
+		config = &poolConfig{
 			InitialCapacity:      defaultPoolCapacity,
 			PoolShrinkParameters: DefaultPoolShrinkParameters(),
 			PoolGrowthParameters: DefaultPoolGrowthParameters(),
@@ -191,7 +227,7 @@ func NewPool(config *PoolConfig, allocator func() any, cleaner func(any)) (*Pool
 		cleaner:   cleaner,
 		mu:        &sync.RWMutex{},
 		config:    config,
-		stats:     &PoolStats{},
+		Stats:     &PoolStats{CurrentCapacity: config.InitialCapacity, AvailableObjects: uint64(config.InitialCapacity), InitialCapacity: config.InitialCapacity},
 	}
 
 	obj := allocator()
@@ -205,5 +241,94 @@ func NewPool(config *PoolConfig, allocator func() any, cleaner func(any)) (*Pool
 		poolObj.pool = append(poolObj.pool, allocator())
 	}
 
+	go poolObj.shrink()
+
 	return &poolObj, nil
+}
+
+func (p *Pool) updateUsageStats() {
+	p.Stats.ObjectsInUse++
+	p.Stats.AvailableObjects--
+	p.Stats.TotalGets++
+
+	if p.Stats.ObjectsInUse > p.Stats.PeakInUse {
+		p.Stats.PeakInUse = p.Stats.ObjectsInUse
+	}
+}
+
+func (p *Pool) updateDerivedStats() {
+	totalAccesses := p.Stats.HitCount + p.Stats.MissCount
+	if totalAccesses > 0 {
+		p.Stats.HitRate = float64(p.Stats.HitCount) / float64(totalAccesses)
+		p.Stats.MissRate = float64(p.Stats.MissCount) / float64(totalAccesses)
+	}
+
+	if p.Stats.TotalGets > 0 {
+		p.Stats.ReuseRatio = float64(p.Stats.HitCount) / float64(p.Stats.TotalGets)
+	}
+
+	totalObjects := p.Stats.ObjectsInUse + p.Stats.AvailableObjects
+	if totalObjects > 0 {
+		p.Stats.UtilizationPercentage = (float64(p.Stats.ObjectsInUse) / float64(totalObjects)) * 100
+	}
+}
+
+func (p *Pool) performShrink(newCapacity int) {
+	copyRoom := newCapacity - int(p.Stats.ObjectsInUse)
+	copyCount := min(copyRoom, len(p.pool))
+
+	newPool := make([]any, copyCount, newCapacity)
+	copy(newPool, p.pool[:copyCount])
+	p.pool = newPool
+
+	p.Stats.AvailableObjects = uint64(copyCount)
+	p.Stats.CurrentCapacity = newCapacity
+	p.Stats.TotalShrinkEvents++
+	p.Stats.LastShrinkTime = time.Now()
+}
+
+func (p *Pool) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
+	if time.Since(p.Stats.LastTimeCalledGet) >= p.config.PoolShrinkParameters.IdleThreshold {
+		*idles++
+		if *idles >= p.config.PoolShrinkParameters.MinIdleBeforeShrink {
+			*shrinkPermissionIdleness = true
+		}
+	} else {
+		if *idles > 0 {
+			*idles--
+		}
+	}
+}
+
+func (p *Pool) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
+	total := p.Stats.ObjectsInUse + p.Stats.AvailableObjects
+	var utilization float64
+	if total > 0 {
+		utilization = (float64(p.Stats.ObjectsInUse) / float64(total)) * 100
+	}
+
+	if utilization <= p.config.PoolShrinkParameters.MinUtilizationBeforeShrink {
+		*underutilizationRounds++
+		if *underutilizationRounds >= p.config.PoolShrinkParameters.StableUnderutilizationRounds {
+			*shrinkPermissionUtilization = true
+		}
+	} else {
+		// Combat random drops in usage
+		if *underutilizationRounds > 0 {
+			*underutilizationRounds--
+		}
+	}
+}
+
+func (p *Pool) ShrinkExecution() {
+	newCapacity := int(float64(p.Stats.CurrentCapacity) * (1.0 - p.config.PoolShrinkParameters.ShrinkPercent))
+	if newCapacity < p.config.PoolShrinkParameters.MinCapacity {
+		newCapacity = p.config.PoolShrinkParameters.MinCapacity
+	}
+
+	if newCapacity < int(p.Stats.ObjectsInUse) {
+		newCapacity = int(p.Stats.ObjectsInUse)
+	}
+
+	p.performShrink(newCapacity)
 }

@@ -1,4 +1,4 @@
-# 🧠 `PoolConfigBuilder` 
+# 🧠 `PoolConfigBuilder`
 
 The `PoolConfigBuilder` provides a validated way to configure memory pool behavior for **dynamic object reuse**.
 
@@ -18,26 +18,26 @@ Control how the pool expands when more objects are needed.
 
 Control how and when the pool shrinks based on utilization and idleness.
 
-| Method                                               | Description                                                          |
-| ---------------------------------------------------- | -------------------------------------------------------------------- |
-| `SetShrinkAggressiveness(level AggressivenessLevel)` | Sets auto shrink level (1-5). Applies preset shrink behavior.        |
-| `DisableAutoShrink()`                                | Disables auto shrink. Requires all shrink values to be set manually. |
-| `SetShrinkCheckInterval(d time.Duration)`            | How often to check if the pool should shrink.                        |
-| `SetIdleThreshold(d time.Duration)`                  | Minimum idle duration before shrinking.                              |
-| `SetMinIdleBeforeShrink(n int)`                      | Number of consecutive idle checks before shrinking is allowed.       |
-| `SetShrinkCooldown(d time.Duration)`                 | Minimum time between two shrink operations.                          |
-| `SetMinUtilizationBeforeShrink(v float64)`           | Trigger shrink if utilization is below this. Must be `0 < v <= 1.0`. |
-| `SetStableUnderutilizationRounds(n int)`             | Rounds the pool must stay underutilized before shrinking.            |
-| `SetShrinkPercent(p float64)`                        | Shrink by a percentage (e.g. `0.25 = shrink 25%`). Must be `<= 1.0`. |
-| `SetMinShrinkCapacity(n int)`                        | Defines the lowest allowed capacity after shrinking.                 |
+| Method                                               | Description                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `SetShrinkAggressiveness(level AggressivenessLevel)` | Sets auto shrink level (1-5). Applies preset shrink behavior.                  |
+| `EnforceCustomConfig()`                              | Disables default configuration. Requires all shrink values to be set manually. |
+| `SetShrinkCheckInterval(d time.Duration)`            | How often to check if the pool should shrink.                                  |
+| `SetIdleThreshold(d time.Duration)`                  | Minimum idle duration before shrinking.                                        |
+| `SetMinIdleBeforeShrink(n int)`                      | Number of consecutive idle checks before shrinking is allowed.                 |
+| `SetShrinkCooldown(d time.Duration)`                 | Minimum time between two shrink operations.                                    |
+| `SetMinUtilizationBeforeShrink(v float64)`           | Trigger shrink if utilization is below this. Must be `0 < v <= 1.0`.           |
+| `SetStableUnderutilizationRounds(n int)`             | Rounds the pool must stay underutilized before shrinking.                      |
+| `SetShrinkPercent(p float64)`                        | Shrink by a percentage (e.g. `0.25 = shrink 25%`). Must be `<= 1.0`.           |
+| `SetMinShrinkCapacity(n int)`                        | Defines the lowest allowed capacity after shrinking.                           |
 
 ---
 
 ## ❗ Important Rules
 
 - You can **change shrink parameters even if auto-shrink is enabled**.
-- If you call `DisableAutoShrink()`, you **must manually set all shrink fields**.
-- If `DisableAutoShrink()` was called, then calling `SetShrinkAggressiveness()` will panic.
+- If you call `EnforceCustomConfig()`, you **must manually set all shrink fields**.
+- If `EnforceCustomConfig()` was called, then calling `SetShrinkAggressiveness()` will panic.
 - If `ShrinkPercent` is set to `1.0` (100%), we **do not block it**, but it's your responsibility to deal with it.
 - `MinCapacity` must not be greater than `InitialCapacity`.
 
@@ -74,29 +74,57 @@ Calling `SetShrinkAggressiveness(level)` applies a pre-defined shrink strategy b
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Creating a Pool
+
+To create a memory pool, use the `NewPool` function:
 
 ```go
-builder := mem.NewPoolConfigBuilder()
+allocator := func() any {
+	return &Example{}
+}
 
-config, err := builder.
-	SetInitialCapacity(128).
-	SetGrowthPercent(0.5).
-	SetShrinkAggressiveness(mem.AggressivenessBalanced).
-	Build()
+cleaner := func(obj any) {
+	if e, ok := obj.(*Example); ok {
+		e.name = ""
+		e.age = 0
+		e.friends = nil
+	}
+}
 
+poolObj, err := pool.NewPool(nil, allocator, cleaner)
 if err != nil {
-	log.Fatal(err)
+	panic(err)
 }
 ```
 
+## 🧪 Examples
+
+### Automatic Shrink Configuration
+
+> ✅ **If you want to use default pool configuration**, just pass `nil` in place of the config:
+>
+> ```go
+> pool.NewPool(nil, allocator, cleaner)
+> ```
+>
+> This will automatically apply:
+>
+> - `InitialCapacity: 64`
+> - `DefaultPoolShrinkParameters()`
+> - `DefaultPoolGrowthParameters()`
+
+You only need to define:
+
+- An **allocator**: returns a pointer to a new object
+- A **cleaner**: resets the object’s state for reuse
+
 ---
 
-## 🧪 Example: Manual Shrink Configuration
+## Manual Shrink Configuration
 
 ```go
 config, err := mem.NewPoolConfigBuilder().
-	DisableAutoShrink().
+	EnforceCustomConfig().
 	SetInitialCapacity(64).
 	SetShrinkCheckInterval(5 * time.Second).
 	SetIdleThreshold(15 * time.Second).
