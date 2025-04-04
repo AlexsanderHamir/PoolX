@@ -2,6 +2,7 @@ package pool
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -58,8 +59,10 @@ func (p *Pool) Put(obj any) {
 	p.pool = append(p.pool, obj)
 
 	p.Stats.TotalPuts++
+	p.Stats.ObjectsInUse--
 	p.Stats.LastTimeCalledPut = time.Now()
 }
+
 func (p *Pool) shrink() {
 	shrinkParams := p.config.PoolShrinkParameters
 	ticker := time.NewTicker(shrinkParams.CheckInterval)
@@ -76,21 +79,26 @@ func (p *Pool) shrink() {
 		p.mu.Lock()
 
 		if time.Since(p.Stats.LastShrinkTime) < shrinkParams.ShrinkCooldown {
+			log.Printf("[SHRINK] Cooldown active: %v remaining", shrinkParams.ShrinkCooldown-time.Since(p.Stats.LastShrinkTime))
 			p.mu.Unlock()
 			continue
 		}
 
 		p.IndleCheck(&idles, &shrinkPermissionIdleness)
+		log.Printf("[SHRINK] IdleCheck => idles: %d / minRequired: %d | permission: %v", idles, shrinkParams.MinIdleBeforeShrink, shrinkPermissionIdleness)
+
 		p.UtilizationCheck(&underutilizationRounds, &shrinkPermissionUtilization)
+		log.Printf("[SHRINK] UtilizationCheck => rounds: %d / stableRequired: %d | permission: %v", underutilizationRounds, shrinkParams.StableUnderutilizationRounds, shrinkPermissionUtilization)
 
-		if shrinkPermissionIdleness && shrinkPermissionUtilization {
+		if shrinkPermissionIdleness || shrinkPermissionUtilization {
+			log.Println("[SHRINK] Conditions met. Executing shrink.")
 			p.ShrinkExecution()
-		}
 
-		idles = 0
-		underutilizationRounds = 0
-		shrinkPermissionIdleness = false
-		shrinkPermissionUtilization = false
+			idles = 0
+			underutilizationRounds = 0
+			shrinkPermissionIdleness = false
+			shrinkPermissionUtilization = false
+		}
 
 		p.mu.Unlock()
 	}
@@ -274,6 +282,26 @@ func (p *Pool) updateDerivedStats() {
 }
 
 func (p *Pool) performShrink(newCapacity int) {
+	if len(p.pool) == 0 {
+		log.Println("[SHRINK] All objects in use, can't resize")
+		return
+	}
+
+	if p.Stats.CurrentCapacity <= p.config.PoolShrinkParameters.MinCapacity {
+		log.Println("[SHRINK] Pool is at or below MinCapacity, can't resize")
+		return
+	}
+
+	if newCapacity >= p.Stats.CurrentCapacity {
+		log.Println("[SHRINK] New capacity is not smaller, skipping shrink")
+		return
+	}
+
+	if newCapacity == 0 {
+		log.Println("[SHRINK] New capacity is zero — invalid shrink")
+		return
+	}
+
 	copyRoom := newCapacity - int(p.Stats.ObjectsInUse)
 	copyCount := min(copyRoom, len(p.pool))
 
@@ -322,13 +350,22 @@ func (p *Pool) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUti
 
 func (p *Pool) ShrinkExecution() {
 	newCapacity := int(float64(p.Stats.CurrentCapacity) * (1.0 - p.config.PoolShrinkParameters.ShrinkPercent))
+	log.Printf("[SHRINK] current capacity: %d", p.Stats.CurrentCapacity)
+
+	log.Printf("[SHRINK] new capacity: %d", newCapacity)
+	log.Printf("[SHRINK] min capacity: %d", p.config.PoolShrinkParameters.MinCapacity)
+
 	if newCapacity < p.config.PoolShrinkParameters.MinCapacity {
+		log.Printf("[SHRINK] min capacity hit: %d", newCapacity)
 		newCapacity = p.config.PoolShrinkParameters.MinCapacity
 	}
 
 	if newCapacity < int(p.Stats.ObjectsInUse) {
+		log.Printf("[SHRINK] more objects in use than capacity: %d", p.Stats.ObjectsInUse)
 		newCapacity = int(p.Stats.ObjectsInUse)
 	}
+
+	log.Println("[SHRINK] pool length: ", len(p.pool))
 
 	p.performShrink(newCapacity)
 }

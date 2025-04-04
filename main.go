@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"memctx/pool"
+	"time"
 )
 
 type Example struct {
@@ -24,14 +25,40 @@ func main() {
 		}
 	}
 
-	poolObj, err := pool.NewPool(nil, allocator, cleaner)
+	config, err := pool.NewPoolConfigBuilder().
+		EnforceCustomConfig().
+		SetInitialCapacity(64).
+		SetShrinkCheckInterval(2 * time.Second).
+		SetIdleThreshold(3 * time.Second).
+		SetMinIdleBeforeShrink(2).
+		SetShrinkCooldown(5 * time.Second).
+		SetMinUtilizationBeforeShrink(0.3). // 30% utilization // 19/20
+		SetStableUnderutilizationRounds(2).
+		SetShrinkPercent(0.25). // shrink by 25% // 48
+		SetMinShrinkCapacity(16).
+		Build()
+
+	if err != nil {
+		log.Fatalf("Failed to build pool config: %v", err)
+	}
+
+	poolObj, err := pool.NewPool(config, allocator, cleaner)
 	if err != nil {
 		panic(err)
 	}
 
-	for range 1 {
+	var objs []any
+	for range 30 {
 		obj := poolObj.Get()
-		fmt.Println(obj)
-		fmt.Println(poolObj.Stats.CurrentCapacity)
+		objs = append(objs, obj)
 	}
+
+	time.Sleep(1 * time.Minute)
+
+	log.Println("[SHRINK] putting objs back")
+	for _, obj := range objs {
+		poolObj.Put(obj)
+	}
+
+	select {}
 }
