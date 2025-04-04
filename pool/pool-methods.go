@@ -48,6 +48,10 @@ func (p *Pool) Get() any {
 	obj = p.pool[last]
 	p.pool = p.pool[:last]
 
+	if p.isShrinkBlocked {
+		p.cond.Broadcast()
+	}
+
 	return obj
 }
 
@@ -77,6 +81,13 @@ func (p *Pool) shrink() {
 
 	for range ticker.C {
 		p.mu.Lock()
+
+		if p.Stats.ConsecutiveShrinks == uint64(shrinkParams.MaxConsecutiveShrinks) {
+			log.Println("[SHRINK] BLOCKED UNTIL A GET CALL IS MADE !!!!!")
+			p.isShrinkBlocked = true
+			p.cond.Wait()
+			p.isShrinkBlocked = false
+		}
 
 		if time.Since(p.Stats.LastShrinkTime) < shrinkParams.ShrinkCooldown {
 			log.Printf("[SHRINK] Cooldown active: %v remaining", shrinkParams.ShrinkCooldown-time.Since(p.Stats.LastShrinkTime))
@@ -151,6 +162,7 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 		p.MinUtilizationBeforeShrink = 0
 		p.StableUnderutilizationRounds = 0
 		p.ShrinkPercent = 0
+		p.MaxConsecutiveShrinks = 0
 
 	case aggressivenessConservative:
 		p.CheckInterval = 5 * time.Minute
@@ -160,6 +172,7 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 		p.MinUtilizationBeforeShrink = 0.20
 		p.StableUnderutilizationRounds = 3
 		p.ShrinkPercent = 0.10
+		p.MaxConsecutiveShrinks = 1
 
 	case aggressivenessBalanced:
 		p.CheckInterval = 2 * time.Minute
@@ -169,6 +182,7 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 		p.MinUtilizationBeforeShrink = 0.30
 		p.StableUnderutilizationRounds = 3
 		p.ShrinkPercent = 0.25
+		p.MaxConsecutiveShrinks = 2
 
 	case aggressivenessAggressive:
 		p.CheckInterval = 1 * time.Minute
@@ -178,6 +192,7 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 		p.MinUtilizationBeforeShrink = 0.40
 		p.StableUnderutilizationRounds = 2
 		p.ShrinkPercent = 0.50
+		p.MaxConsecutiveShrinks = 3
 
 	case aggressivenessVeryAggressive:
 		p.CheckInterval = 30 * time.Second
@@ -187,6 +202,7 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 		p.MinUtilizationBeforeShrink = 0.50
 		p.StableUnderutilizationRounds = 1
 		p.ShrinkPercent = 0.65
+		p.MaxConsecutiveShrinks = 4
 
 	case aggressivenessExtreme:
 		p.CheckInterval = 10 * time.Second
@@ -196,6 +212,7 @@ func (p *PoolShrinkParameters) ApplyDefaults() {
 		p.MinUtilizationBeforeShrink = 0.60
 		p.StableUnderutilizationRounds = 1
 		p.ShrinkPercent = 0.80
+		p.MaxConsecutiveShrinks = 5
 	}
 
 	if p.MinCapacity == 0 {
@@ -238,6 +255,8 @@ func NewPool(config *poolConfig, allocator func() any, cleaner func(any)) (*Pool
 		Stats:     &PoolStats{CurrentCapacity: config.InitialCapacity, AvailableObjects: uint64(config.InitialCapacity), InitialCapacity: config.InitialCapacity},
 	}
 
+	poolObj.cond = sync.NewCond(poolObj.mu)
+
 	obj := allocator()
 	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("allocator must return a pointer, got %T", obj)
@@ -261,6 +280,10 @@ func (p *Pool) updateUsageStats() {
 
 	if p.Stats.ObjectsInUse > p.Stats.PeakInUse {
 		p.Stats.PeakInUse = p.Stats.ObjectsInUse
+	}
+
+	if p.Stats.ConsecutiveShrinks > 0 {
+		p.Stats.ConsecutiveShrinks--
 	}
 }
 
@@ -313,6 +336,7 @@ func (p *Pool) performShrink(newCapacity int) {
 	p.Stats.CurrentCapacity = newCapacity
 	p.Stats.TotalShrinkEvents++
 	p.Stats.LastShrinkTime = time.Now()
+	p.Stats.ConsecutiveShrinks++
 }
 
 func (p *Pool) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
@@ -368,4 +392,5 @@ func (p *Pool) ShrinkExecution() {
 	log.Println("[SHRINK] pool length: ", len(p.pool))
 
 	p.performShrink(newCapacity)
+
 }

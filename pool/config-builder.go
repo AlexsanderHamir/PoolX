@@ -112,6 +112,11 @@ func (b *PoolConfigBuilder) SetMinShrinkCapacity(minCap int) *PoolConfigBuilder 
 	return b
 }
 
+func (b *PoolConfigBuilder) SetMaxConsecutiveShrinks(count int) *PoolConfigBuilder {
+	b.config.PoolShrinkParameters.MaxConsecutiveShrinks = count
+	return b
+}
+
 func (b *PoolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.InitialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
@@ -121,6 +126,8 @@ func (b *PoolConfigBuilder) Build() (*poolConfig, error) {
 
 	if psp.EnforceCustomConfig {
 		switch {
+		case psp.MaxConsecutiveShrinks <= 0:
+			return nil, fmt.Errorf("MaxConsecutiveShrinks must be greater than 0")
 		case psp.CheckInterval <= 0:
 			return nil, fmt.Errorf("CheckInterval must be greater than 0")
 		case psp.IdleThreshold <= 0:

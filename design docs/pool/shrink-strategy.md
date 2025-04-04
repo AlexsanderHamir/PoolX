@@ -19,7 +19,34 @@ Shrink behavior is controlled via the `PoolShrinkParameters` configuration. The 
 
 ### Shrinking Behavior
 
-- Once a shrink is triggered, the pool reduces its capacity based on the selected `ShrinkPercent`
+shrink is a long-running goroutine responsible for periodically evaluating
+and reducing the pool's capacity under certain conditions.
+
+Shrink Logic Overview:
+
+- The goroutine wakes up every `CheckInterval` to evaluate shrink conditions.
+- Shrinking can be triggered by either:
+  1. Extended idleness (`IdleThreshold` + `MinIdleBeforeShrink` checks)
+  2. Sustained low utilization (`MinUtilizationBeforeShrink` + `StableUnderutilizationRounds`)
+
+Shrink Execution:
+
+- When triggered, the pool reduces its capacity by `ShrinkPercent`.
+- It will never shrink below `MinCapacity` or below the number of in-use objects.
+- After a successful shrink, a `ShrinkCooldown` prevents immediate consecutive shrinks.
+
+Blocking Mechanism:
+
+- The goroutine tracks `ConsecutiveShrinks`. If the number of consecutive
+  shrink operations reaches `MaxConsecutiveShrinks`, it blocks itself using `sync.Cond`.
+- While blocked, the goroutine halts all shrink activity and logs the state.
+- It remains blocked until another goroutine calls `Get()` and signals the condition.
+
+This approach ensures:
+
+- Shrinks only happen under meaningful idle or underutilized conditions.
+- Excessive shrinking is avoided by blocking and requiring real activity to resume.
+- The system self-regulates based on both load and inactivity patterns.
 
 ---
 

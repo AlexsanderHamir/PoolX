@@ -36,6 +36,7 @@ func main() {
 		SetStableUnderutilizationRounds(2).
 		SetShrinkPercent(0.25). // shrink by 25% // 48
 		SetMinShrinkCapacity(16).
+		SetMaxConsecutiveShrinks(3).
 		Build()
 
 	if err != nil {
@@ -53,7 +54,7 @@ func main() {
 		objs = append(objs, obj)
 	}
 
-	time.Sleep(1 * time.Minute)
+	time.Sleep(10 * time.Second)
 
 	log.Println("[SHRINK] putting objs back")
 	for _, obj := range objs {

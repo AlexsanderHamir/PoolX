@@ -13,9 +13,11 @@ type Pool struct {
 	pool      []any
 
 	// Pass nil if you would like default config.
-	config *poolConfig
-	Stats  *PoolStats
-	mu     *sync.RWMutex
+	config          *poolConfig
+	Stats           *PoolStats
+	mu              *sync.RWMutex
+	cond            *sync.Cond
+	isShrinkBlocked bool
 }
 
 type PoolStats struct { // x
@@ -32,8 +34,9 @@ type PoolStats struct { // x
 	MissRate   float64 // x
 	ReuseRatio float64 // x
 
-	TotalGrowthEvents uint64 // x
-	TotalShrinkEvents uint64 // x
+	TotalGrowthEvents  uint64 // x
+	TotalShrinkEvents  uint64 // x
+	ConsecutiveShrinks uint64 // x
 
 	CurrentCapacity int // x
 	InitialCapacity int // x
@@ -100,6 +103,11 @@ type PoolShrinkParameters struct { // x
 	// ShrinkStepPercent determines how much of the pool should be reduced
 	// when a shrink operation is triggered (e.g. 0.25 = shrink by 25%).
 	ShrinkPercent float64 // x
+
+	// MaxConsecutiveShrinks defines how many shrink operations can happen back-to-back
+	// before the shrink logic pauses until a get request happens.
+	// The default is 2, setting for less than two won't be allowed.
+	MaxConsecutiveShrinks int
 
 	// MinCapacity defines the lowest allowed capacity after shrinking.
 	// The pool will never shrink below this value, even under aggressive conditions.
