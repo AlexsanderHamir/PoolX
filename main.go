@@ -32,9 +32,9 @@ func main() {
 		SetIdleThreshold(3 * time.Second).
 		SetMinIdleBeforeShrink(2).
 		SetShrinkCooldown(5 * time.Second).
-		SetMinUtilizationBeforeShrink(0.3). // 30% utilization // 19/20
+		SetMinUtilizationBeforeShrink(0.3).
 		SetStableUnderutilizationRounds(2).
-		SetShrinkPercent(0.25). // shrink by 25% // 48
+		SetShrinkPercent(0.25).
 		SetMinShrinkCapacity(16).
 		SetMaxConsecutiveShrinks(3).
 		Build()

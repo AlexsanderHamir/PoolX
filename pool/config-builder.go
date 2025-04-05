@@ -5,52 +5,52 @@ import (
 	"time"
 )
 
-type PoolConfigBuilder struct {
+type poolConfigBuilder struct {
 	config *poolConfig
 }
 
-func NewPoolConfigBuilder() *PoolConfigBuilder {
-	return &PoolConfigBuilder{
+func NewPoolConfigBuilder() *poolConfigBuilder {
+	return &poolConfigBuilder{
 		config: &poolConfig{
-			InitialCapacity:      defaultPoolCapacity,
-			PoolShrinkParameters: DefaultPoolShrinkParameters(),
-			PoolGrowthParameters: DefaultPoolGrowthParameters(),
+			initialCapacity:      defaultPoolCapacity,
+			poolShrinkParameters: defaultPoolShrinkParameters(),
+			poolGrowthParameters: defaultPoolGrowthParameters(),
 		},
 	}
 }
 
-func (b *PoolConfigBuilder) SetInitialCapacity(cap int) *PoolConfigBuilder {
-	b.config.InitialCapacity = cap
+func (b *poolConfigBuilder) SetInitialCapacity(cap int) *poolConfigBuilder {
+	b.config.initialCapacity = cap
 	return b
 }
 
-func (b *PoolConfigBuilder) SetGrowthExponentialThresholdFactor(factor float64) *PoolConfigBuilder {
+func (b *poolConfigBuilder) SetGrowthExponentialThresholdFactor(factor float64) *poolConfigBuilder {
 	if factor > 0 {
-		b.config.PoolGrowthParameters.ExponentialThresholdFactor = factor
+		b.config.poolGrowthParameters.exponentialThresholdFactor = factor
 	}
 	return b
 }
 
-func (b *PoolConfigBuilder) SetGrowthPercent(percent float64) *PoolConfigBuilder {
+func (b *poolConfigBuilder) SetGrowthPercent(percent float64) *poolConfigBuilder {
 	if percent > 0 {
-		b.config.PoolGrowthParameters.GrowthPercent = percent
+		b.config.poolGrowthParameters.growthPercent = percent
 	}
 	return b
 }
 
-func (b *PoolConfigBuilder) SetFixedGrowthFactor(factor float64) *PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFixedGrowthFactor(factor float64) *poolConfigBuilder {
 	if factor > 0 {
-		b.config.PoolGrowthParameters.FixedGrowthFactor = factor
+		b.config.poolGrowthParameters.fixedGrowthFactor = factor
 	}
 	return b
 }
 
 // When called, all shrink parameters must be set manually.
 // For partial overrides, leave EnforceCustomConfig to its default and set values directly.
-func (b *PoolConfigBuilder) EnforceCustomConfig() *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.EnforceCustomConfig = true
-	b.config.PoolShrinkParameters.AggressivenessLevel = aggressivenessDisabled
-	b.config.PoolShrinkParameters.ApplyDefaults(getShrinkDefaults())
+func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
+	b.config.poolShrinkParameters.enforceCustomConfig = true
+	b.config.poolShrinkParameters.aggressivenessLevel = aggressivenessDisabled
+	b.config.poolShrinkParameters.ApplyDefaults(getShrinkDefaults())
 	return b
 }
 
@@ -58,8 +58,8 @@ func (b *PoolConfigBuilder) EnforceCustomConfig() *PoolConfigBuilder {
 // Calling this will override individual shrink settings by applying preset defaults.
 // Use levels between aggressivenessConservative (1) and AggressivenessExtreme (5).
 // (can't call this function if you enable EnforceCustomConfig)
-func (b *PoolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *PoolConfigBuilder {
-	if b.config.PoolShrinkParameters.EnforceCustomConfig {
+func (b *poolConfigBuilder) SetShrinkAggressiveness(level aggressivenessLevel) *poolConfigBuilder {
+	if b.config.poolShrinkParameters.enforceCustomConfig {
 		panic("can't set AggressivenessLevel if EnforceCustomConfig is active")
 	}
 
@@ -67,101 +67,101 @@ func (b *PoolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *
 		panic("aggressive level is out of bounds")
 	}
 
-	b.config.PoolShrinkParameters.AggressivenessLevel = level
-	b.config.PoolShrinkParameters.ApplyDefaults(getShrinkDefaults())
+	b.config.poolShrinkParameters.aggressivenessLevel = level
+	b.config.poolShrinkParameters.ApplyDefaults(getShrinkDefaults())
 	return b
 }
 
-func (b *PoolConfigBuilder) SetShrinkCheckInterval(interval time.Duration) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.CheckInterval = interval
+func (b *poolConfigBuilder) SetShrinkCheckInterval(interval time.Duration) *poolConfigBuilder {
+	b.config.poolShrinkParameters.checkInterval = interval
 	return b
 }
 
-func (b *PoolConfigBuilder) SetIdleThreshold(duration time.Duration) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.IdleThreshold = duration
+func (b *poolConfigBuilder) SetIdleThreshold(duration time.Duration) *poolConfigBuilder {
+	b.config.poolShrinkParameters.idleThreshold = duration
 	return b
 }
 
-func (b *PoolConfigBuilder) SetMinIdleBeforeShrink(count int) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.MinIdleBeforeShrink = count
+func (b *poolConfigBuilder) SetMinIdleBeforeShrink(count int) *poolConfigBuilder {
+	b.config.poolShrinkParameters.minIdleBeforeShrink = count
 	return b
 }
 
-func (b *PoolConfigBuilder) SetShrinkCooldown(duration time.Duration) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.ShrinkCooldown = duration
+func (b *poolConfigBuilder) SetShrinkCooldown(duration time.Duration) *poolConfigBuilder {
+	b.config.poolShrinkParameters.shrinkCooldown = duration
 	return b
 }
 
-func (b *PoolConfigBuilder) SetMinUtilizationBeforeShrink(threshold float64) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.MinUtilizationBeforeShrink = threshold
+func (b *poolConfigBuilder) SetMinUtilizationBeforeShrink(threshold float64) *poolConfigBuilder {
+	b.config.poolShrinkParameters.minUtilizationBeforeShrink = threshold
 	return b
 }
 
-func (b *PoolConfigBuilder) SetStableUnderutilizationRounds(rounds int) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.StableUnderutilizationRounds = rounds
+func (b *poolConfigBuilder) SetStableUnderutilizationRounds(rounds int) *poolConfigBuilder {
+	b.config.poolShrinkParameters.stableUnderutilizationRounds = rounds
 	return b
 }
 
-func (b *PoolConfigBuilder) SetShrinkPercent(percent float64) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.ShrinkPercent = percent
+func (b *poolConfigBuilder) SetShrinkPercent(percent float64) *poolConfigBuilder {
+	b.config.poolShrinkParameters.shrinkPercent = percent
 	return b
 }
 
-func (b *PoolConfigBuilder) SetMinShrinkCapacity(minCap int) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.MinCapacity = minCap
+func (b *poolConfigBuilder) SetMinShrinkCapacity(minCap int) *poolConfigBuilder {
+	b.config.poolShrinkParameters.minCapacity = minCap
 	return b
 }
 
-func (b *PoolConfigBuilder) SetMaxConsecutiveShrinks(count int) *PoolConfigBuilder {
-	b.config.PoolShrinkParameters.MaxConsecutiveShrinks = count
+func (b *poolConfigBuilder) SetMaxConsecutiveShrinks(count int) *poolConfigBuilder {
+	b.config.poolShrinkParameters.maxConsecutiveShrinks = count
 	return b
 }
 
-func (b *PoolConfigBuilder) Build() (*poolConfig, error) {
-	if b.config.InitialCapacity <= 0 {
+func (b *poolConfigBuilder) Build() (*poolConfig, error) {
+	if b.config.initialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
 	}
 
-	psp := b.config.PoolShrinkParameters
+	psp := b.config.poolShrinkParameters
 
-	if psp.EnforceCustomConfig {
+	if psp.enforceCustomConfig {
 		switch {
-		case psp.MaxConsecutiveShrinks <= 0:
+		case psp.maxConsecutiveShrinks <= 0:
 			return nil, fmt.Errorf("MaxConsecutiveShrinks must be greater than 0")
-		case psp.CheckInterval <= 0:
+		case psp.checkInterval <= 0:
 			return nil, fmt.Errorf("CheckInterval must be greater than 0")
-		case psp.IdleThreshold <= 0:
+		case psp.idleThreshold <= 0:
 			return nil, fmt.Errorf("IdleThreshold must be greater than 0")
-		case psp.MinIdleBeforeShrink <= 0:
+		case psp.minIdleBeforeShrink <= 0:
 			return nil, fmt.Errorf("MinIdleBeforeShrink must be greater than 0")
-		case psp.IdleThreshold < psp.CheckInterval:
+		case psp.idleThreshold < psp.checkInterval:
 			return nil, fmt.Errorf("IdleThreshold must be >= CheckInterval")
-		case psp.MinCapacity > b.config.InitialCapacity:
+		case psp.minCapacity > b.config.initialCapacity:
 			return nil, fmt.Errorf("MinCapacity must be <= InitialCapacity")
-		case psp.ShrinkCooldown <= 0:
+		case psp.shrinkCooldown <= 0:
 			return nil, fmt.Errorf("ShrinkCooldown must be greater than 0")
-		case psp.MinUtilizationBeforeShrink <= 0 || psp.MinUtilizationBeforeShrink > 1.0:
+		case psp.minUtilizationBeforeShrink <= 0 || psp.minUtilizationBeforeShrink > 1.0:
 			return nil, fmt.Errorf("MinUtilizationBeforeShrink must be between 0 and 1.0")
-		case psp.StableUnderutilizationRounds <= 0:
+		case psp.stableUnderutilizationRounds <= 0:
 			return nil, fmt.Errorf("StableUnderutilizationRounds must be greater than 0")
-		case psp.ShrinkPercent <= 0 || psp.ShrinkPercent > 1.0:
+		case psp.shrinkPercent <= 0 || psp.shrinkPercent > 1.0:
 			return nil, fmt.Errorf("ShrinkPercent must be between 0 and 1.0")
-		case psp.MinCapacity <= 0:
+		case psp.minCapacity <= 0:
 			return nil, fmt.Errorf("MinCapacity must be greater than 0")
 		}
 	}
 
-	pgp := b.config.PoolGrowthParameters
-	if pgp.ExponentialThresholdFactor <= 0 {
+	pgp := b.config.poolGrowthParameters
+	if pgp.exponentialThresholdFactor <= 0 {
 		return nil, fmt.Errorf("ExponentialThresholdFactor must be greater than 0")
 	}
 
-	if pgp.GrowthPercent <= 0 {
-		return nil, fmt.Errorf("GrowthPercent must be > 0 (you gave %.2f)", pgp.GrowthPercent)
+	if pgp.growthPercent <= 0 {
+		return nil, fmt.Errorf("GrowthPercent must be > 0 (you gave %.2f)", pgp.growthPercent)
 	}
 
-	if pgp.FixedGrowthFactor <= 0 {
-		return nil, fmt.Errorf("FixedGrowthFactor must be > 0 (you gave %.2f)", pgp.FixedGrowthFactor)
+	if pgp.fixedGrowthFactor <= 0 {
+		return nil, fmt.Errorf("FixedGrowthFactor must be > 0 (you gave %.2f)", pgp.fixedGrowthFactor)
 	}
 
 	return b.config, nil
