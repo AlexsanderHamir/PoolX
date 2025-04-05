@@ -49,7 +49,7 @@ func (b *poolConfigBuilder) SetFixedGrowthFactor(factor float64) *poolConfigBuil
 // For partial overrides, leave EnforceCustomConfig to its default and set values directly.
 func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
 	b.config.poolShrinkParameters.enforceCustomConfig = true
-	b.config.poolShrinkParameters.aggressivenessLevel = aggressivenessDisabled
+	b.config.poolShrinkParameters.aggressivenessLevel = AggressivenessDisabled
 	b.config.poolShrinkParameters.ApplyDefaults(getShrinkDefaults())
 	return b
 }
@@ -58,12 +58,12 @@ func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
 // Calling this will override individual shrink settings by applying preset defaults.
 // Use levels between aggressivenessConservative (1) and AggressivenessExtreme (5).
 // (can't call this function if you enable EnforceCustomConfig)
-func (b *poolConfigBuilder) SetShrinkAggressiveness(level aggressivenessLevel) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *poolConfigBuilder {
 	if b.config.poolShrinkParameters.enforceCustomConfig {
 		panic("can't set AggressivenessLevel if EnforceCustomConfig is active")
 	}
 
-	if level <= aggressivenessDisabled || level > aggressivenessExtreme {
+	if level <= AggressivenessDisabled || level > AggressivenessExtreme {
 		panic("aggressive level is out of bounds")
 	}
 

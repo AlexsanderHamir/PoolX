@@ -13,30 +13,18 @@ type Example struct {
 }
 
 func main() {
-	allocator := func() any {
+	allocator := func() *Example {
 		return &Example{}
 	}
 
-	cleaner := func(obj any) {
-		if e, ok := obj.(*Example); ok {
-			e.name = ""
-			e.age = 0
-			e.friends = nil
-		}
+	cleaner := func(e *Example) {
+		e.name = ""
+		e.age = 0
+		e.friends = nil
 	}
 
 	config, err := pool.NewPoolConfigBuilder().
-		EnforceCustomConfig().
-		SetInitialCapacity(64).
-		SetShrinkCheckInterval(2 * time.Second).
-		SetIdleThreshold(3 * time.Second).
-		SetMinIdleBeforeShrink(2).
-		SetShrinkCooldown(5 * time.Second).
-		SetMinUtilizationBeforeShrink(0.3).
-		SetStableUnderutilizationRounds(2).
-		SetShrinkPercent(0.25).
-		SetMinShrinkCapacity(16).
-		SetMaxConsecutiveShrinks(3).
+		SetShrinkAggressiveness(pool.AggressivenessExtreme).
 		Build()
 
 	if err != nil {
@@ -48,8 +36,8 @@ func main() {
 		panic(err)
 	}
 
-	var objs []any
-	for range 30 {
+	var objs []*Example
+	for i := 0; i < 100000; i++ {
 		obj := poolObj.Get()
 		objs = append(objs, obj)
 	}

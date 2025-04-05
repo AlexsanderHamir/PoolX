@@ -8,15 +8,15 @@ import (
 	"time"
 )
 
-type aggressivenessLevel int
+type AggressivenessLevel int
 
 const (
-	aggressivenessDisabled            aggressivenessLevel = 0
-	aggressivenessConservative        aggressivenessLevel = 1
-	aggressivenessBalanced            aggressivenessLevel = 2
-	aggressivenessAggressive          aggressivenessLevel = 3
-	aggressivenessVeryAggressive      aggressivenessLevel = 4
-	aggressivenessExtreme             aggressivenessLevel = 5
+	AggressivenessDisabled            AggressivenessLevel = 0
+	AggressivenessConservative        AggressivenessLevel = 1
+	AggressivenessBalanced            AggressivenessLevel = 2
+	AggressivenessAggressive          AggressivenessLevel = 3
+	AggressivenessVeryAggressive      AggressivenessLevel = 4
+	AggressivenessExtreme             AggressivenessLevel = 5
 	defaultPoolCapacity                                   = 64
 	defaultExponentialThresholdFactor                     = 4.0
 	defaultGrowthPercent                                  = 0.5
@@ -24,18 +24,22 @@ const (
 	defaultMinCapacity                                    = 8
 )
 
-func (p *pool) Get() any {
+func (p *pool[T]) Get() T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	now := time.Now()
-	var obj any
-
 	log.Printf("[POOL] Get() called | Current pool size: %d | In-use: %d | Capacity: %d", len(p.pool), p.Stats.objectsInUse, p.Stats.currentCapacity)
 
 	if len(p.pool) == 0 {
 		p.grow(&now)
 		log.Printf("[POOL] pool was empty — triggered grow() | New pool size: %d", len(p.pool))
+
+		if len(p.pool) == 0 {
+			var zero T
+			log.Println("[POOL] grow() did not add to the pool — returning zero value")
+			return zero
+		}
 	} else {
 		p.Stats.hitCount++
 		log.Println("[POOL] Reused object from pool")
@@ -46,7 +50,7 @@ func (p *pool) Get() any {
 	p.updateDerivedStats()
 
 	last := len(p.pool) - 1
-	obj = p.pool[last]
+	obj := p.pool[last]
 	p.pool = p.pool[:last]
 
 	log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
@@ -59,7 +63,7 @@ func (p *pool) Get() any {
 	return obj
 }
 
-func (p *pool) Put(obj any) {
+func (p *pool[T]) Put(obj T) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -73,53 +77,52 @@ func (p *pool) Put(obj any) {
 	log.Printf("[POOL] Put() called | Object returned to pool | pool size: %d | In-use: %d", len(p.pool), p.Stats.objectsInUse)
 }
 
-func (p *pool) shrink() {
-	shrinkParams := p.config.poolShrinkParameters
-	ticker := time.NewTicker(shrinkParams.checkInterval)
+func (p *pool[T]) shrink() {
+	params := p.config.poolShrinkParameters
+	ticker := time.NewTicker(params.checkInterval)
 	defer ticker.Stop()
 
 	var (
-		idles                       int
-		underutilizationRounds      int
-		shrinkPermissionIdleness    bool
-		shrinkPermissionUtilization bool
+		idleCount, underutilCount int
+		idleOK, utilOK            bool
 	)
 
 	for range ticker.C {
 		p.mu.Lock()
 
-		if p.Stats.consecutiveShrinks == uint64(shrinkParams.maxConsecutiveShrinks) {
-			log.Println("[SHRINK] BLOCKED UNTIL A GET CALL IS MADE !!!!!")
+		if p.Stats.consecutiveShrinks == uint64(params.maxConsecutiveShrinks) {
+			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
 			p.isShrinkBlocked = true
 			p.cond.Wait()
 			p.isShrinkBlocked = false
 		}
 
-		if time.Since(p.Stats.lastShrinkTime) < shrinkParams.shrinkCooldown {
-			log.Printf("[SHRINK] Cooldown active: %v remaining", shrinkParams.shrinkCooldown-time.Since(p.Stats.lastShrinkTime))
+		if time.Since(p.Stats.lastShrinkTime) < params.shrinkCooldown {
+			remaining := params.shrinkCooldown - time.Since(p.Stats.lastShrinkTime)
+			log.Printf("[SHRINK] Cooldown active: %v remaining", remaining)
 			p.mu.Unlock()
 			continue
 		}
 
-		p.IndleCheck(&idles, &shrinkPermissionIdleness)
-		log.Printf("[SHRINK] IdleCheck => idles: %d / minRequired: %d | permission: %v", idles, shrinkParams.minIdleBeforeShrink, shrinkPermissionIdleness)
+		p.IndleCheck(&idleCount, &idleOK)
+		log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", idleCount, params.minIdleBeforeShrink, idleOK)
 
-		p.UtilizationCheck(&underutilizationRounds, &shrinkPermissionUtilization)
-		log.Printf("[SHRINK] UtilizationCheck => rounds: %d / stableRequired: %d | permission: %v", underutilizationRounds, shrinkParams.stableUnderutilizationRounds, shrinkPermissionUtilization)
+		p.UtilizationCheck(&underutilCount, &utilOK)
+		log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", underutilCount, params.stableUnderutilizationRounds, utilOK)
 
-		if shrinkPermissionIdleness || shrinkPermissionUtilization {
-			log.Println("[SHRINK] Conditions met. Executing shrink.")
+		if idleOK || utilOK {
+			log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 			p.ShrinkExecution()
 
-			idles, underutilizationRounds = 0, 0
-			shrinkPermissionIdleness, shrinkPermissionUtilization = false, false
+			idleCount, underutilCount = 0, 0
+			idleOK, utilOK = false, false
 		}
 
 		p.mu.Unlock()
 	}
 }
 
-func (p *pool) grow(now *time.Time) {
+func (p *pool[T]) grow(now *time.Time) {
 	cfg := p.config.poolGrowthParameters
 	initialCap := p.config.initialCapacity
 
@@ -130,17 +133,19 @@ func (p *pool) grow(now *time.Time) {
 	if p.Stats.currentCapacity < exponentialThreshold {
 		growth := max(int(float64(p.Stats.currentCapacity)*cfg.growthPercent), 1)
 		newCapacity = p.Stats.currentCapacity + growth
-		log.Printf("[GROW] Using exponential growth: +%d → %d", growth, newCapacity)
+		log.Printf("[GROW] Strategy: exponential | Threshold: %d | Current: %d | Growth: %d | New capacity: %d",
+			exponentialThreshold, p.Stats.currentCapacity, growth, newCapacity)
 	} else {
 		newCapacity = p.Stats.currentCapacity + fixedStep
-		log.Printf("[GROW] Using fixed-step growth: +%d → %d", fixedStep, newCapacity)
+		log.Printf("[GROW] Strategy: fixed-step | Threshold: %d | Current: %d | Step: %d | New capacity: %d",
+			exponentialThreshold, p.Stats.currentCapacity, fixedStep, newCapacity)
 	}
 
-	newPool := make([]any, len(p.pool), newCapacity)
+	newPool := make([]T, len(p.pool), newCapacity)
 	copy(newPool, p.pool)
 
 	newObjsQty := newCapacity - p.Stats.currentCapacity
-	for range newObjsQty {
+	for i := 0; i < newObjsQty; i++ {
 		newPool = append(newPool, p.allocator())
 	}
 
@@ -151,15 +156,15 @@ func (p *pool) grow(now *time.Time) {
 	p.Stats.totalGrowthEvents++
 	p.Stats.lastGrowTime = *now
 
-	log.Printf("[GROW] pool grew to capacity %d (added %d new objects)", newCapacity, newObjsQty)
+	log.Printf("[GROW] Final state | New capacity: %d | Objects added: %d | Pool size after grow: %d", newCapacity, newObjsQty, len(p.pool))
 }
 
-func (p *poolShrinkParameters) ApplyDefaultsFromTable(table map[aggressivenessLevel]*shrinkDefaults) {
-	if p.aggressivenessLevel < aggressivenessDisabled {
-		p.aggressivenessLevel = aggressivenessDisabled
+func (p *poolShrinkParameters) ApplyDefaultsFromTable(table map[AggressivenessLevel]*shrinkDefaults) {
+	if p.aggressivenessLevel < AggressivenessDisabled {
+		p.aggressivenessLevel = AggressivenessDisabled
 	}
-	if p.aggressivenessLevel > aggressivenessExtreme {
-		p.aggressivenessLevel = aggressivenessExtreme
+	if p.aggressivenessLevel > AggressivenessExtreme {
+		p.aggressivenessLevel = AggressivenessExtreme
 	}
 	def, ok := table[p.aggressivenessLevel]
 	if !ok {
@@ -178,7 +183,7 @@ func (p *poolShrinkParameters) ApplyDefaultsFromTable(table map[aggressivenessLe
 
 func defaultPoolShrinkParameters() *poolShrinkParameters {
 	psp := &poolShrinkParameters{
-		aggressivenessLevel: aggressivenessBalanced,
+		aggressivenessLevel: AggressivenessBalanced,
 	}
 
 	psp.ApplyDefaults(getShrinkDefaults())
@@ -186,13 +191,13 @@ func defaultPoolShrinkParameters() *poolShrinkParameters {
 	return psp
 }
 
-func (p *poolShrinkParameters) ApplyDefaults(table map[aggressivenessLevel]*shrinkDefaults) {
-	if p.aggressivenessLevel < aggressivenessDisabled {
-		p.aggressivenessLevel = aggressivenessDisabled
+func (p *poolShrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDefaults) {
+	if p.aggressivenessLevel < AggressivenessDisabled {
+		p.aggressivenessLevel = AggressivenessDisabled
 	}
 
-	if p.aggressivenessLevel > aggressivenessExtreme {
-		p.aggressivenessLevel = aggressivenessExtreme
+	if p.aggressivenessLevel > AggressivenessExtreme {
+		p.aggressivenessLevel = AggressivenessExtreme
 	}
 
 	def, ok := table[p.aggressivenessLevel]
@@ -218,7 +223,7 @@ func defaultPoolGrowthParameters() *poolGrowthParameters {
 	}
 }
 
-func NewPool(config *poolConfig, allocator func() any, cleaner func(any)) (*pool, error) {
+func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
 	if config == nil {
 		config = &poolConfig{
 			initialCapacity:      defaultPoolCapacity,
@@ -227,14 +232,17 @@ func NewPool(config *poolConfig, allocator func() any, cleaner func(any)) (*pool
 		}
 	}
 
-	poolObj := pool{
+	poolObj := pool[T]{
 		allocator: allocator,
 		cleaner:   cleaner,
 		mu:        &sync.RWMutex{},
 		config:    config,
-		Stats:     &poolStats{currentCapacity: config.initialCapacity, availableObjects: uint64(config.initialCapacity), initialCapacity: config.initialCapacity},
+		Stats: &poolStats{
+			currentCapacity:  config.initialCapacity,
+			availableObjects: uint64(config.initialCapacity),
+			initialCapacity:  config.initialCapacity,
+		},
 	}
-
 	poolObj.cond = sync.NewCond(poolObj.mu)
 
 	obj := allocator()
@@ -243,7 +251,6 @@ func NewPool(config *poolConfig, allocator func() any, cleaner func(any)) (*pool
 	}
 
 	poolObj.pool = append(poolObj.pool, obj)
-
 	for i := 1; i < config.initialCapacity; i++ {
 		poolObj.pool = append(poolObj.pool, allocator())
 	}
@@ -253,7 +260,7 @@ func NewPool(config *poolConfig, allocator func() any, cleaner func(any)) (*pool
 	return &poolObj, nil
 }
 
-func (p *pool) updateUsageStats() {
+func (p *pool[T]) updateUsageStats() {
 	p.Stats.objectsInUse++
 	p.Stats.availableObjects--
 	p.Stats.totalGets++
@@ -267,7 +274,7 @@ func (p *pool) updateUsageStats() {
 	}
 }
 
-func (p *pool) updateDerivedStats() {
+func (p *pool[T]) updateDerivedStats() {
 	totalAccesses := p.Stats.hitCount + p.Stats.missCount
 	if totalAccesses > 0 {
 		p.Stats.hitRate = float64(p.Stats.hitCount) / float64(totalAccesses)
@@ -284,33 +291,43 @@ func (p *pool) updateDerivedStats() {
 	}
 }
 
-func (p *pool) performShrink(newCapacity int) {
+func (p *pool[T]) performShrink(newCapacity int) {
+	currentCap := p.Stats.currentCapacity
+	inUse := p.Stats.objectsInUse
+	minCap := p.config.poolShrinkParameters.minCapacity
+
 	if len(p.pool) == 0 {
-		log.Println("[SHRINK] All objects in use, can't resize")
+		log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
 		return
 	}
 
-	if p.Stats.currentCapacity <= p.config.poolShrinkParameters.minCapacity {
-		log.Println("[SHRINK] pool is at or below MinCapacity, can't resize")
+	if currentCap <= minCap {
+		log.Printf("[SHRINK] Skipped — current capacity (%d) is at or below MinCapacity (%d)", currentCap, minCap)
 		return
 	}
 
-	if newCapacity >= p.Stats.currentCapacity {
-		log.Println("[SHRINK] New capacity is not smaller, skipping shrink")
+	if newCapacity >= currentCap {
+		log.Printf("[SHRINK] Skipped — new capacity (%d) is not smaller than current (%d)", newCapacity, currentCap)
 		return
 	}
 
 	if newCapacity == 0 {
-		log.Println("[SHRINK] New capacity is zero — invalid shrink")
+		log.Println("[SHRINK] Skipped — new capacity is zero (invalid)")
 		return
 	}
 
-	copyRoom := newCapacity - int(p.Stats.objectsInUse)
-	copyCount := min(copyRoom, len(p.pool))
+	copyRoom := newCapacity - int(inUse)
+	if copyRoom <= 0 {
+		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
+		return
+	}
 
-	newPool := make([]any, copyCount, newCapacity)
+	copyCount := min(copyRoom, len(p.pool))
+	newPool := make([]T, copyCount, newCapacity)
 	copy(newPool, p.pool[:copyCount])
 	p.pool = newPool
+
+	log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d", currentCap, newCapacity, copyCount, inUse)
 
 	p.Stats.availableObjects = uint64(copyCount)
 	p.Stats.currentCapacity = newCapacity
@@ -319,81 +336,105 @@ func (p *pool) performShrink(newCapacity int) {
 	p.Stats.consecutiveShrinks++
 }
 
-func (p *pool) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
-	if time.Since(p.Stats.lastTimeCalledGet) >= p.config.poolShrinkParameters.idleThreshold {
-		*idles++
-		if *idles >= p.config.poolShrinkParameters.minIdleBeforeShrink {
+func (p *pool[T]) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
+	idleDuration := time.Since(p.Stats.lastTimeCalledGet)
+	threshold := p.config.poolShrinkParameters.idleThreshold
+	required := p.config.poolShrinkParameters.minIdleBeforeShrink
+
+	if idleDuration >= threshold {
+		*idles += 1
+		if *idles >= required {
 			*shrinkPermissionIdleness = true
 		}
+		log.Printf("[SHRINK] IdleCheck passed — idleDuration: %v | idles: %d/%d", idleDuration, *idles, required)
 	} else {
-		// Combat random drops in get calls
 		if *idles > 0 {
-			*idles--
+			*idles -= 1
 		}
+		log.Printf("[SHRINK] IdleCheck reset — recent activity detected | idles: %d/%d", *idles, required)
 	}
 }
 
-func (p *pool) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
-	total := p.Stats.objectsInUse + p.Stats.availableObjects
+func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
+	inUse := p.Stats.objectsInUse
+	available := p.Stats.availableObjects
+	total := inUse + available
+
 	var utilization float64
 	if total > 0 {
-		utilization = (float64(p.Stats.objectsInUse) / float64(total)) * 100
+		utilization = (float64(inUse) / float64(total)) * 100
 	}
 
-	if utilization <= p.config.poolShrinkParameters.minUtilizationBeforeShrink {
-		*underutilizationRounds++
-		if *underutilizationRounds >= p.config.poolShrinkParameters.stableUnderutilizationRounds {
+	minUtil := p.config.poolShrinkParameters.minUtilizationBeforeShrink
+	requiredRounds := p.config.poolShrinkParameters.stableUnderutilizationRounds
+
+	if utilization <= minUtil {
+		*underutilizationRounds += 1
+		log.Printf("[SHRINK] UtilizationCheck — utilization: %.2f%% (threshold: %.2f%%) | round: %d/%d", utilization, minUtil, *underutilizationRounds, requiredRounds)
+
+		if *underutilizationRounds >= requiredRounds {
 			*shrinkPermissionUtilization = true
+			log.Println("[SHRINK] UtilizationCheck — underutilization stable, shrink allowed")
 		}
 	} else {
-		// Combat random drops in pool usage
 		if *underutilizationRounds > 0 {
-			*underutilizationRounds--
+			*underutilizationRounds -= 1
+			log.Printf("[SHRINK] UtilizationCheck — usage recovered, reducing rounds: %d/%d", *underutilizationRounds, requiredRounds)
+		} else {
+			log.Printf("[SHRINK] UtilizationCheck — usage healthy: %.2f%% > %.2f%%", utilization, minUtil)
 		}
 	}
 }
 
-func (p *pool) ShrinkExecution() {
-	newCapacity := int(float64(p.Stats.currentCapacity) * (1.0 - p.config.poolShrinkParameters.shrinkPercent))
-	log.Printf("[SHRINK] current capacity: %d", p.Stats.currentCapacity)
+func (p *pool[T]) ShrinkExecution() {
+	currentCap := p.Stats.currentCapacity
+	minCap := p.config.poolShrinkParameters.minCapacity
+	inUse := int(p.Stats.objectsInUse)
 
-	log.Printf("[SHRINK] new capacity: %d", newCapacity)
-	log.Printf("[SHRINK] min capacity: %d", p.config.poolShrinkParameters.minCapacity)
+	newCapacity := int(float64(currentCap) * (1.0 - p.config.poolShrinkParameters.shrinkPercent))
 
-	if newCapacity < p.config.poolShrinkParameters.minCapacity {
-		log.Printf("[SHRINK] min capacity hit: %d", newCapacity)
-		newCapacity = p.config.poolShrinkParameters.minCapacity
+	log.Println("[SHRINK] ----------------------------------------")
+	log.Printf("[SHRINK] Starting shrink execution")
+	log.Printf("[SHRINK] Current capacity       : %d", currentCap)
+	log.Printf("[SHRINK] Requested new capacity : %d", newCapacity)
+	log.Printf("[SHRINK] Minimum allowed        : %d", minCap)
+	log.Printf("[SHRINK] Currently in use       : %d", inUse)
+	log.Printf("[SHRINK] Pool length            : %d", len(p.pool))
+
+	if newCapacity < minCap {
+		log.Printf("[SHRINK] Adjusting to min capacity: %d", minCap)
+		newCapacity = minCap
 	}
 
-	if newCapacity < int(p.Stats.objectsInUse) {
-		log.Printf("[SHRINK] more objects in use than capacity: %d", p.Stats.objectsInUse)
-		newCapacity = int(p.Stats.objectsInUse)
+	if newCapacity < inUse {
+		log.Printf("[SHRINK] Adjusting to match in-use objects: %d", inUse)
+		newCapacity = inUse
 	}
-
-	log.Println("[SHRINK] pool length: ", len(p.pool))
 
 	p.performShrink(newCapacity)
 
+	log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)
+	log.Println("[SHRINK] ----------------------------------------")
 }
 
-func getShrinkDefaults() map[aggressivenessLevel]*shrinkDefaults {
-	return map[aggressivenessLevel]*shrinkDefaults{
-		aggressivenessDisabled: {
+func getShrinkDefaults() map[AggressivenessLevel]*shrinkDefaults {
+	return map[AggressivenessLevel]*shrinkDefaults{
+		AggressivenessDisabled: {
 			0, 0, 0, 0, 0, 0, 0, 0,
 		},
-		aggressivenessConservative: {
+		AggressivenessConservative: {
 			5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.20, 3, 0.10, 1,
 		},
-		aggressivenessBalanced: {
+		AggressivenessBalanced: {
 			2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.30, 3, 0.25, 2,
 		},
-		aggressivenessAggressive: {
+		AggressivenessAggressive: {
 			1 * time.Minute, 2 * time.Minute, 2, 2 * time.Minute, 0.40, 2, 0.50, 3,
 		},
-		aggressivenessVeryAggressive: {
+		AggressivenessVeryAggressive: {
 			30 * time.Second, 1 * time.Minute, 1, 1 * time.Minute, 0.50, 1, 0.65, 4,
 		},
-		aggressivenessExtreme: {
+		AggressivenessExtreme: {
 			10 * time.Second, 20 * time.Second, 1, 30 * time.Second, 0.60, 1, 0.80, 5,
 		},
 	}
