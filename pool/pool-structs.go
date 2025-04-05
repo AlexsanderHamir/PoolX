@@ -2,6 +2,7 @@ package pool
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,7 +14,7 @@ type pool[T any] struct {
 	pool      []T
 
 	config          *poolConfig
-	Stats           *poolStats
+	stats           *poolStats
 	mu              *sync.RWMutex
 	cond            *sync.Cond
 	isShrinkBlocked bool
@@ -31,30 +32,34 @@ type shrinkDefaults struct {
 }
 
 type poolStats struct {
-	objectsInUse          uint64
-	utilizationPercentage float64
-	availableObjects      uint64
-	peakInUse             uint64
+	// No lock needed
 
-	totalGets  uint64
-	totalPuts  uint64
-	hitCount   uint64
-	missCount  uint64
-	hitRate    float64
-	missRate   float64
-	reuseRatio float64
+	objectsInUse       atomic.Uint64
+	availableObjects   atomic.Uint64
+	peakInUse          atomic.Uint64
+	totalGets          atomic.Uint64
+	totalPuts          atomic.Uint64 // // not using it, just calculating value.
+	hitCount           atomic.Uint64
+	missCount          atomic.Uint64
+	totalGrowthEvents  atomic.Uint64 // not using it, just calculating value.
+	totalShrinkEvents  atomic.Uint64 // not using it, just calculating value.
+	consecutiveShrinks atomic.Uint64
+	currentCapacity    atomic.Uint64
 
-	totalGrowthEvents  uint64
-	totalShrinkEvents  uint64
-	consecutiveShrinks uint64
-
-	currentCapacity int
+	// Config set value, never changes
 	initialCapacity int
 
+	// Lock needed
+	mu                    *sync.RWMutex
+	hitRate               float64 // not using it, just calculating value.
+	missRate              float64 // not using it, just calculating value.
+	reuseRatio            float64 // not using it, just calculating value.
+	utilizationPercentage float64 // not using it, just calculating value.
+
 	lastTimeCalledGet time.Time
-	lastTimeCalledPut time.Time
+	lastTimeCalledPut time.Time // not using it, just calculating value.
 	lastShrinkTime    time.Time
-	lastGrowTime      time.Time
+	lastGrowTime      time.Time // not using it, just calculating value.
 }
 
 type poolConfig struct {

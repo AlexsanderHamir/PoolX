@@ -37,7 +37,7 @@ func main() {
 	}
 
 	var objs []*Example
-	for i := 0; i < 100000; i++ {
+	for range 100000 {
 		obj := poolObj.Get()
 		objs = append(objs, obj)
 	}
