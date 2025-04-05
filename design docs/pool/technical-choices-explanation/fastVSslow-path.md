@@ -1,5 +1,3 @@
-## Docs
-
 ### 🧠 Object Access Hierarchy
 
 The pool is designed with a 3-layer hierarchy for optimized access and reuse — similar to a CPU memory hierarchy:
