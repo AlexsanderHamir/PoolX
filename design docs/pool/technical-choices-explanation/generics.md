@@ -1,4 +1,3 @@
----
 # Why We Switched from Interfaces to Generics
 
 ## Background
