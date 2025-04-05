@@ -11,6 +11,7 @@ import (
 type AggressivenessLevel int
 
 const (
+	defaultAggressiveness             AggressivenessLevel = AggressivenessBalanced
 	AggressivenessDisabled            AggressivenessLevel = 0
 	AggressivenessConservative        AggressivenessLevel = 1
 	AggressivenessBalanced            AggressivenessLevel = 2
@@ -22,9 +23,74 @@ const (
 	defaultGrowthPercent                                  = 0.5
 	defaultFixedGrowthFactor                              = 1.0
 	defaultMinCapacity                                    = 8
+	defaultfillAggressiveness                             = fillAggressivenessExtreme
+	fillAggressivenessExtreme                             = 1.0
 )
 
-func (p *pool[T]) Get() T {
+func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
+	if config == nil {
+		config = &poolConfig{
+			initialCapacity: defaultPoolCapacity,
+			shrink:          defaultPoolShrinkParameters(),
+			growth:          defaultPoolGrowthParameters(),
+			fastPath:        defaultFastPathParameters(),
+		}
+	}
+
+	stats := &poolStats{mu: &sync.RWMutex{}}
+	stats.initialCapacity += config.initialCapacity
+	stats.currentCapacity.Store(uint64(config.initialCapacity))
+	stats.availableObjects.Store(uint64(config.initialCapacity))
+
+	poolObj := pool[T]{
+		cacheL1:   make(chan T, config.fastPath.bufferSize),
+		allocator: allocator,
+		cleaner:   cleaner,
+		mu:        &sync.RWMutex{},
+		config:    config,
+		stats:     stats,
+	}
+	poolObj.cond = sync.NewCond(poolObj.mu)
+
+	obj := poolObj.allocator()
+	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("allocator must return a pointer, got %T", obj)
+	}
+
+	fillTarget := int(float64(poolObj.config.fastPath.bufferSize) * poolObj.config.fastPath.fillAggressiveness)
+	fastPathRemaining := fillTarget
+
+	poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
+	for i := 1; i < config.initialCapacity; i++ {
+		obj := poolObj.allocator()
+		poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
+	}
+
+	go poolObj.shrink()
+
+	return &poolObj, nil
+}
+
+// func (p *pool[T]) Get() T {
+
+// }
+
+func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
+	if *fastPathRemaining > 0 {
+		select {
+		case p.cacheL1 <- obj:
+			*fastPathRemaining--
+			return
+		default:
+			// avoids blocking
+		}
+	}
+	p.pool = append(p.pool, obj)
+}
+
+func (p *pool[T]) fastPath() T { return <-p.cacheL1 }
+
+func (p *pool[T]) slowPath(isRefil bool) T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -35,19 +101,16 @@ func (p *pool[T]) Get() T {
 		p.grow(now)
 		log.Printf("[POOL] pool was empty — triggered grow() | New pool size: %d", len(p.pool))
 
-		if len(p.pool) == 0 {
-			var zero T
-			log.Println("[POOL] grow() did not add to the pool — returning zero value")
-			return zero
-		}
 	} else {
 		p.stats.hitCount.Add(1)
 		log.Println("[POOL] Reused object from pool")
 	}
 
 	p.stats.lastTimeCalledGet = now
-	p.updateUsageStats()
-	p.updateDerivedStats()
+	if !isRefil {
+		p.updateUsageStats()
+		p.updateDerivedStats()
+	}
 
 	last := len(p.pool) - 1
 	obj := p.pool[last]
@@ -55,12 +118,29 @@ func (p *pool[T]) Get() T {
 
 	log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
 
+	// TODO -  move to get
 	if p.isShrinkBlocked {
 		log.Println("[POOL] Shrink logic was blocked — unblocking via cond.Broadcast()")
 		p.cond.Broadcast()
 	}
 
 	return obj
+}
+
+func (p *pool[T]) slowPathBatchInternal(n int) []T {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.pool) == 0 || n > len(p.pool) {
+		now := time.Now()
+		p.grow(now)
+	}
+
+	start := len(p.pool) - n
+	batch := p.pool[start:]
+	p.pool = p.pool[:start]
+
+	return batch
 }
 
 func (p *pool[T]) Put(obj T) {
@@ -78,7 +158,7 @@ func (p *pool[T]) Put(obj T) {
 }
 
 func (p *pool[T]) shrink() {
-	params := p.config.poolShrinkParameters
+	params := p.config.shrink
 	ticker := time.NewTicker(params.checkInterval)
 	defer ticker.Stop()
 
@@ -123,7 +203,7 @@ func (p *pool[T]) shrink() {
 }
 
 func (p *pool[T]) grow(now time.Time) {
-	cfg := p.config.poolGrowthParameters
+	cfg := p.config.growth
 	initialCap := uint64(p.config.initialCapacity)
 
 	currentCap := p.stats.currentCapacity.Load()
@@ -167,7 +247,7 @@ func (p *pool[T]) grow(now time.Time) {
 		newCapacity, newObjsQty, len(p.pool))
 }
 
-func (p *poolShrinkParameters) ApplyDefaultsFromTable(table map[AggressivenessLevel]*shrinkDefaults) {
+func (p *shrinkParameters) ApplyDefaultsFromTable(table map[AggressivenessLevel]*shrinkDefaults) {
 	if p.aggressivenessLevel < AggressivenessDisabled {
 		p.aggressivenessLevel = AggressivenessDisabled
 	}
@@ -189,9 +269,9 @@ func (p *poolShrinkParameters) ApplyDefaultsFromTable(table map[AggressivenessLe
 	p.maxConsecutiveShrinks = def.maxShrinks
 }
 
-func defaultPoolShrinkParameters() *poolShrinkParameters {
-	psp := &poolShrinkParameters{
-		aggressivenessLevel: AggressivenessBalanced,
+func defaultPoolShrinkParameters() *shrinkParameters {
+	psp := &shrinkParameters{
+		aggressivenessLevel: defaultAggressiveness,
 	}
 
 	psp.ApplyDefaults(getShrinkDefaults())
@@ -199,7 +279,7 @@ func defaultPoolShrinkParameters() *poolShrinkParameters {
 	return psp
 }
 
-func (p *poolShrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDefaults) {
+func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDefaults) {
 	if p.aggressivenessLevel < AggressivenessDisabled {
 		p.aggressivenessLevel = AggressivenessDisabled
 	}
@@ -223,51 +303,12 @@ func (p *poolShrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shri
 	p.maxConsecutiveShrinks = def.maxShrinks
 }
 
-func defaultPoolGrowthParameters() *poolGrowthParameters {
-	return &poolGrowthParameters{
+func defaultPoolGrowthParameters() *growthParameters {
+	return &growthParameters{
 		exponentialThresholdFactor: defaultExponentialThresholdFactor,
 		growthPercent:              defaultGrowthPercent,
 		fixedGrowthFactor:          defaultFixedGrowthFactor,
 	}
-}
-
-func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
-	if config == nil {
-		config = &poolConfig{
-			initialCapacity:      defaultPoolCapacity,
-			poolShrinkParameters: defaultPoolShrinkParameters(),
-			poolGrowthParameters: defaultPoolGrowthParameters(),
-		}
-	}
-
-	stats := &poolStats{mu: &sync.RWMutex{}}
-	stats.initialCapacity += config.initialCapacity
-	stats.currentCapacity.Store(uint64(config.initialCapacity))
-	stats.availableObjects.Store(uint64(config.initialCapacity))
-
-	poolObj := pool[T]{
-		allocator: allocator,
-		cleaner:   cleaner,
-		mu:        &sync.RWMutex{},
-		config:    config,
-		stats:     stats,
-	}
-
-	poolObj.cond = sync.NewCond(poolObj.mu)
-
-	obj := allocator()
-	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("allocator must return a pointer, got %T", obj)
-	}
-
-	poolObj.pool = append(poolObj.pool, obj)
-	for i := 1; i < config.initialCapacity; i++ {
-		poolObj.pool = append(poolObj.pool, allocator())
-	}
-
-	go poolObj.shrink()
-
-	return &poolObj, nil
 }
 
 func (p *pool[T]) updateUsageStats() {
@@ -322,8 +363,10 @@ func (p *pool[T]) updateDerivedStats() {
 func (p *pool[T]) performShrink(newCapacity int) {
 	currentCap := int(p.stats.currentCapacity.Load())
 	inUse := int(p.stats.objectsInUse.Load())
-	minCap := p.config.poolShrinkParameters.minCapacity
+	minCap := p.config.shrink.minCapacity
 
+	// CAUTION -  fast path containing all objects would trigger this.
+	// (can use the flag indicating that the fast path is active, and get the length of the channel)
 	if len(p.pool) == 0 {
 		log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
 		return
@@ -344,6 +387,7 @@ func (p *pool[T]) performShrink(newCapacity int) {
 		return
 	}
 
+	// DOUBT - The fast path updates the state accurately, I fail to see how the fast path would break the shrink.
 	copyRoom := newCapacity - inUse
 	if copyRoom <= 0 {
 		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
@@ -357,6 +401,7 @@ func (p *pool[T]) performShrink(newCapacity int) {
 
 	log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d", currentCap, newCapacity, copyCount, inUse)
 
+	// ## TODO - why the copy count ?
 	p.stats.availableObjects.Store(uint64(copyCount))
 	p.stats.currentCapacity.Store(uint64(newCapacity))
 	p.stats.totalShrinkEvents.Add(1)
@@ -366,8 +411,8 @@ func (p *pool[T]) performShrink(newCapacity int) {
 
 func (p *pool[T]) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
 	idleDuration := time.Since(p.stats.lastTimeCalledGet)
-	threshold := p.config.poolShrinkParameters.idleThreshold
-	required := p.config.poolShrinkParameters.minIdleBeforeShrink
+	threshold := p.config.shrink.idleThreshold
+	required := p.config.shrink.minIdleBeforeShrink
 
 	if idleDuration >= threshold {
 		*idles += 1
@@ -393,8 +438,8 @@ func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermission
 		utilization = (float64(inUse) / float64(total)) * 100
 	}
 
-	minUtil := p.config.poolShrinkParameters.minUtilizationBeforeShrink
-	requiredRounds := p.config.poolShrinkParameters.stableUnderutilizationRounds
+	minUtil := p.config.shrink.minUtilizationBeforeShrink
+	requiredRounds := p.config.shrink.stableUnderutilizationRounds
 
 	if utilization <= minUtil {
 		*underutilizationRounds += 1
@@ -418,10 +463,10 @@ func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermission
 
 func (p *pool[T]) ShrinkExecution() {
 	currentCap := p.stats.currentCapacity.Load()
-	minCap := p.config.poolShrinkParameters.minCapacity
+	minCap := p.config.shrink.minCapacity
 	inUse := int(p.stats.objectsInUse.Load())
 
-	newCapacity := int(float64(currentCap) * (1.0 - p.config.poolShrinkParameters.shrinkPercent))
+	newCapacity := int(float64(currentCap) * (1.0 - p.config.shrink.shrinkPercent))
 
 	log.Println("[SHRINK] ----------------------------------------")
 	log.Printf("[SHRINK] Starting shrink execution")
@@ -475,4 +520,11 @@ func maxUint32(a, b uint64) uint64 {
 		return a
 	}
 	return b
+}
+
+func defaultFastPathParameters() *fastPathParameters {
+	return &fastPathParameters{
+		bufferSize:         defaultPoolCapacity,
+		fillAggressiveness: defaultfillAggressiveness,
+	}
 }

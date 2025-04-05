@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"memctx/pool"
-	"time"
 )
 
 type Example struct {
@@ -36,18 +36,5 @@ func main() {
 		panic(err)
 	}
 
-	var objs []*Example
-	for range 100000 {
-		obj := poolObj.Get()
-		objs = append(objs, obj)
-	}
-
-	time.Sleep(10 * time.Second)
-
-	log.Println("[SHRINK] putting objs back")
-	for _, obj := range objs {
-		poolObj.Put(obj)
-	}
-
-	select {}
+	fmt.Println(poolObj)
 }

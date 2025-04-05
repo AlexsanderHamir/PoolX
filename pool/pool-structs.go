@@ -9,9 +9,10 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type pool[T any] struct {
+	cacheL1   chan T
+	pool      []T
 	allocator func() T
 	cleaner   func(T)
-	pool      []T
 
 	config          *poolConfig
 	stats           *poolStats
@@ -38,13 +39,24 @@ type poolStats struct {
 	availableObjects   atomic.Uint64
 	peakInUse          atomic.Uint64
 	totalGets          atomic.Uint64
-	totalPuts          atomic.Uint64 // // not using it, just calculating value.
-	hitCount           atomic.Uint64
-	missCount          atomic.Uint64
+	totalPuts          atomic.Uint64 // not using it, just calculating value.
 	totalGrowthEvents  atomic.Uint64 // not using it, just calculating value.
 	totalShrinkEvents  atomic.Uint64 // not using it, just calculating value.
 	consecutiveShrinks atomic.Uint64
 	currentCapacity    atomic.Uint64
+
+	// ## TODO - to be replaced
+	hitCount  atomic.Uint64 // not using it, just calculating value.
+	missCount atomic.Uint64 // not using it, just calculating value.
+
+	// successful Get() calls served from the fast path.
+	l1HitCount atomic.Uint64
+
+	// successful Get() calls served from the large pool.
+	l2HitCount atomic.Uint64
+
+	// number of times the allocator was invoked to create a new object
+	l3MissCount atomic.Uint64
 
 	// Config set value, never changes
 	initialCapacity int
@@ -57,7 +69,7 @@ type poolStats struct {
 	utilizationPercentage float64 // not using it, just calculating value.
 
 	lastTimeCalledGet time.Time
-	lastTimeCalledPut time.Time // not using it, just calculating value.
+	lastTimeCalledPut time.Time // not using it, just calculating value. // (useful for possibly detecting leaks) \\
 	lastShrinkTime    time.Time
 	lastGrowTime      time.Time // not using it, just calculating value.
 }
@@ -68,13 +80,29 @@ type poolConfig struct {
 	initialCapacity int
 
 	// Determines how the pool grows.
-	poolGrowthParameters *poolGrowthParameters
+	growth *growthParameters
 
 	// Determines how the pool shrinks.
-	poolShrinkParameters *poolShrinkParameters
+	shrink *shrinkParameters
+
+	// Determines how fast path is utilized.
+	fastPath *fastPathParameters
 }
 
-type poolShrinkParameters struct {
+type fastPathParameters struct {
+	// bufferSize defines the capacity of the fast path channel.
+	// This determines how many objects can be held in the fast path before falling back
+	// to the slower, lock-protected main pool. (length <= currentCapacity)
+	bufferSize int
+
+	// fillAggressiveness controls how aggressively the pool refills the fast path buffer
+	// from the main pool. It is a float between 0.0 and 1.0, representing the fraction of the
+	// fast path buffer that should be proactively filled during initialization, idle ticks, or pool growth.
+	// Example: 0.5 means fill the fast path up to 50% of its capacity.
+	fillAggressiveness float64
+}
+
+type shrinkParameters struct {
 	// EnforceCustomConfig controls whether the pool requires explicit configuration.
 	// When set to true, the user must manually provide all configuration values (e.g., shrink/growth parameters).
 	// If set to false (default), the pool will fall back to built-in default configurations when values are missing.
@@ -129,7 +157,7 @@ type poolShrinkParameters struct {
 	minCapacity int
 }
 
-type poolGrowthParameters struct {
+type growthParameters struct {
 	// Threshold multiplier that determines when to switch from exponential to fixed growth.
 	// Once the capacity reaches (InitialCapacity * ExponentialThresholdFactor), the growth
 	// strategy switches to fixed mode.
