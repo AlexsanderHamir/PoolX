@@ -25,6 +25,7 @@ const (
 	defaultMinCapacity                                    = 8
 	defaultfillAggressiveness                             = fillAggressivenessExtreme
 	fillAggressivenessExtreme                             = 1.0
+	defaultRefillPercent                                  = 0.5
 )
 
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
@@ -71,26 +72,59 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 	return &poolObj, nil
 }
 
-// func (p *pool[T]) Get() T {
-
-// }
-
-func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
-	if *fastPathRemaining > 0 {
-		select {
-		case p.cacheL1 <- obj:
-			*fastPathRemaining--
-			return
-		default:
-			// avoids blocking
-		}
+func (p *pool[T]) Get() T {
+	if p.isShrinkBlocked {
+		log.Println("[POOL] Shrink logic was blocked — unblocking via cond.Broadcast()")
+		p.cond.Broadcast()
 	}
-	p.pool = append(p.pool, obj)
+
+	select {
+	case obj := <-p.cacheL1:
+		p.stats.l1HitCount.Add(1)
+		p.updateUsageStats()
+		p.updateDerivedStats()
+		p.tryRefillIfNeeded()
+		return obj
+	default:
+		p.stats.l2HitCount.Add(1)
+		if p.stats.l2HitCount.Load()%10 == 0 {
+			log.Printf("[POOL] Slow path accessed — total L2 hits: %d", p.stats.l2HitCount.Load())
+		}
+		return p.slowPath()
+	}
 }
 
-func (p *pool[T]) fastPath() T { return <-p.cacheL1 }
+func (p *pool[T]) tryRefillIfNeeded() {
+	bufferSize := p.config.fastPath.bufferSize
+	currentLength := len(p.cacheL1)
 
-func (p *pool[T]) slowPath(isRefil bool) T {
+	currentPercent := float64(currentLength) / float64(bufferSize)
+
+	if currentPercent <= p.config.fastPath.refillPercent {
+		fillTarget := int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
+		p.refill(fillTarget)
+	}
+}
+
+func (p *pool[T]) Put(obj T) {
+	p.cleaner(obj)
+
+	select {
+	case p.cacheL1 <- obj:
+	default:
+		p.mu.Lock()
+		p.pool = append(p.pool, obj)
+		p.stats.lastTimeCalledPut = time.Now()
+		p.mu.Unlock()
+	}
+
+	p.stats.totalPuts.Add(1)
+	p.stats.objectsInUse.Add(^uint64(0))
+
+	log.Printf("[POOL] Put() called | Object returned to pool | pool size: %d | In-use: %d", len(p.pool), p.stats.objectsInUse.Load())
+}
+
+func (p *pool[T]) slowPath() T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -100,17 +134,11 @@ func (p *pool[T]) slowPath(isRefil bool) T {
 	if len(p.pool) == 0 {
 		p.grow(now)
 		log.Printf("[POOL] pool was empty — triggered grow() | New pool size: %d", len(p.pool))
-
-	} else {
-		p.stats.hitCount.Add(1)
-		log.Println("[POOL] Reused object from pool")
 	}
 
 	p.stats.lastTimeCalledGet = now
-	if !isRefil {
-		p.updateUsageStats()
-		p.updateDerivedStats()
-	}
+	p.updateUsageStats()
+	p.updateDerivedStats()
 
 	last := len(p.pool) - 1
 	obj := p.pool[last]
@@ -118,43 +146,54 @@ func (p *pool[T]) slowPath(isRefil bool) T {
 
 	log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
 
-	// TODO -  move to get
-	if p.isShrinkBlocked {
-		log.Println("[POOL] Shrink logic was blocked — unblocking via cond.Broadcast()")
-		p.cond.Broadcast()
-	}
-
 	return obj
 }
 
-func (p *pool[T]) slowPathBatchInternal(n int) []T {
+func (p *pool[T]) refill(n int) {
+	batch := p.slowPathGetObjBatch(n)
+	p.fastRefill(batch)
+}
+
+func (p *pool[T]) slowPathGetObjBatch(requiredPrefill int) []T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if len(p.pool) == 0 || n > len(p.pool) {
+	noObjsAvailable := len(p.pool) == 0
+	requiringMoreObjsThanAvailable := requiredPrefill > len(p.pool)
+
+	if noObjsAvailable || requiringMoreObjsThanAvailable {
 		now := time.Now()
 		p.grow(now)
 	}
 
-	start := len(p.pool) - n
+	currentObjsAvailable := len(p.pool)
+	start := currentObjsAvailable - requiredPrefill
 	batch := p.pool[start:]
 	p.pool = p.pool[:start]
 
 	return batch
 }
 
-func (p *pool[T]) Put(obj T) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *pool[T]) fastRefill(batch []T) {
+	var fallbackCount int
 
-	p.cleaner(obj)
-	p.pool = append(p.pool, obj)
+	for _, obj := range batch {
+		select {
+		case p.cacheL1 <- obj:
+		default:
+			// Fast path was unexpectedly full — fall back to the slower path
+			p.mu.Lock()
+			p.pool = append(p.pool, obj)
+			p.stats.lastTimeCalledPut = time.Now()
+			p.mu.Unlock()
 
-	p.stats.totalPuts.Add(1)
-	p.stats.objectsInUse.Add(^uint64(0))
-	p.stats.lastTimeCalledPut = time.Now()
+			fallbackCount++
+		}
+	}
 
-	log.Printf("[POOL] Put() called | Object returned to pool | pool size: %d | In-use: %d", len(p.pool), p.stats.objectsInUse.Load())
+	if fallbackCount > 0 {
+		log.Printf("[REFILL] Fast path overflowed during refill — %d object(s) added to fallback pool", fallbackCount)
+	}
 }
 
 func (p *pool[T]) shrink() {
@@ -240,7 +279,7 @@ func (p *pool[T]) grow(now time.Time) {
 	p.stats.lastGrowTime = now
 
 	p.stats.availableObjects.Add(uint64(newObjsQty))
-	p.stats.missCount.Add(1)
+	p.stats.l3MissCount.Add(1)
 	p.stats.totalGrowthEvents.Add(1)
 
 	log.Printf("[GROW] Final state | New capacity: %d | Objects added: %d | Pool size after grow: %d",
@@ -301,6 +340,7 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 	p.stableUnderutilizationRounds = def.underutilized
 	p.shrinkPercent = def.percent
 	p.maxConsecutiveShrinks = def.maxShrinks
+	p.minCapacity = defaultMinCapacity
 }
 
 func defaultPoolGrowthParameters() *growthParameters {
@@ -326,6 +366,8 @@ func (p *pool[T]) updateUsageStats() {
 		}
 	}
 
+	// For it to count as a consecutive shrink the get method
+	// needs to not be called in between shrinks.
 	for {
 		current := p.stats.consecutiveShrinks.Load()
 		if current == 0 {
@@ -338,26 +380,32 @@ func (p *pool[T]) updateUsageStats() {
 }
 
 func (p *pool[T]) updateDerivedStats() {
-	hitCount := p.stats.hitCount.Load()
-	missCount := p.stats.missCount.Load()
+	l1Hits := p.stats.l1HitCount.Load()
+	l2Hits := p.stats.l2HitCount.Load()
+	l3Misses := p.stats.l3MissCount.Load()
+
 	totalGets := p.stats.totalGets.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
 	availableObjects := p.stats.availableObjects.Load()
 
-	totalAccesses := hitCount + missCount
+	totalHits := l1Hits + l2Hits
+	totalAccesses := totalHits + l3Misses
+
+	p.stats.mu.Lock()
 	if totalAccesses > 0 {
-		p.stats.hitRate = float64(hitCount) / float64(totalAccesses)
-		p.stats.missRate = float64(missCount) / float64(totalAccesses)
+		p.stats.hitRate = float64(totalHits) / float64(totalAccesses)
+		p.stats.missRate = float64(l3Misses) / float64(totalAccesses)
 	}
 
 	if totalGets > 0 {
-		p.stats.reuseRatio = float64(hitCount) / float64(totalGets)
+		p.stats.reuseRatio = float64(totalHits) / float64(totalGets)
 	}
 
 	totalObjects := objectsInUse + availableObjects
 	if totalObjects > 0 {
 		p.stats.utilizationPercentage = (float64(objectsInUse) / float64(totalObjects)) * 100
 	}
+	p.stats.mu.Unlock()
 }
 
 func (p *pool[T]) performShrink(newCapacity int) {
@@ -365,9 +413,14 @@ func (p *pool[T]) performShrink(newCapacity int) {
 	inUse := int(p.stats.objectsInUse.Load())
 	minCap := p.config.shrink.minCapacity
 
-	// CAUTION -  fast path containing all objects would trigger this.
-	// (can use the flag indicating that the fast path is active, and get the length of the channel)
-	if len(p.pool) == 0 {
+	// NOTE: If all available objects are currently in the fast path channel (cacheL1),
+	// then p.pool may be empty — but this does NOT mean all objects are in use.
+	// We only skip shrinking if there are truly no available objects to preserve.
+	availableInPool := len(p.pool)
+	availableInCacheL1 := len(p.cacheL1)
+	totalAvailable := availableInPool + availableInCacheL1
+
+	if totalAvailable == 0 {
 		log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
 		return
 	}
@@ -387,21 +440,21 @@ func (p *pool[T]) performShrink(newCapacity int) {
 		return
 	}
 
-	// DOUBT - The fast path updates the state accurately, I fail to see how the fast path would break the shrink.
-	copyRoom := newCapacity - inUse
-	if copyRoom <= 0 {
+	availableObjsToCopy := newCapacity - inUse
+	if availableObjsToCopy <= 0 {
 		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
 		return
 	}
 
-	copyCount := min(copyRoom, len(p.pool))
+	copyCount := min(availableObjsToCopy, len(p.pool))
 	newPool := make([]T, copyCount, newCapacity)
 	copy(newPool, p.pool[:copyCount])
 	p.pool = newPool
 
 	log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d", currentCap, newCapacity, copyCount, inUse)
 
-	// ## TODO - why the copy count ?
+	// copy count is the objects being copied from the existing pool,
+	//  so they become the available objects
 	p.stats.availableObjects.Store(uint64(copyCount))
 	p.stats.currentCapacity.Store(uint64(newCapacity))
 	p.stats.totalShrinkEvents.Add(1)
@@ -526,5 +579,19 @@ func defaultFastPathParameters() *fastPathParameters {
 	return &fastPathParameters{
 		bufferSize:         defaultPoolCapacity,
 		fillAggressiveness: defaultfillAggressiveness,
+		refillPercent:      defaultRefillPercent,
 	}
+}
+
+func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
+	if *fastPathRemaining > 0 {
+		select {
+		case p.cacheL1 <- obj:
+			*fastPathRemaining--
+			return
+		default:
+			// avoids blocking
+		}
+	}
+	p.pool = append(p.pool, obj)
 }

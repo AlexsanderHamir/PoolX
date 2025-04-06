@@ -120,20 +120,17 @@ func (b *poolConfigBuilder) SetMaxConsecutiveShrinks(count int) *poolConfigBuild
 }
 
 func (b *poolConfigBuilder) SetBufferSize(count int) *poolConfigBuilder {
-	if count == 0 {
-		b.config.fastPath.bufferSize = defaultPoolCapacity
-	}
-
 	b.config.fastPath.bufferSize = count
 	return b
 }
 
 func (b *poolConfigBuilder) SetFillAggressiveness(percent float64) *poolConfigBuilder {
-	if percent == 0 {
-		b.config.fastPath.fillAggressiveness = defaultfillAggressiveness
-	}
-
 	b.config.fastPath.fillAggressiveness = percent
+	return b
+}
+
+func (b *poolConfigBuilder) SetRefillPercent(percent float64) *poolConfigBuilder {
+	b.config.fastPath.refillPercent = percent
 	return b
 }
 
@@ -190,6 +187,10 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 
 	if fp.fillAggressiveness <= 0 || fp.fillAggressiveness > 1.0 {
 		return nil, fmt.Errorf("fillAggressiveness  must be between 0 and 1.0")
+	}
+
+	if fp.refillPercent <= 0 || fp.refillPercent >= 1.0 {
+		return nil, fmt.Errorf("refillPercent must be between 0 and 0.99")
 	}
 
 	return b.config, nil

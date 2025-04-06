@@ -45,10 +45,6 @@ type poolStats struct {
 	consecutiveShrinks atomic.Uint64
 	currentCapacity    atomic.Uint64
 
-	// ## TODO - to be replaced
-	hitCount  atomic.Uint64 // not using it, just calculating value.
-	missCount atomic.Uint64 // not using it, just calculating value.
-
 	// successful Get() calls served from the fast path.
 	l1HitCount atomic.Uint64
 
@@ -97,9 +93,19 @@ type fastPathParameters struct {
 
 	// fillAggressiveness controls how aggressively the pool refills the fast path buffer
 	// from the main pool. It is a float between 0.0 and 1.0, representing the fraction of the
-	// fast path buffer that should be proactively filled during initialization, idle ticks, or pool growth.
+	// fast path buffer that should be proactively filled during initialization, and refills.
 	// Example: 0.5 means fill the fast path up to 50% of its capacity.
 	fillAggressiveness float64
+
+	// refillPercent defines the minimum occupancy threshold (as a fraction of bufferSize)
+	// at which the fast path buffer should be refilled from the main pool.
+	// When the number of objects in the fast path drops below this percentage of its capacity,
+	// a refill is triggered.
+	//
+	// Must be a float > 0.0 and < 1.0 (e.g., 0.99). A value of 1.0 is invalid,
+	// because it would cause a refill attempt even when the buffer is completely full,
+	// which is unnecessary and wasteful.
+	refillPercent float64
 }
 
 type shrinkParameters struct {
