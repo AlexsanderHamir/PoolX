@@ -2,7 +2,9 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"memctx/pool"
+	"sync"
 	"time"
 )
 
@@ -36,18 +38,49 @@ func main() {
 		panic(err)
 	}
 
-	var objs []*Example
-	for range 120 {
-		obj := poolObj.Get()
-		objs = append(objs, obj)
+	var wg sync.WaitGroup
+	numWorkers := 100
+	objectsPerWorker := 10 // each goroutine holds 10 objects
+
+	log.Println("[WORKLOAD] Starting goroutines")
+
+	for i := range numWorkers {
+		wg.Add(1)
+
+		go func(id int) {
+			defer wg.Done()
+
+			var objs []*Example
+			for range objectsPerWorker {
+				obj := poolObj.Get()
+				obj.name = "user_" + randomString(5)
+				obj.age = rand.Intn(100)
+				obj.friends = make([]string, rand.Intn(5))
+				for k := range obj.friends {
+					obj.friends[k] = randomString(4)
+				}
+				objs = append(objs, obj)
+			}
+
+			time.Sleep(time.Duration(500+rand.Intn(500)) * time.Millisecond)
+
+			for _, obj := range objs {
+				poolObj.Put(obj)
+			}
+		}(i)
 	}
 
-	time.Sleep(10 * time.Second)
-
-	log.Println("[SHRINK] putting objs back")
-	for _, obj := range objs {
-		poolObj.Put(obj)
-	}
+	wg.Wait()
+	log.Println("[DONE] All goroutines completed")
 
 	select {}
+}
+
+func randomString(n int) string {
+	letters := []rune("abcdefghijklmnopqrstuvwxyz")
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
 }

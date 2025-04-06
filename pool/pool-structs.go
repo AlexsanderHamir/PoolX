@@ -35,7 +35,10 @@ type shrinkDefaults struct {
 type poolStats struct {
 	// No lock needed
 
-	objectsInUse       atomic.Uint64
+	// objects outside the fastPath.
+	objectsInUse atomic.Uint64
+
+	// total objects in the pool and on the buffer.
 	availableObjects   atomic.Uint64
 	peakInUse          atomic.Uint64
 	totalGets          atomic.Uint64
@@ -44,6 +47,10 @@ type poolStats struct {
 	totalShrinkEvents  atomic.Uint64 // not using it, just calculating value.
 	consecutiveShrinks atomic.Uint64
 	currentCapacity    atomic.Uint64
+
+	FastReturnMiss atomic.Uint64
+	FastReturnHit  atomic.Uint64
+	L2SplillRate   float64
 
 	// successful Get() calls served from the fast path.
 	l1HitCount atomic.Uint64
