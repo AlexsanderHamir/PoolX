@@ -83,14 +83,12 @@ func (p *pool[T]) Get() T {
 	select {
 	case obj := <-p.cacheL1:
 		p.stats.l1HitCount.Add(1)
-		p.updateDerivedStats()
 		p.updateUsageStats()
+		p.updateDerivedStats()
 		return obj
 	default:
 		p.stats.l2HitCount.Add(1)
-		if p.stats.l2HitCount.Load()%10 == 0 {
-			log.Printf("[POOL] Slow path accessed — total L2 hits: %d", p.stats.l2HitCount.Load())
-		}
+		log.Printf("[POOL] Slow path accessed — total L2 hits: %d", p.stats.l2HitCount.Load())
 		return p.slowPath()
 	}
 }
@@ -108,8 +106,8 @@ func (p *pool[T]) Put(obj T) {
 		p.mu.Unlock()
 	}
 
-	p.stats.objectsInUse.Add(^uint64(0))
 	p.stats.totalPuts.Add(1)
+	p.reduceObjsInUse()
 	p.updateAvailableObjs()
 
 	p.mu.Lock()
@@ -171,9 +169,18 @@ func (p *pool[T]) slowPathGetObjBatch(requiredPrefill int) []T {
 	if noObjsAvailable || requiringMoreObjsThanAvailable {
 		now := time.Now()
 		p.grow(now)
+
+		// WARNING - refill is being called together with L1 case.
+		p.reduceL1Hit()
 	}
 
+	// WARNING - if the min capacity of the pool is lower than L1 size it will cause an error.
 	currentObjsAvailable := len(p.pool)
+	if requiredPrefill > currentObjsAvailable {
+		log.Printf("[WARN] Required prefill (%d) exceeds available objects (%d). Capping to max available.", requiredPrefill, currentObjsAvailable)
+		requiredPrefill = currentObjsAvailable
+	}
+
 	start := currentObjsAvailable - requiredPrefill
 	batch := p.pool[start:]
 	p.pool = p.pool[:start]
@@ -237,6 +244,8 @@ func (p *pool[T]) shrink() {
 		log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", underutilCount, params.stableUnderutilizationRounds, utilOK)
 
 		if idleOK || utilOK {
+			log.Println("[SHRINK] STATS (before shrink)")
+			p.PrintPoolStats()
 			log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 			p.ShrinkExecution()
 
@@ -346,6 +355,7 @@ func (p *pool[T]) updateUsageStats() {
 		if currentInUse <= peak {
 			break
 		}
+
 		if p.stats.peakInUse.CompareAndSwap(peak, currentInUse) {
 			break
 		}
@@ -365,31 +375,27 @@ func (p *pool[T]) updateUsageStats() {
 }
 
 func (p *pool[T]) updateDerivedStats() {
-	l1Hits := p.stats.l1HitCount.Load()
-	l2Hits := p.stats.l2HitCount.Load()
-	l3Misses := p.stats.l3MissCount.Load()
-
 	totalGets := p.stats.totalGets.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
 	availableObjects := p.stats.availableObjects.Load()
 
-	totalHits := l1Hits + l2Hits
-	totalAccesses := totalHits + l3Misses
+	currentCapacity := p.stats.currentCapacity.Load()
 
 	p.stats.mu.Lock()
-	if totalAccesses > 0 {
-		p.stats.hitRate = float64(totalHits) / float64(totalAccesses)
-		p.stats.missRate = float64(l3Misses) / float64(totalAccesses)
+
+	initialCapacity := p.stats.initialCapacity
+	totalCreated := currentCapacity - uint64(initialCapacity)
+
+	if totalCreated > 0 {
+		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
 	}
 
-	if totalGets > 0 {
-		p.stats.reuseRatio = float64(totalHits) / float64(totalGets)
-	}
-
+	// WARNING -  at the time calculated, it may be low, be selective.
 	totalObjects := objectsInUse + availableObjects
 	if totalObjects > 0 {
-		p.stats.utilizationPercentage = (float64(objectsInUse) / float64(totalObjects)) * 100
+		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
 	}
+
 	p.stats.mu.Unlock()
 }
 
@@ -525,7 +531,6 @@ func (p *pool[T]) ShrinkExecution() {
 
 	p.performShrink(newCapacity)
 	p.updateAvailableObjs()
-	p.PrintPoolStats()
 
 	log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)
 	log.Println("[SHRINK] ----------------------------------------")
@@ -596,9 +601,11 @@ func (p *pool[T]) PrintPoolStats() {
 	fmt.Printf("Consecutive Shrinks  : %d\n", p.stats.consecutiveShrinks.Load())
 
 	fmt.Println()
+	fmt.Println("---------- Fast Get Stats ----------")
 	fmt.Printf("Fast Path (L1) Hits  : %d\n", p.stats.l1HitCount.Load())
 	fmt.Printf("Slow Path (L2) Hits  : %d\n", p.stats.l2HitCount.Load())
 	fmt.Printf("Allocator Misses (L3): %d\n", p.stats.l3MissCount.Load())
+	fmt.Println("---------------------------------------")
 	fmt.Println()
 	fastReturnHit := p.stats.FastReturnHit.Load()
 	fastReturnMiss := p.stats.FastReturnMiss.Load()
@@ -615,17 +622,16 @@ func (p *pool[T]) PrintPoolStats() {
 	fmt.Printf("L2 Spill Rate     : %.2f%%\n", l2SpillRate*100)
 	fmt.Println("---------------------------------------")
 	fmt.Println()
-	fmt.Printf("Initial Capacity     : %d\n", p.stats.initialCapacity)
 
 	p.stats.mu.RLock()
+	fmt.Println("---------- Usage Stats ----------")
 	fmt.Println()
-	fmt.Printf("Hit Rate             : %.2f%%\n", p.stats.hitRate*100)
-	fmt.Printf("Miss Rate            : %.2f%%\n", p.stats.missRate*100)
-	fmt.Printf("Reuse Ratio          : %.2f%%\n", p.stats.reuseRatio*100)
-	fmt.Printf("Utilization %%        : %.2f%%\n", p.stats.utilizationPercentage)
+	fmt.Printf("Request Per Object   : %.2f\n", p.stats.reqPerObj)
+	fmt.Printf("Utilization %%       : %.2f%%\n", p.stats.utilization)
+	fmt.Println("---------------------------------------")
 	p.stats.mu.RUnlock()
 
-	fmt.Println()
+	fmt.Println("---------- Time Stats ----------")
 	fmt.Printf("Last Get Time        : %s\n", p.stats.lastTimeCalledGet.Format(time.RFC3339))
 	fmt.Printf("Last Put Time        : %s\n", p.stats.lastTimeCalledPut.Format(time.RFC3339))
 	fmt.Printf("Last Shrink Time     : %s\n", p.stats.lastShrinkTime.Format(time.RFC3339))
@@ -636,4 +642,30 @@ func (p *pool[T]) PrintPoolStats() {
 func (p *pool[T]) updateAvailableObjs() {
 	fmt.Printf("pool length: %d, cacheLen: %d\n", len(p.pool), len(p.cacheL1))
 	p.stats.availableObjects.Store(uint64(len(p.pool) + len(p.cacheL1)))
+}
+
+func (p *pool[T]) reduceObjsInUse() {
+	for {
+		old := p.stats.objectsInUse.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.objectsInUse.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+func (p *pool[T]) reduceL1Hit() {
+	for {
+		old := p.stats.l1HitCount.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
 }

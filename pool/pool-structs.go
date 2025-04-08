@@ -65,11 +65,9 @@ type poolStats struct {
 	initialCapacity int
 
 	// Lock needed
-	mu                    *sync.RWMutex
-	hitRate               float64 // not using it, just calculating value.
-	missRate              float64 // not using it, just calculating value.
-	reuseRatio            float64 // not using it, just calculating value.
-	utilizationPercentage float64 // not using it, just calculating value.
+	mu          *sync.RWMutex
+	reqPerObj   float64
+	utilization float64 // not using it, just calculating value.
 
 	lastTimeCalledGet time.Time
 	lastTimeCalledPut time.Time // not using it, just calculating value. // (useful for possibly detecting leaks) \\
