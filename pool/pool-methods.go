@@ -18,24 +18,27 @@ const (
 	AggressivenessAggressive          AggressivenessLevel = 3
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
-	defaultPoolCapacity                                   = 64
-	defaultHardLimit                                      = 1024
 	defaultExponentialThresholdFactor                     = 4.0
 	defaultGrowthPercent                                  = 0.5
 	defaultFixedGrowthFactor                              = 1.0
-	defaultMinCapacity                                    = 8
 	defaultfillAggressiveness                             = fillAggressivenessExtreme
 	fillAggressivenessExtreme                             = 1.0
 	defaultRefillPercent                                  = 0.5
+	defaultMinCapacity                                    = 8
+	defaultPoolCapacity                                   = 64
+	defaultHardLimit                                      = 128
+	defaultHardLimitBufferSize                            = 64
 )
 
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
 	if config == nil {
 		config = &poolConfig{
-			initialCapacity: defaultPoolCapacity,
-			shrink:          defaultPoolShrinkParameters(),
-			growth:          defaultPoolGrowthParameters(),
-			fastPath:        defaultFastPathParameters(),
+			initialCapacity:     defaultPoolCapacity,
+			hardLimit:           defaultHardLimit,
+			hardLimitBufferSize: defaultHardLimitBufferSize,
+			shrink:              defaultPoolShrinkParameters(),
+			growth:              defaultPoolGrowthParameters(),
+			fastPath:            defaultFastPathParameters(),
 		}
 	}
 
@@ -46,7 +49,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 
 	poolObj := pool[T]{
 		cacheL1:         make(chan T, config.fastPath.bufferSize),
-		hardLimitResume: make(chan struct{}, config.hardLimit),
+		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize),
 		allocator:       allocator,
 		cleaner:         cleaner,
 		mu:              &sync.RWMutex{},
@@ -89,6 +92,9 @@ func (p *pool[T]) Get() T {
 		<-p.hardLimitResume
 		p.reduceBlockedGets()
 	}
+
+	// WARNING - we're assuming that the put method successed in adding the object back in the L1 buffer.
+	// if it fails, we will hit L2 all the time.
 
 	select {
 	case obj := <-p.cacheL1:
@@ -151,37 +157,31 @@ func (p *pool[T]) tryRefillIfNeeded() bool {
 }
 
 func (p *pool[T]) slowPath() T {
-	var locked bool = true
 	var now time.Time
 
-	p.mu.Lock()
-	lenPool := len(p.pool)
+	for {
+		p.mu.Lock()
+		lenPool := len(p.pool)
 
-	// maybe we should do this in a loop.
-	if lenPool == 0 {
-		log.Printf("[POOL] Hard limit reached — blocking Get()")
+		if lenPool > 0 {
+			now = time.Now()
+			p.stats.lastTimeCalledGet = now
+
+			obj := p.pool[0]
+			p.pool = p.pool[1:]
+			p.mu.Unlock()
+
+			p.updateDerivedStats()
+			log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
+			return obj
+		}
+
+		log.Printf("[POOL] Pool is empty — blocking Get(slowpath)")
 		p.stats.blockedGets.Add(1)
 		p.mu.Unlock()
 		<-p.hardLimitResume
 		p.reduceBlockedGets()
-		locked = false
-		now = time.Now()
 	}
-
-	if !locked {
-		p.mu.Lock()
-	}
-
-	p.stats.lastTimeCalledGet = now
-	obj := p.pool[0]
-	p.pool = p.pool[1:]
-
-	p.mu.Unlock()
-
-	p.updateDerivedStats()
-	log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
-
-	return obj
 }
 
 func (p *pool[T]) refill(n int) bool {
@@ -196,17 +196,18 @@ func (p *pool[T]) refill(n int) bool {
 	return true
 }
 
+// even if the growth is blocked, we still need to refill the L1 buffer.
 func (p *pool[T]) slowPathGetObjBatch(requiredPrefill int) []T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.isGrowthBlocked {
-		log.Printf("[POOL] Growth is blocked — returning nil")
-		return nil
-	}
-
 	noObjsAvailable := len(p.pool) == 0
 	if noObjsAvailable {
+		if p.isGrowthBlocked {
+			log.Printf("[POOL] Growth is blocked — returning nil")
+			return nil
+		}
+
 		now := time.Now()
 		ableToGrow := p.grow(now)
 		if !ableToGrow {
@@ -297,7 +298,7 @@ func (p *pool[T]) shrink() {
 		}
 
 		p.mu.Unlock()
-		p.updateAvailableObjs() // safe
+		p.updateAvailableObjs()
 	}
 }
 
@@ -331,6 +332,11 @@ func (p *pool[T]) grow(now time.Time) bool {
 
 		p.isGrowthBlocked = true
 		return false
+	}
+
+	if !poolSizeReached && hardLimitReached {
+		newCapacity = uint64(p.config.hardLimit)
+		log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
 	}
 
 	var newPool []T
@@ -582,6 +588,11 @@ func (p *pool[T]) ShrinkExecution() {
 	if newCapacity < inUse {
 		log.Printf("[SHRINK] Adjusting to match in-use objects: %d", inUse)
 		newCapacity = inUse
+	}
+
+	if newCapacity < p.config.hardLimit {
+		log.Printf("[SHRINK] Allowing growth, capacity is lower than hard limit: %d", p.config.hardLimit)
+		p.isGrowthBlocked = false
 	}
 
 	p.performShrink(newCapacity)

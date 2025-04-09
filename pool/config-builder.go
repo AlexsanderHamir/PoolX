@@ -13,11 +13,12 @@ type poolConfigBuilder struct {
 func NewPoolConfigBuilder() *poolConfigBuilder {
 	return &poolConfigBuilder{
 		config: &poolConfig{
-			initialCapacity: defaultPoolCapacity,
-			hardLimit:       defaultHardLimit,
-			shrink:          defaultPoolShrinkParameters(),
-			growth:          defaultPoolGrowthParameters(),
-			fastPath:        defaultFastPathParameters(),
+			initialCapacity:     defaultPoolCapacity,
+			hardLimit:           defaultHardLimit,
+			hardLimitBufferSize: defaultHardLimitBufferSize,
+			shrink:              defaultPoolShrinkParameters(),
+			growth:              defaultPoolGrowthParameters(),
+			fastPath:            defaultFastPathParameters(),
 		},
 	}
 }
@@ -140,6 +141,11 @@ func (b *poolConfigBuilder) SetHardLimit(count int) *poolConfigBuilder {
 	return b
 }
 
+func (b *poolConfigBuilder) SetHardLimitBufferSize(count int) *poolConfigBuilder {
+	b.config.hardLimitBufferSize = count
+	return b
+}
+
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.initialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
@@ -157,6 +163,10 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	}
 	if b.config.hardLimit < b.config.fastPath.bufferSize {
 		return nil, fmt.Errorf("HardLimit must be >= BufferSize")
+	}
+
+	if b.config.hardLimitBufferSize < 2 {
+		return nil, fmt.Errorf("HardLimitBufferSize must be >= 2")
 	}
 
 	sp := b.config.shrink

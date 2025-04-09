@@ -9,7 +9,14 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type pool[T any] struct {
-	cacheL1         chan T
+	cacheL1 chan T
+
+	// hardLimitResume is used to signal goroutines waiting
+	// that new objects have been returned to the pool.
+	//
+	// When the pool reaches a "hard limit" and no objects are available,
+	// goroutines calling Get() will block on this channel until a Put()
+	// call signals that an object has been returned.
 	hardLimitResume chan struct{}
 	pool            []T
 	allocator       func() T
@@ -82,8 +89,25 @@ type poolConfig struct {
 	// until it reaches the defined capacity.
 	initialCapacity int
 
-	// Hard limit on the pool, after that point it won't grow anymore.
+	// hardLimit sets the maximum number of objects in the pool.
+	// Once reached, the pool stops growing and Get() calls block until an object is returned.
+	//
+	// If the pool shrinks below the hardLimit, growth is allowed again.
+	//
+	// ⚠️ WARNING:
+	// A hardLimit that's too low for your workload can cause goroutine starvation.
+	// Ensure the hardLimitResume channel is properly buffered, or blocked goroutines may miss wake-ups,
+	// leading to reduced throughput and prolonged blocking. If you try to push for a very high Request Per Object
+	// by setting a very low hardLimit, goroutines will be dropped.
 	hardLimit int
+
+	// When the pool reaches the hardLimit, no new objects will be created.
+	// Goroutines calling Get() will block and wait for existing objects to be recycled via Put().
+	// To prevent Put() from blocking when sending notifications, the channel should be buffered.
+	// A buffer size of at least 2 is recommended, but if you expect more than 1,000 concurrent goroutines,
+	// consider increasing the buffer size accordingly. An undersized buffer may lead to dropped wake-ups
+	// and prolonged blocking for some goroutines.
+	hardLimitBufferSize int
 
 	// Determines how the pool grows.
 	growth *growthParameters
