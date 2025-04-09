@@ -37,45 +37,30 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	var wg sync.WaitGroup
 
-	numBursts := 5
-	burstSize := 20                  // Number of workers per burst
-	objectsPerWorker := 10           // Each worker does 10 tasks
-	burstInterval := 2 * time.Second // Idle time between bursts
+	numWorkers := 1000
+	objectsPerWorker := 5
+	log.Println("[WORKLOAD] Starting high concurrency load test")
 
-	log.Println("[WORKLOAD] Starting bursty load test")
+	for i := range numWorkers {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
 
-	for burst := 0; burst < numBursts; burst++ {
-		log.Printf("[BURST %d] Launching %d workers", burst+1, burstSize)
-
-		for i := 0; i < burstSize; i++ {
-			wg.Add(1)
-
-			go func(workerID int) {
-				defer wg.Done()
-
-				for j := 0; j < objectsPerWorker; j++ {
-					obj := poolObj.Get()
-					obj.name = "user_" + randomString(5)
-					obj.age = rand.Intn(100)
-					obj.friends = make([]string, rand.Intn(5))
-					for k := range obj.friends {
-						obj.friends[k] = randomString(4)
-					}
-
-					time.Sleep(50 * time.Millisecond)
-					poolObj.Put(obj)
-				}
-			}(i + burst*burstSize)
-		}
-
-		time.Sleep(burstInterval)
+			for range objectsPerWorker {
+				obj := poolObj.Get()
+				obj.name = "user_" + randomString(5)
+				obj.age = rand.Intn(100)
+				obj.friends = make([]string, rand.Intn(5))
+				time.Sleep(10 * time.Millisecond)
+				poolObj.Put(obj)
+			}
+		}(i)
 	}
 
 	wg.Wait()
-	log.Println("[DONE] Bursty load goroutines completed")
+	log.Println("[DONE] High concurrency load test completed")
 
 	select {}
 }

@@ -9,16 +9,18 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type pool[T any] struct {
-	cacheL1   chan T
-	pool      []T
-	allocator func() T
-	cleaner   func(T)
+	cacheL1         chan T
+	hardLimitResume chan struct{}
+	pool            []T
+	allocator       func() T
+	cleaner         func(T)
 
 	config          *poolConfig
 	stats           *poolStats
 	mu              *sync.RWMutex
 	cond            *sync.Cond
 	isShrinkBlocked bool
+	isGrowthBlocked bool
 }
 
 type shrinkDefaults struct {
@@ -35,7 +37,6 @@ type shrinkDefaults struct {
 type poolStats struct {
 	// No lock needed
 
-	// objects outside the fastPath.
 	objectsInUse atomic.Uint64
 
 	// total objects in the pool and on the buffer.
@@ -47,6 +48,7 @@ type poolStats struct {
 	totalShrinkEvents  atomic.Uint64 // not using it, just calculating value.
 	consecutiveShrinks atomic.Uint64
 	currentCapacity    atomic.Uint64
+	blockedGets        atomic.Uint64
 
 	FastReturnMiss atomic.Uint64
 	FastReturnHit  atomic.Uint64
@@ -79,6 +81,9 @@ type poolConfig struct {
 	// Pool initial capacity which avoids resizing the slice,
 	// until it reaches the defined capacity.
 	initialCapacity int
+
+	// Hard limit on the pool, after that point it won't grow anymore.
+	hardLimit int
 
 	// Determines how the pool grows.
 	growth *growthParameters

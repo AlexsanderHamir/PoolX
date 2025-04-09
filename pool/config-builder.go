@@ -14,6 +14,7 @@ func NewPoolConfigBuilder() *poolConfigBuilder {
 	return &poolConfigBuilder{
 		config: &poolConfig{
 			initialCapacity: defaultPoolCapacity,
+			hardLimit:       defaultHardLimit,
 			shrink:          defaultPoolShrinkParameters(),
 			growth:          defaultPoolGrowthParameters(),
 			fastPath:        defaultFastPathParameters(),
@@ -134,9 +135,28 @@ func (b *poolConfigBuilder) SetRefillPercent(percent float64) *poolConfigBuilder
 	return b
 }
 
+func (b *poolConfigBuilder) SetHardLimit(count int) *poolConfigBuilder {
+	b.config.hardLimit = count
+	return b
+}
+
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.initialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
+	}
+
+	if b.config.hardLimit <= 0 {
+		return nil, fmt.Errorf("HardLimit must be greater than 0")
+	}
+
+	if b.config.hardLimit < b.config.initialCapacity {
+		return nil, fmt.Errorf("HardLimit must be >= InitialCapacity")
+	}
+	if b.config.hardLimit < b.config.shrink.minCapacity {
+		return nil, fmt.Errorf("HardLimit must be >= MinCapacity")
+	}
+	if b.config.hardLimit < b.config.fastPath.bufferSize {
+		return nil, fmt.Errorf("HardLimit must be >= BufferSize")
 	}
 
 	sp := b.config.shrink

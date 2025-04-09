@@ -19,6 +19,7 @@ const (
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
 	defaultPoolCapacity                                   = 64
+	defaultHardLimit                                      = 1024
 	defaultExponentialThresholdFactor                     = 4.0
 	defaultGrowthPercent                                  = 0.5
 	defaultFixedGrowthFactor                              = 1.0
@@ -44,13 +45,15 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 	stats.availableObjects.Store(uint64(config.initialCapacity))
 
 	poolObj := pool[T]{
-		cacheL1:   make(chan T, config.fastPath.bufferSize),
-		allocator: allocator,
-		cleaner:   cleaner,
-		mu:        &sync.RWMutex{},
-		config:    config,
-		stats:     stats,
+		cacheL1:         make(chan T, config.fastPath.bufferSize),
+		hardLimitResume: make(chan struct{}, config.hardLimit),
+		allocator:       allocator,
+		cleaner:         cleaner,
+		mu:              &sync.RWMutex{},
+		config:          config,
+		stats:           stats,
 	}
+
 	poolObj.cond = sync.NewCond(poolObj.mu)
 
 	obj := poolObj.allocator()
@@ -78,7 +81,14 @@ func (p *pool[T]) Get() T {
 		p.cond.Broadcast()
 	}
 
-	p.tryRefillIfNeeded()
+	// If the hard limit is reached, we block until an object is returned.
+	ableToRefill := p.tryRefillIfNeeded()
+	if !ableToRefill {
+		log.Printf("[POOL] Hard limit reached — blocking Get()")
+		p.stats.blockedGets.Add(1)
+		<-p.hardLimitResume
+		p.reduceBlockedGets()
+	}
 
 	select {
 	case obj := <-p.cacheL1:
@@ -89,7 +99,9 @@ func (p *pool[T]) Get() T {
 	default:
 		p.stats.l2HitCount.Add(1)
 		log.Printf("[POOL] Slow path accessed — total L2 hits: %d", p.stats.l2HitCount.Load())
-		return p.slowPath()
+		obj := p.slowPath()
+		p.updateUsageStats()
+		return obj
 	}
 }
 
@@ -100,75 +112,106 @@ func (p *pool[T]) Put(obj T) {
 	case p.cacheL1 <- obj:
 		p.stats.FastReturnHit.Add(1)
 	default:
-		p.stats.FastReturnMiss.Add(1)
 		p.mu.Lock()
+		p.stats.lastTimeCalledPut = time.Now()
 		p.pool = append(p.pool, obj)
 		p.mu.Unlock()
+		p.stats.FastReturnMiss.Add(1)
 	}
 
 	p.stats.totalPuts.Add(1)
 	p.reduceObjsInUse()
 	p.updateAvailableObjs()
 
-	p.mu.Lock()
-	p.stats.lastTimeCalledPut = time.Now()
-	p.mu.Unlock()
+	if p.stats.blockedGets.Load() > 0 {
+		log.Printf("[POOL] Unblocking Get()")
+		p.hardLimitResume <- struct{}{}
+	}
 
 	log.Printf("[POOL] Put() called | Object returned to pool | pool size: %d | In-use: %d", len(p.pool), p.stats.objectsInUse.Load())
 }
 
-func (p *pool[T]) tryRefillIfNeeded() {
+func (p *pool[T]) tryRefillIfNeeded() bool {
 	bufferSize := p.config.fastPath.bufferSize
 	currentLength := len(p.cacheL1)
 
 	currentPercent := float64(currentLength) / float64(bufferSize)
 
+	// Even though multiple goroutines block right before calling tryRefillIfNeeded
+	// this condition will not be true right after a refill, so only one of them will refill.
 	if currentPercent <= p.config.fastPath.refillPercent {
 		fillTarget := int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
-		p.refill(fillTarget)
+		ableToRefill := p.refill(fillTarget)
+		if !ableToRefill {
+			return false
+		}
 	}
+
+	return true
 }
 
 func (p *pool[T]) slowPath() T {
+	var locked bool = true
+	var now time.Time
+
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	lenPool := len(p.pool)
 
-	now := time.Now()
-	log.Printf("[POOL] Get() called | Current pool size: %d | In-use: %d | Capacity: %d", len(p.pool), p.stats.objectsInUse.Load(), p.stats.currentCapacity.Load())
+	// maybe we should do this in a loop.
+	if lenPool == 0 {
+		log.Printf("[POOL] Hard limit reached — blocking Get()")
+		p.stats.blockedGets.Add(1)
+		p.mu.Unlock()
+		<-p.hardLimitResume
+		p.reduceBlockedGets()
+		locked = false
+		now = time.Now()
+	}
 
-	if len(p.pool) == 0 {
-		p.grow(now)
-		log.Printf("[POOL] pool was empty — triggered grow() | New pool size: %d", len(p.pool))
+	if !locked {
+		p.mu.Lock()
 	}
 
 	p.stats.lastTimeCalledGet = now
+	obj := p.pool[0]
+	p.pool = p.pool[1:]
 
-	last := len(p.pool) - 1
-	obj := p.pool[last]
-	p.pool = p.pool[:last]
+	p.mu.Unlock()
 
-	p.updateUsageStats()
 	p.updateDerivedStats()
 	log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
 
 	return obj
 }
 
-func (p *pool[T]) refill(n int) {
+func (p *pool[T]) refill(n int) bool {
 	batch := p.slowPathGetObjBatch(n)
+	if batch == nil {
+		return false
+	}
+
+	p.updateAvailableObjs()
+
 	p.fastRefill(batch)
+	return true
 }
 
 func (p *pool[T]) slowPathGetObjBatch(requiredPrefill int) []T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	noObjsAvailable := len(p.pool) == 0
-	requiringMoreObjsThanAvailable := requiredPrefill > len(p.pool)
+	if p.isGrowthBlocked {
+		log.Printf("[POOL] Growth is blocked — returning nil")
+		return nil
+	}
 
-	if noObjsAvailable || requiringMoreObjsThanAvailable {
+	noObjsAvailable := len(p.pool) == 0
+	if noObjsAvailable {
 		now := time.Now()
-		p.grow(now)
+		ableToGrow := p.grow(now)
+		if !ableToGrow {
+			return nil
+		}
 
 		// WARNING - refill is being called together with L1 case.
 		p.reduceL1Hit()
@@ -254,10 +297,13 @@ func (p *pool[T]) shrink() {
 		}
 
 		p.mu.Unlock()
+		p.updateAvailableObjs() // safe
 	}
 }
 
-func (p *pool[T]) grow(now time.Time) {
+// 1. grow is called when the pool is empty.
+// 2. grow is called in one place, if you call in another one, you need to check if p.isGrowthBlocked is true before calling.
+func (p *pool[T]) grow(now time.Time) bool {
 	cfg := p.config.growth
 	initialCap := uint64(p.config.initialCapacity)
 
@@ -275,6 +321,16 @@ func (p *pool[T]) grow(now time.Time) {
 		newCapacity = currentCap + fixedStep
 		log.Printf("[GROW] Strategy: fixed-step | Threshold: %d | Current: %d | Step: %d | New capacity: %d",
 			exponentialThreshold, currentCap, fixedStep, newCapacity)
+	}
+
+	hardLimitReached := newCapacity > uint64(p.config.hardLimit)
+	poolSizeReached := p.stats.currentCapacity.Load() >= uint64(p.config.hardLimit)
+
+	if hardLimitReached && poolSizeReached {
+		log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
+
+		p.isGrowthBlocked = true
+		return false
 	}
 
 	var newPool []T
@@ -296,10 +352,11 @@ func (p *pool[T]) grow(now time.Time) {
 
 	p.stats.l3MissCount.Add(1)
 	p.stats.totalGrowthEvents.Add(1)
-	p.updateAvailableObjs()
 
 	log.Printf("[GROW] Final state | New capacity: %d | Objects added: %d | Pool size after grow: %d",
 		newCapacity, newObjsQty, len(p.pool))
+
+	return true
 }
 
 func defaultPoolShrinkParameters() *shrinkParameters {
@@ -348,7 +405,7 @@ func defaultPoolGrowthParameters() *growthParameters {
 func (p *pool[T]) updateUsageStats() {
 	currentInUse := p.stats.objectsInUse.Add(1)
 	p.stats.totalGets.Add(1)
-	p.updateAvailableObjs()
+	p.updateAvailableObjs() // safe
 
 	for {
 		peak := p.stats.peakInUse.Load()
@@ -381,11 +438,10 @@ func (p *pool[T]) updateDerivedStats() {
 
 	currentCapacity := p.stats.currentCapacity.Load()
 
-	p.stats.mu.Lock()
-
 	initialCapacity := p.stats.initialCapacity
 	totalCreated := currentCapacity - uint64(initialCapacity)
 
+	p.stats.mu.Lock()
 	if totalCreated > 0 {
 		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
 	}
@@ -395,7 +451,6 @@ func (p *pool[T]) updateDerivedStats() {
 	if totalObjects > 0 {
 		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
 	}
-
 	p.stats.mu.Unlock()
 }
 
@@ -530,8 +585,6 @@ func (p *pool[T]) ShrinkExecution() {
 	}
 
 	p.performShrink(newCapacity)
-	p.updateAvailableObjs()
-
 	log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)
 	log.Println("[SHRINK] ----------------------------------------")
 }
@@ -599,6 +652,7 @@ func (p *pool[T]) PrintPoolStats() {
 	fmt.Printf("Total Growth Events  : %d\n", p.stats.totalGrowthEvents.Load())
 	fmt.Printf("Total Shrink Events  : %d\n", p.stats.totalShrinkEvents.Load())
 	fmt.Printf("Consecutive Shrinks  : %d\n", p.stats.consecutiveShrinks.Load())
+	fmt.Printf("Blocked Gets         : %d\n", p.stats.blockedGets.Load())
 
 	fmt.Println()
 	fmt.Println("---------- Fast Get Stats ----------")
@@ -640,8 +694,11 @@ func (p *pool[T]) PrintPoolStats() {
 }
 
 func (p *pool[T]) updateAvailableObjs() {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	fmt.Printf("pool length: %d, cacheLen: %d\n", len(p.pool), len(p.cacheL1))
 	p.stats.availableObjects.Store(uint64(len(p.pool) + len(p.cacheL1)))
+	fmt.Printf("availableObjects: %d\n", p.stats.availableObjects.Load())
 }
 
 func (p *pool[T]) reduceObjsInUse() {
@@ -665,6 +722,19 @@ func (p *pool[T]) reduceL1Hit() {
 		}
 
 		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+func (p *pool[T]) reduceBlockedGets() {
+	for {
+		old := p.stats.blockedGets.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.blockedGets.CompareAndSwap(old, old-1) {
 			break
 		}
 	}
