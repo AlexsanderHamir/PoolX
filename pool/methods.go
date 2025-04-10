@@ -25,10 +25,12 @@ const (
 	fillAggressivenessExtreme                             = 1.0
 	defaultRefillPercent                                  = 0.5
 	defaultMinCapacity                                    = 8
-	defaultPoolCapacity                                   = 64 // pool and L1 buffer
+	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
+	defaultPoolCapacity                                   = 64                  // pool and L1 buffer
 	defaultHardLimit                                      = 256
 	defaultHardLimitBufferSize                            = 512
-	defaultGrowthEventsTrigger                            = 3
+	defaultGrowthEventsTrigger                            = 2
+	defaultShrinkEventsTrigger                            = 1
 	defaultEnableChannelGrowth                            = true
 )
 
@@ -235,6 +237,7 @@ func (p *pool[T]) shrink() {
 		p.mu.Unlock()
 		p.updateAvailableObjs()
 	}
+
 }
 
 // 1. grow is called when the pool is empty.

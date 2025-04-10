@@ -217,14 +217,20 @@ func maxUint64(a, b uint64) uint64 {
 }
 
 func defaultFastPathParameters() *fastPathParameters {
-	return &fastPathParameters{
+	fastPath := &fastPathParameters{
 		bufferSize:          defaultPoolCapacity,
 		fillAggressiveness:  defaultfillAggressiveness,
 		refillPercent:       defaultRefillPercent,
 		enableChannelGrowth: defaultEnableChannelGrowth,
 		growthEventsTrigger: defaultGrowthEventsTrigger,
-		growth:              defaultPoolGrowthParameters(), // grow the same as the pool, leaving the pool mostly empty.
+		shrinkEventsTrigger: defaultShrinkEventsTrigger,
+		growth:              defaultPoolGrowthParameters(),
+		shrink:              defaultPoolShrinkParameters(),
 	}
+
+	fastPath.shrink.minCapacity = defaultL1MinCapacity
+
+	return fastPath
 }
 
 func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
@@ -458,38 +464,7 @@ func (p *pool[T]) fastRefill(batch []T) {
 	}
 }
 
-func (p *pool[T]) performShrink(newCapacity int) {
-	currentCap := int(p.stats.currentCapacity.Load())
-	inUse := int(p.stats.objectsInUse.Load())
-	minCap := p.config.shrink.minCapacity
-
-	// NOTE: If all available objects are currently in the fast path channel (cacheL1),
-	// then p.pool may be empty — but this does NOT mean all objects are in use.
-	// We only skip shrinking if there are truly no available objects to preserve.
-	availableInPool := len(p.pool)
-	availableInCacheL1 := len(p.cacheL1)
-	totalAvailable := availableInPool + availableInCacheL1
-
-	if totalAvailable == 0 {
-		log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
-		return
-	}
-
-	if currentCap <= minCap {
-		log.Printf("[SHRINK] Skipped — current capacity (%d) is at or below MinCapacity (%d)", currentCap, minCap)
-		return
-	}
-
-	if newCapacity >= currentCap {
-		log.Printf("[SHRINK] Skipped — new capacity (%d) is not smaller than current (%d)", newCapacity, currentCap)
-		return
-	}
-
-	if newCapacity == 0 {
-		log.Println("[SHRINK] Skipped — new capacity is zero (invalid)")
-		return
-	}
-
+func (p *pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 	availableObjsToCopy := newCapacity - inUse
 	if availableObjsToCopy <= 0 {
 		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
@@ -512,36 +487,138 @@ func (p *pool[T]) performShrink(newCapacity int) {
 }
 
 func (p *pool[T]) ShrinkExecution() {
-	currentCap := p.stats.currentCapacity.Load()
-	minCap := p.config.shrink.minCapacity
-	inUse := int(p.stats.objectsInUse.Load())
+	p.logShrinkHeader()
 
+	currentCap := p.stats.currentCapacity.Load()
+	inUse := int(p.stats.objectsInUse.Load())
 	newCapacity := int(float64(currentCap) * (1.0 - p.config.shrink.shrinkPercent))
 
+	if !p.shouldShrinkMainPool(currentCap, newCapacity, inUse) {
+		return
+	}
+
+	newCapacity = p.adjustMainShrinkTarget(newCapacity, inUse)
+
+	p.performShrink(newCapacity, inUse, currentCap)
+	log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)
 	log.Println("[SHRINK] ----------------------------------------")
-	log.Printf("[SHRINK] Starting shrink execution")
+
+	// Fast Path (L1)
+	if !p.config.fastPath.enableChannelGrowth || !p.shouldShrinkFastPath() {
+		return
+	}
+
+	currentCap = p.stats.currentL1Capacity.Load()
+	newCapacity = p.adjustFastPathShrinkTarget(currentCap)
+
+	p.logFastPathShrink(currentCap, newCapacity, inUse)
+	p.shrinkFastPath(newCapacity, inUse)
+
+	log.Printf("[SHRINK | FAST PATH] Shrink complete — Final capacity: %d", newCapacity)
+	log.Println("[SHRINK | FAST PATH] ----------------------------------------")
+}
+
+func (p *pool[T]) logShrinkHeader() {
+	log.Println("[SHRINK] ----------------------------------------")
+	log.Println("[SHRINK] Starting shrink execution")
+}
+
+func (p *pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int) bool {
+	minCap := p.config.shrink.minCapacity
+
 	log.Printf("[SHRINK] Current capacity       : %d", currentCap)
-	log.Printf("[SHRINK] Requested new capacity : %d", newCapacity)
+	log.Printf("[SHRINK] Requested new capacity : %d", newCap)
 	log.Printf("[SHRINK] Minimum allowed        : %d", minCap)
 	log.Printf("[SHRINK] Currently in use       : %d", inUse)
 	log.Printf("[SHRINK] Pool length            : %d", len(p.pool))
 
-	if newCapacity < minCap {
+	switch {
+	case newCap == 0:
+		log.Println("[SHRINK] Skipped — new capacity is zero (invalid)")
+		return false
+	case currentCap <= uint64(minCap):
+		log.Printf("[SHRINK] Skipped — current capacity (%d) is at or below MinCapacity (%d)", currentCap, minCap)
+		return false
+	case newCap >= int(currentCap):
+		log.Printf("[SHRINK] Skipped — new capacity (%d) is not smaller than current (%d)", newCap, currentCap)
+		return false
+	}
+
+	totalAvailable := len(p.pool) + len(p.cacheL1)
+	if totalAvailable == 0 {
+		log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
+		return false
+	}
+
+	return true
+}
+
+func (p *pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
+	minCap := p.config.shrink.minCapacity
+
+	if newCap < minCap {
 		log.Printf("[SHRINK] Adjusting to min capacity: %d", minCap)
-		newCapacity = minCap
+		newCap = minCap
 	}
-
-	if newCapacity < inUse {
+	if newCap < inUse {
 		log.Printf("[SHRINK] Adjusting to match in-use objects: %d", inUse)
-		newCapacity = inUse
+		newCap = inUse
 	}
 
-	if newCapacity < p.config.hardLimit {
+	if newCap < p.config.hardLimit {
 		log.Printf("[SHRINK] Allowing growth, capacity is lower than hard limit: %d", p.config.hardLimit)
 		p.isGrowthBlocked = false
 	}
+	return newCap
+}
 
-	p.performShrink(newCapacity)
-	log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)
-	log.Println("[SHRINK] ----------------------------------------")
+func (p *pool[T]) shouldShrinkFastPath() bool {
+	sinceLast := p.stats.totalShrinkEvents.Load() - p.stats.lastResizeAtShrinkNum.Load()
+	trigger := uint64(p.config.fastPath.shrinkEventsTrigger)
+
+	return sinceLast >= trigger
+}
+
+func (p *pool[T]) adjustFastPathShrinkTarget(currentCap uint64) int {
+	cfg := p.config.fastPath.shrink
+	newCap := int(float64(currentCap) * (1.0 - cfg.shrinkPercent))
+
+	if newCap < cfg.minCapacity {
+		log.Printf("[SHRINK | FAST PATH] Adjusting to min capacity: %d", cfg.minCapacity)
+		newCap = cfg.minCapacity
+	}
+	return newCap
+}
+
+func (p *pool[T]) shrinkFastPath(newCapacity, inUse int) {
+	availableObjsToCopy := newCapacity - inUse
+	if availableObjsToCopy <= 0 {
+		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
+		return
+	}
+
+	copyCount := min(availableObjsToCopy, len(p.cacheL1))
+	newL1 := make(chan T, newCapacity)
+
+	for range copyCount {
+		select {
+		case obj := <-p.cacheL1:
+			newL1 <- obj
+		default:
+			fmt.Println("[SHRINK] - cacheL1 is empty, or newL1 is full")
+		}
+	}
+
+	p.cacheL1 = newL1
+	p.stats.lastResizeAtShrinkNum.Store(p.stats.totalShrinkEvents.Load())
+}
+
+func (p *pool[T]) logFastPathShrink(currentCap uint64, newCap int, inUse int) {
+	log.Println("[SHRINK | FAST PATH] ----------------------------------------")
+	log.Printf("[SHRINK | FAST PATH] Starting shrink execution")
+	log.Printf("[SHRINK | FAST PATH] Current L1 capacity     : %d", currentCap)
+	log.Printf("[SHRINK | FAST PATH] Requested new capacity  : %d", newCap)
+	log.Printf("[SHRINK | FAST PATH] Minimum allowed         : %d", p.config.fastPath.shrink.minCapacity)
+	log.Printf("[SHRINK | FAST PATH] Currently in use        : %d", inUse)
+	log.Printf("[SHRINK | FAST PATH] Channel length (cached) : %d", len(p.cacheL1))
 }

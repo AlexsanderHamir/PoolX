@@ -11,6 +11,9 @@ type poolConfigBuilder struct {
 }
 
 func NewPoolConfigBuilder() *poolConfigBuilder {
+	fastPath := defaultFastPathParameters()
+	fastPath.shrink.minCapacity = defaultL1MinCapacity
+
 	return &poolConfigBuilder{
 		config: &poolConfig{
 			initialCapacity:     defaultPoolCapacity,
@@ -18,7 +21,7 @@ func NewPoolConfigBuilder() *poolConfigBuilder {
 			hardLimitBufferSize: defaultHardLimitBufferSize,
 			shrink:              defaultPoolShrinkParameters(),
 			growth:              defaultPoolGrowthParameters(),
-			fastPath:            defaultFastPathParameters(),
+			fastPath:            fastPath,
 		},
 	}
 }
@@ -73,6 +76,11 @@ func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *
 
 	b.config.shrink.aggressivenessLevel = level
 	b.config.shrink.ApplyDefaults(getShrinkDefaults())
+
+	b.config.fastPath.shrink.aggressivenessLevel = level
+	b.config.fastPath.shrink.ApplyDefaults(getShrinkDefaults())
+	b.config.fastPath.shrink.minCapacity = defaultL1MinCapacity
+
 	return b
 }
 
@@ -170,6 +178,35 @@ func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(percent float64) *poolC
 	return b
 }
 
+func (b *poolConfigBuilder) SetShrinkEventsTrigger(count int) *poolConfigBuilder {
+	b.config.fastPath.shrinkEventsTrigger = count
+	return b
+}
+
+func (b *poolConfigBuilder) SetFastPathShrinkAggressiveness(level AggressivenessLevel) *poolConfigBuilder {
+	if b.config.fastPath.shrink.enforceCustomConfig {
+		panic("can't set AggressivenessLevel if EnforceCustomConfig is active")
+	}
+
+	if level <= AggressivenessDisabled || level > AggressivenessExtreme {
+		panic("aggressive level is out of bounds")
+	}
+
+	b.config.fastPath.shrink.aggressivenessLevel = level
+	b.config.fastPath.shrink.ApplyDefaults(getShrinkDefaults())
+	return b
+}
+
+func (b *poolConfigBuilder) SetFastPathShrinkPercent(percent float64) *poolConfigBuilder {
+	b.config.fastPath.shrink.shrinkPercent = percent
+	return b
+}
+
+func (b *poolConfigBuilder) SetFastPathShrinkMinCapacity(minCap int) *poolConfigBuilder {
+	b.config.fastPath.shrink.minCapacity = minCap
+	return b
+}
+
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.initialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
@@ -261,6 +298,18 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 
 	if fp.growth.fixedGrowthFactor <= 0 {
 		return nil, fmt.Errorf("fixedGrowthFactor must be greater than 0")
+	}
+
+	if fp.shrinkEventsTrigger <= 0 {
+		return nil, fmt.Errorf("shrinkEventsTrigger must be greater than 0")
+	}
+
+	if fp.shrink.minCapacity <= 0 {
+		return nil, fmt.Errorf("minCapacity must be greater than 0")
+	}
+
+	if fp.shrink.shrinkPercent <= 0 {
+		return nil, fmt.Errorf("shrinkPercent must be greater than 0")
 	}
 
 	return b.config, nil

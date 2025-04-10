@@ -59,6 +59,7 @@ type poolStats struct {
 
 	currentL1Capacity     atomic.Uint64
 	lastResizeAtGrowthNum atomic.Uint64
+	lastResizeAtShrinkNum atomic.Uint64
 
 	FastReturnMiss atomic.Uint64
 	FastReturnHit  atomic.Uint64
@@ -156,7 +157,14 @@ type fastPathParameters struct {
 	// while still adapting to sustained load.
 	growthEventsTrigger int
 
+	// shrinkEventsTrigger defines how many pool shrink events must occur
+	// before triggering a capacity decrease for the L1 channel.
+	// This helps align L1 shrink with real demand, reducing premature allocations
+	// while still adapting to sustained load.
+	shrinkEventsTrigger int
+
 	growth *growthParameters
+	shrink *shrinkParameters
 }
 
 type shrinkParameters struct {
