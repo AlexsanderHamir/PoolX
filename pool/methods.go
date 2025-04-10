@@ -24,13 +24,13 @@ const (
 	defaultfillAggressiveness                             = fillAggressivenessExtreme
 	fillAggressivenessExtreme                             = 1.0
 	defaultRefillPercent                                  = 0.5
-	defaultMinCapacity                                    = 8
+	defaultMinCapacity                                    = 128                 // for measuring, so it doesn't shrink
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
 	defaultPoolCapacity                                   = 64                  // pool and L1 buffer
-	defaultHardLimit                                      = 256
-	defaultHardLimitBufferSize                            = 512
-	defaultGrowthEventsTrigger                            = 2
-	defaultShrinkEventsTrigger                            = 1
+	defaultHardLimit                                      = 128
+	defaultHardLimitBufferSize                            = 256
+	defaultGrowthEventsTrigger                            = 3
+	defaultShrinkEventsTrigger                            = 3
 	defaultEnableChannelGrowth                            = true
 )
 
@@ -89,7 +89,6 @@ func (p *pool[T]) Get() T {
 		p.cond.Broadcast()
 	}
 
-	// If the hard limit is reached, we block until an object is returned.
 	ableToRefill := p.tryRefillIfNeeded()
 	if !ableToRefill {
 		log.Printf("[POOL] Hard limit reached — blocking Get()")
@@ -228,8 +227,8 @@ func (p *pool[T]) shrink() {
 			log.Println("[SHRINK] STATS (before shrink)")
 			p.PrintPoolStats()
 			log.Println("[SHRINK] Shrink conditions met — executing shrink.")
-			p.ShrinkExecution()
 
+			p.ShrinkExecution()
 			idleCount, underutilCount = 0, 0
 			idleOK, utilOK = false, false
 		}

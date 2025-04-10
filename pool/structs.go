@@ -93,16 +93,15 @@ type poolConfig struct {
 	// until it reaches the defined capacity.
 	initialCapacity int
 
-	// hardLimit sets the maximum number of objects in the pool.
+	// hardLimit sets the maximum number of objects the pool will grow to.
 	// Once reached, the pool stops growing and Get() calls block until an object is returned.
 	//
 	// If the pool shrinks below the hardLimit, growth is allowed again.
 	//
 	// ⚠️ WARNING:
-	// A hardLimit that's too low for your workload can cause goroutine starvation.
-	// Ensure the hardLimitResume channel is properly buffered, or blocked goroutines may miss wake-ups,
-	// leading to reduced throughput and prolonged blocking. If you try to push for a very high Request Per Object
-	// by setting a very low hardLimit, goroutines will be dropped.
+	// 1. A hardLimit that's too low for your workload can cause goroutine starvation.
+	// 2. A lower hardLimit relative to the number of incoming requests increases latency,
+	// trading off performance for tighter memory control.
 	hardLimit int
 
 	// When the pool reaches the hardLimit, no new objects will be created.
@@ -155,6 +154,9 @@ type fastPathParameters struct {
 	// before triggering a capacity increase for the L1 channel.
 	// This helps align L1 growth with real demand, reducing premature allocations
 	// while still adapting to sustained load.
+	//
+	// ⚠️ WARNING:
+	// growing or shrinking the l1 buffer too often will cause goroutines to drop.
 	growthEventsTrigger int
 
 	// shrinkEventsTrigger defines how many pool shrink events must occur
@@ -257,4 +259,9 @@ type growthParameters struct {
 	//
 	//   → Pool grows: 48 → 60 → 72 → ...
 	fixedGrowthFactor float64
+}
+
+type Example struct {
+	Name string
+	Age  int
 }

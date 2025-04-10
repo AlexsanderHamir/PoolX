@@ -1,2 +1,7 @@
 tasks.md
 problem.md
+pool/usefulcommands
+pool/cpu.prof
+pool/mem.prof
+pool/allocs.prof
+pool/pool.test

@@ -4,25 +4,37 @@ import (
 	"log"
 	"math/rand"
 	"memctx/pool"
+	"net/http"
+	_ "net/http/pprof" // Import pprof
+	"runtime"
 	"sync"
 	"time"
 )
 
-type Example struct {
-	name    string
-	age     int
-	friends []string
+func main() {
+	enableProfiling()
+	runWorkloadForever()
+
+	select {}
 }
 
-func main() {
-	allocator := func() *Example {
-		return &Example{}
+func enableProfiling() {
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
+
+	go func() {
+		http.ListenAndServe("localhost:6060", nil)
+	}()
+}
+
+func runWorkloadForever() {
+	allocator := func() *pool.Example {
+		return &pool.Example{}
 	}
 
-	cleaner := func(e *Example) {
-		e.name = ""
-		e.age = 0
-		e.friends = nil
+	cleaner := func(e *pool.Example) {
+		e.Name = ""
+		e.Age = 0
 	}
 
 	config, err := pool.NewPoolConfigBuilder().
@@ -37,39 +49,36 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	var wg sync.WaitGroup
 
 	numWorkers := 1000
 	objectsPerWorker := 5
-	log.Println("[WORKLOAD] Starting high concurrency load test")
 
-	for i := range numWorkers {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
+	log.Println("[WORKLOAD] Starting mixed workload test (infinite mode)")
 
-			for range objectsPerWorker {
-				obj := poolObj.Get()
-				obj.name = "user_" + randomString(5)
-				obj.age = rand.Intn(100)
-				obj.friends = make([]string, rand.Intn(5))
-				time.Sleep(10 * time.Millisecond)
-				poolObj.Put(obj)
-			}
-		}(i)
+	for {
+		var wg sync.WaitGroup
+
+		for i := range numWorkers {
+			wg.Add(1)
+
+			go func(workerID int) {
+				defer wg.Done()
+
+				time.Sleep(time.Duration(rand.Intn(20)) * time.Millisecond)
+
+				for j := 0; j < objectsPerWorker; j++ {
+					obj := poolObj.Get()
+
+					obj.Name = "user1"
+					obj.Age = 140
+
+					time.Sleep(time.Duration(rand.Intn(30)+10) * time.Millisecond)
+
+					poolObj.Put(obj)
+				}
+			}(i)
+		}
+
+		wg.Wait()
 	}
-
-	wg.Wait()
-	log.Println("[DONE] High concurrency load test completed")
-
-	select {}
-}
-
-func randomString(n int) string {
-	letters := []rune("abcdefghijklmnopqrstuvwxyz")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
 }
