@@ -1,0 +1,547 @@
+package pool
+
+import (
+	"fmt"
+	"log"
+	"time"
+)
+
+func (p *pool[T]) updateAvailableObjs() {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	fmt.Printf("pool length: %d, cacheLen: %d\n", len(p.pool), len(p.cacheL1))
+	p.stats.availableObjects.Store(uint64(len(p.pool) + len(p.cacheL1)))
+	fmt.Printf("availableObjects: %d\n", p.stats.availableObjects.Load())
+}
+
+func (p *pool[T]) reduceObjsInUse() {
+	for {
+		old := p.stats.objectsInUse.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.objectsInUse.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+func (p *pool[T]) reduceL1Hit() {
+	for {
+		old := p.stats.l1HitCount.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+func (p *pool[T]) reduceBlockedGets() {
+	for {
+		old := p.stats.blockedGets.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.blockedGets.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+func (p *pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint64, cfg *growthParameters) uint64 {
+	if currentCap < threshold {
+		growth := maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
+		newCap := currentCap + growth
+		log.Printf("[GROW] Strategy: exponential | Threshold: %d | Current: %d | Growth: %d | New capacity: %d",
+			threshold, currentCap, growth, newCap)
+		return newCap
+	}
+	newCap := currentCap + fixedStep
+	log.Printf("[GROW] Strategy: fixed-step | Threshold: %d | Current: %d | Step: %d | New capacity: %d",
+		threshold, currentCap, fixedStep, newCap)
+	return newCap
+}
+
+func (p *pool[T]) growthWouldExceedHardLimit(newCapacity uint64) bool {
+	return newCapacity > uint64(p.config.hardLimit) && p.stats.currentCapacity.Load() >= uint64(p.config.hardLimit)
+}
+
+func (p *pool[T]) needsToShrinkToHardLimit(currentCap, newCapacity uint64) bool {
+	return currentCap < uint64(p.config.hardLimit) && newCapacity > uint64(p.config.hardLimit)
+}
+
+func (p *pool[T]) resizePool(currentCap, newCap uint64) {
+	newPool := make([]T, len(p.pool), int(newCap))
+	copy(newPool, p.pool)
+
+	toAdd := newCap - currentCap
+	for range toAdd {
+		newPool = append(newPool, p.allocator())
+	}
+	p.pool = newPool
+	p.stats.currentCapacity.Store(newCap)
+}
+
+func (p *pool[T]) tryL1ResizeIfTriggered() {
+	trigger := uint64(p.config.fastPath.growthEventsTrigger)
+	if !p.config.fastPath.enableChannelGrowth {
+		return
+	}
+
+	sinceLastResize := p.stats.totalGrowthEvents.Load() - p.stats.lastResizeAtGrowthNum.Load()
+	if sinceLastResize < trigger {
+		return
+	}
+
+	cfg := p.config.fastPath.growth
+	currentCap := p.stats.currentL1Capacity.Load()
+	threshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
+	step := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
+
+	var newCap uint64
+	if currentCap < threshold {
+		newCap = currentCap + maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
+	} else {
+		newCap = currentCap + step
+	}
+
+	newL1 := make(chan T, newCap)
+	for {
+		select {
+		case obj := <-p.cacheL1:
+			newL1 <- obj
+		default:
+			goto done
+		}
+	}
+done:
+
+	p.cacheL1 = newL1
+	p.stats.currentL1Capacity.Store(newCap)
+	p.stats.lastResizeAtGrowthNum.Store(p.stats.totalGrowthEvents.Load())
+}
+
+func (p *pool[T]) PrintPoolStats() {
+	fmt.Println("========== Pool Stats ==========")
+	fmt.Printf("Objects In Use       : %d\n", p.stats.objectsInUse.Load())
+	fmt.Printf("Available Objects    : %d\n", p.stats.availableObjects.Load())
+	fmt.Printf("Current Capacity     : %d\n", p.stats.currentCapacity.Load())
+	fmt.Printf("Peak In Use          : %d\n", p.stats.peakInUse.Load())
+	fmt.Printf("Total Gets           : %d\n", p.stats.totalGets.Load())
+	fmt.Printf("Total Puts           : %d\n", p.stats.totalPuts.Load())
+	fmt.Printf("Total Growth Events  : %d\n", p.stats.totalGrowthEvents.Load())
+	fmt.Printf("Total Shrink Events  : %d\n", p.stats.totalShrinkEvents.Load())
+	fmt.Printf("Consecutive Shrinks  : %d\n", p.stats.consecutiveShrinks.Load())
+	fmt.Printf("Blocked Gets         : %d\n", p.stats.blockedGets.Load())
+
+	fmt.Println()
+	fmt.Println("---------- Fast Path Resize Stats ----------")
+	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastResizeAtGrowthNum.Load())
+	fmt.Printf("Current L1 Capacity     : %d\n", p.stats.currentL1Capacity.Load())
+	fmt.Println("---------------------------------------")
+	fmt.Println()
+
+	fmt.Println()
+	fmt.Println("---------- Fast Get Stats ----------")
+	fmt.Printf("Fast Path (L1) Hits  : %d\n", p.stats.l1HitCount.Load())
+	fmt.Printf("Slow Path (L2) Hits  : %d\n", p.stats.l2HitCount.Load())
+	fmt.Printf("Allocator Misses (L3): %d\n", p.stats.l3MissCount.Load())
+	fmt.Println("---------------------------------------")
+	fmt.Println()
+
+	fastReturnHit := p.stats.FastReturnHit.Load()
+	fastReturnMiss := p.stats.FastReturnMiss.Load()
+	totalReturns := fastReturnHit + fastReturnMiss
+
+	var l2SpillRate float64
+	if totalReturns > 0 {
+		l2SpillRate = float64(fastReturnMiss) / float64(totalReturns)
+	}
+
+	fmt.Println("---------- Fast Return Stats ----------")
+	fmt.Printf("Fast Return Hit   : %d\n", fastReturnHit)
+	fmt.Printf("Fast Return Miss  : %d\n", fastReturnMiss)
+	fmt.Printf("L2 Spill Rate     : %.2f%%\n", l2SpillRate*100)
+	fmt.Println("---------------------------------------")
+	fmt.Println()
+
+	p.stats.mu.RLock()
+	fmt.Println("---------- Usage Stats ----------")
+	fmt.Println()
+	fmt.Printf("Request Per Object   : %.2f\n", p.stats.reqPerObj)
+	fmt.Printf("Utilization %%       : %.2f%%\n", p.stats.utilization)
+	fmt.Println("---------------------------------------")
+	p.stats.mu.RUnlock()
+
+	fmt.Println("---------- Time Stats ----------")
+	fmt.Printf("Last Get Time        : %s\n", p.stats.lastTimeCalledGet.Format(time.RFC3339))
+	fmt.Printf("Last Put Time        : %s\n", p.stats.lastTimeCalledPut.Format(time.RFC3339))
+	fmt.Printf("Last Shrink Time     : %s\n", p.stats.lastShrinkTime.Format(time.RFC3339))
+	fmt.Printf("Last Grow Time       : %s\n", p.stats.lastGrowTime.Format(time.RFC3339))
+	fmt.Println("=================================")
+}
+
+func getShrinkDefaults() map[AggressivenessLevel]*shrinkDefaults {
+	return map[AggressivenessLevel]*shrinkDefaults{
+		AggressivenessDisabled: {
+			0, 0, 0, 0, 0, 0, 0, 0,
+		},
+		AggressivenessConservative: {
+			5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.20, 3, 0.10, 1,
+		},
+		AggressivenessBalanced: {
+			2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.30, 3, 0.25, 2,
+		},
+		AggressivenessAggressive: {
+			1 * time.Minute, 2 * time.Minute, 2, 2 * time.Minute, 0.40, 2, 0.50, 3,
+		},
+		AggressivenessVeryAggressive: {
+			30 * time.Second, 1 * time.Minute, 1, 1 * time.Minute, 0.50, 1, 0.65, 4,
+		},
+		AggressivenessExtreme: {
+			10 * time.Second, 20 * time.Second, 1, 30 * time.Second, 0.60, 1, 0.80, 5,
+		},
+	}
+}
+
+func maxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func defaultFastPathParameters() *fastPathParameters {
+	return &fastPathParameters{
+		bufferSize:          defaultPoolCapacity,
+		fillAggressiveness:  defaultfillAggressiveness,
+		refillPercent:       defaultRefillPercent,
+		enableChannelGrowth: defaultEnableChannelGrowth,
+		growthEventsTrigger: defaultGrowthEventsTrigger,
+		growth:              defaultPoolGrowthParameters(), // grow the same as the pool, leaving the pool mostly empty.
+	}
+}
+
+func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
+	if *fastPathRemaining > 0 {
+		select {
+		case p.cacheL1 <- obj:
+			*fastPathRemaining--
+			return
+		default:
+			// avoids blocking
+		}
+	}
+
+	p.pool = append(p.pool, obj)
+}
+
+func (p *pool[T]) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
+	idleDuration := time.Since(p.stats.lastTimeCalledGet)
+	threshold := p.config.shrink.idleThreshold
+	required := p.config.shrink.minIdleBeforeShrink
+
+	if idleDuration >= threshold {
+		*idles += 1
+		if *idles >= required {
+			*shrinkPermissionIdleness = true
+		}
+		log.Printf("[SHRINK] IdleCheck passed — idleDuration: %v | idles: %d/%d", idleDuration, *idles, required)
+	} else {
+		if *idles > 0 {
+			*idles -= 1
+		}
+		log.Printf("[SHRINK] IdleCheck reset — recent activity detected | idles: %d/%d", *idles, required)
+	}
+}
+
+func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
+	inUse := p.stats.objectsInUse.Load()
+	available := p.stats.availableObjects.Load()
+	total := inUse + available
+
+	var utilization float64
+	if total > 0 {
+		utilization = (float64(inUse) / float64(total)) * 100
+	}
+
+	minUtil := p.config.shrink.minUtilizationBeforeShrink
+	requiredRounds := p.config.shrink.stableUnderutilizationRounds
+
+	if utilization <= minUtil {
+		*underutilizationRounds += 1
+		log.Printf("[SHRINK] UtilizationCheck — utilization: %.2f%% (threshold: %.2f%%) | round: %d/%d",
+			utilization, minUtil, *underutilizationRounds, requiredRounds)
+
+		if *underutilizationRounds >= requiredRounds {
+			*shrinkPermissionUtilization = true
+			log.Println("[SHRINK] UtilizationCheck — underutilization stable, shrink allowed")
+		}
+	} else {
+		if *underutilizationRounds > 0 {
+			*underutilizationRounds -= 1
+			log.Printf("[SHRINK] UtilizationCheck — usage recovered, reducing rounds: %d/%d",
+				*underutilizationRounds, requiredRounds)
+		} else {
+			log.Printf("[SHRINK] UtilizationCheck — usage healthy: %.2f%% > %.2f%%", utilization, minUtil)
+		}
+	}
+}
+
+func (p *pool[T]) updateDerivedStats() {
+	totalGets := p.stats.totalGets.Load()
+	objectsInUse := p.stats.objectsInUse.Load()
+	availableObjects := p.stats.availableObjects.Load()
+
+	currentCapacity := p.stats.currentCapacity.Load()
+
+	initialCapacity := p.stats.initialCapacity
+	totalCreated := currentCapacity - uint64(initialCapacity)
+
+	p.stats.mu.Lock()
+	if totalCreated > 0 {
+		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
+	}
+
+	// WARNING -  at the time calculated, it may be low, be selective.
+	totalObjects := objectsInUse + availableObjects
+	if totalObjects > 0 {
+		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
+	}
+	p.stats.mu.Unlock()
+}
+
+func (p *pool[T]) updateUsageStats() {
+	currentInUse := p.stats.objectsInUse.Add(1)
+	p.stats.totalGets.Add(1)
+	p.updateAvailableObjs() // safe
+
+	for {
+		peak := p.stats.peakInUse.Load()
+		if currentInUse <= peak {
+			break
+		}
+
+		if p.stats.peakInUse.CompareAndSwap(peak, currentInUse) {
+			break
+		}
+	}
+
+	// For it to count as a consecutive shrink the get method
+	// needs to not be called in between shrinks.
+	for {
+		current := p.stats.consecutiveShrinks.Load()
+		if current == 0 {
+			break
+		}
+		if p.stats.consecutiveShrinks.CompareAndSwap(current, current-1) {
+			break
+		}
+	}
+}
+
+func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDefaults) {
+	if p.aggressivenessLevel < AggressivenessDisabled {
+		p.aggressivenessLevel = AggressivenessDisabled
+	}
+
+	if p.aggressivenessLevel > AggressivenessExtreme {
+		p.aggressivenessLevel = AggressivenessExtreme
+	}
+
+	def, ok := table[p.aggressivenessLevel]
+	if !ok {
+		return
+	}
+
+	p.checkInterval = def.interval
+	p.idleThreshold = def.idle
+	p.minIdleBeforeShrink = def.minIdle
+	p.shrinkCooldown = def.cooldown
+	p.minUtilizationBeforeShrink = def.utilization
+	p.stableUnderutilizationRounds = def.underutilized
+	p.shrinkPercent = def.percent
+	p.maxConsecutiveShrinks = def.maxShrinks
+	p.minCapacity = defaultMinCapacity
+}
+
+func defaultPoolGrowthParameters() *growthParameters {
+	return &growthParameters{
+		exponentialThresholdFactor: defaultExponentialThresholdFactor,
+		growthPercent:              defaultGrowthPercent,
+		fixedGrowthFactor:          defaultFixedGrowthFactor,
+	}
+}
+
+func defaultPoolShrinkParameters() *shrinkParameters {
+	psp := &shrinkParameters{
+		aggressivenessLevel: defaultAggressiveness,
+	}
+
+	psp.ApplyDefaults(getShrinkDefaults())
+
+	return psp
+}
+
+func (p *pool[T]) refill(n int) bool {
+	batch := p.slowPathGetObjBatch(n)
+	if batch == nil {
+		return false
+	}
+
+	p.updateAvailableObjs()
+
+	p.fastRefill(batch)
+	return true
+}
+
+// even if the growth is blocked, we still need to refill the L1 buffer.
+func (p *pool[T]) slowPathGetObjBatch(requiredPrefill int) []T {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	noObjsAvailable := len(p.pool) == 0
+	if noObjsAvailable {
+		if p.isGrowthBlocked {
+			log.Printf("[POOL] Growth is blocked — returning nil")
+			return nil
+		}
+
+		now := time.Now()
+		ableToGrow := p.grow(now)
+		if !ableToGrow {
+			return nil
+		}
+
+		// WARNING - refill is being called together with L1 case.
+		p.reduceL1Hit()
+	}
+
+	// WARNING - if the min capacity of the pool is lower than L1 size it will cause an error.
+	currentObjsAvailable := len(p.pool)
+	if requiredPrefill > currentObjsAvailable {
+		log.Printf("[WARN] Required prefill (%d) exceeds available objects (%d). Capping to max available.", requiredPrefill, currentObjsAvailable)
+		requiredPrefill = currentObjsAvailable
+	}
+
+	start := currentObjsAvailable - requiredPrefill
+	batch := p.pool[start:]
+	p.pool = p.pool[:start]
+
+	return batch
+}
+
+func (p *pool[T]) fastRefill(batch []T) {
+	var fallbackCount int
+
+	for _, obj := range batch {
+		select {
+		case p.cacheL1 <- obj:
+		default:
+			// Fast path was unexpectedly full — fall back to the slower path
+			p.mu.Lock()
+			p.pool = append(p.pool, obj)
+			p.stats.lastTimeCalledPut = time.Now()
+			p.mu.Unlock()
+
+			fallbackCount++
+		}
+	}
+
+	if fallbackCount > 0 {
+		log.Printf("[REFILL] Fast path overflowed during refill — %d object(s) added to fallback pool", fallbackCount)
+	}
+}
+
+func (p *pool[T]) performShrink(newCapacity int) {
+	currentCap := int(p.stats.currentCapacity.Load())
+	inUse := int(p.stats.objectsInUse.Load())
+	minCap := p.config.shrink.minCapacity
+
+	// NOTE: If all available objects are currently in the fast path channel (cacheL1),
+	// then p.pool may be empty — but this does NOT mean all objects are in use.
+	// We only skip shrinking if there are truly no available objects to preserve.
+	availableInPool := len(p.pool)
+	availableInCacheL1 := len(p.cacheL1)
+	totalAvailable := availableInPool + availableInCacheL1
+
+	if totalAvailable == 0 {
+		log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
+		return
+	}
+
+	if currentCap <= minCap {
+		log.Printf("[SHRINK] Skipped — current capacity (%d) is at or below MinCapacity (%d)", currentCap, minCap)
+		return
+	}
+
+	if newCapacity >= currentCap {
+		log.Printf("[SHRINK] Skipped — new capacity (%d) is not smaller than current (%d)", newCapacity, currentCap)
+		return
+	}
+
+	if newCapacity == 0 {
+		log.Println("[SHRINK] Skipped — new capacity is zero (invalid)")
+		return
+	}
+
+	availableObjsToCopy := newCapacity - inUse
+	if availableObjsToCopy <= 0 {
+		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
+		return
+	}
+
+	copyCount := min(availableObjsToCopy, len(p.pool))
+	newPool := make([]T, copyCount, newCapacity)
+	copy(newPool, p.pool[:copyCount])
+	p.pool = newPool
+
+	log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d", currentCap, newCapacity, copyCount, inUse)
+
+	// copy count is the objects being copied from the existing pool,
+	// so they become the available objects
+	p.stats.currentCapacity.Store(uint64(newCapacity))
+	p.stats.totalShrinkEvents.Add(1)
+	p.stats.lastShrinkTime = time.Now()
+	p.stats.consecutiveShrinks.Add(1)
+}
+
+func (p *pool[T]) ShrinkExecution() {
+	currentCap := p.stats.currentCapacity.Load()
+	minCap := p.config.shrink.minCapacity
+	inUse := int(p.stats.objectsInUse.Load())
+
+	newCapacity := int(float64(currentCap) * (1.0 - p.config.shrink.shrinkPercent))
+
+	log.Println("[SHRINK] ----------------------------------------")
+	log.Printf("[SHRINK] Starting shrink execution")
+	log.Printf("[SHRINK] Current capacity       : %d", currentCap)
+	log.Printf("[SHRINK] Requested new capacity : %d", newCapacity)
+	log.Printf("[SHRINK] Minimum allowed        : %d", minCap)
+	log.Printf("[SHRINK] Currently in use       : %d", inUse)
+	log.Printf("[SHRINK] Pool length            : %d", len(p.pool))
+
+	if newCapacity < minCap {
+		log.Printf("[SHRINK] Adjusting to min capacity: %d", minCap)
+		newCapacity = minCap
+	}
+
+	if newCapacity < inUse {
+		log.Printf("[SHRINK] Adjusting to match in-use objects: %d", inUse)
+		newCapacity = inUse
+	}
+
+	if newCapacity < p.config.hardLimit {
+		log.Printf("[SHRINK] Allowing growth, capacity is lower than hard limit: %d", p.config.hardLimit)
+		p.isGrowthBlocked = false
+	}
+
+	p.performShrink(newCapacity)
+	log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)
+	log.Println("[SHRINK] ----------------------------------------")
+}

@@ -57,6 +57,9 @@ type poolStats struct {
 	currentCapacity    atomic.Uint64
 	blockedGets        atomic.Uint64
 
+	currentL1Capacity     atomic.Uint64
+	lastResizeAtGrowthNum atomic.Uint64
+
 	FastReturnMiss atomic.Uint64
 	FastReturnHit  atomic.Uint64
 	L2SplillRate   float64
@@ -140,6 +143,20 @@ type fastPathParameters struct {
 	// because it would cause a refill attempt even when the buffer is completely full,
 	// which is unnecessary and wasteful.
 	refillPercent float64
+
+	// enableChannelGrowth allows the L1 channel (cache layer) to dynamically grow
+	// by reallocating it with a larger buffer size when needed.
+	// This can improve performance under high concurrency by reducing contention
+	// and increasing fast-path hit rates.
+	enableChannelGrowth bool
+
+	// growthEventsTrigger defines how many pool growth events must occur
+	// before triggering a capacity increase for the L1 channel.
+	// This helps align L1 growth with real demand, reducing premature allocations
+	// while still adapting to sustained load.
+	growthEventsTrigger int
+
+	growth *growthParameters
 }
 
 type shrinkParameters struct {

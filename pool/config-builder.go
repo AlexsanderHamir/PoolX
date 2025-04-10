@@ -146,6 +146,30 @@ func (b *poolConfigBuilder) SetHardLimitBufferSize(count int) *poolConfigBuilder
 	return b
 }
 
+func (b *poolConfigBuilder) SetEnableChannelGrowth(enable bool) *poolConfigBuilder {
+	b.config.fastPath.enableChannelGrowth = enable
+	return b
+}
+
+func (b *poolConfigBuilder) SetGrowthEventsTrigger(count int) *poolConfigBuilder {
+	b.config.fastPath.growthEventsTrigger = count
+	return b
+}
+func (b *poolConfigBuilder) SetFastPathGrowthPercent(percent float64) *poolConfigBuilder {
+	b.config.fastPath.growth.growthPercent = percent
+	return b
+}
+
+func (b *poolConfigBuilder) SetFastPathExponentialThresholdFactor(percent float64) *poolConfigBuilder {
+	b.config.fastPath.growth.exponentialThresholdFactor = percent
+	return b
+}
+
+func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(percent float64) *poolConfigBuilder {
+	b.config.fastPath.growth.fixedGrowthFactor = percent
+	return b
+}
+
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.initialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
@@ -221,6 +245,22 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 
 	if fp.refillPercent <= 0 || fp.refillPercent >= 1.0 {
 		return nil, fmt.Errorf("refillPercent must be between 0 and 0.99")
+	}
+
+	if fp.growthEventsTrigger <= 0 {
+		return nil, fmt.Errorf("growthEventsTrigger must be greater than 0")
+	}
+
+	if fp.growth.exponentialThresholdFactor <= 0 {
+		return nil, fmt.Errorf("exponentialThresholdFactor must be greater than 0")
+	}
+
+	if fp.growth.growthPercent <= 0 {
+		return nil, fmt.Errorf("growthPercent must be greater than 0")
+	}
+
+	if fp.growth.fixedGrowthFactor <= 0 {
+		return nil, fmt.Errorf("fixedGrowthFactor must be greater than 0")
 	}
 
 	return b.config, nil
