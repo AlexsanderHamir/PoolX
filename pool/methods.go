@@ -52,18 +52,19 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 	stats.availableObjects.Store(uint64(config.initialCapacity))
 	stats.currentL1Capacity.Store(uint64(config.fastPath.bufferSize))
 
+	// WARNING - be smart about the L1 size, and the hardLimitBufferSize,
+	// you will serve more requests faster, but you will also use more memory.
 	poolObj := pool[T]{
-		cacheL1:         make(chan T, config.fastPath.bufferSize),
-		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize),
-		allocator:       allocator,
-		cleaner:         cleaner,
-		mu:              &sync.RWMutex{},
-		config:          config,
-		stats:           stats,
+		cacheL1:         make(chan T, config.fastPath.bufferSize),        // 8 * 128 = 1024
+		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize), // 8 * 256 = 2048
+		allocator:       allocator,                                       // 8
+		cleaner:         cleaner,                                         // 8
+		mu:              &sync.RWMutex{},                                 // 8
+		config:          config,                                          // 8
+		stats:           stats,                                           // 8 => total: 1024 + 2048 + 8 + 8 + 8 + 8 + 8 = 4112
 	}
 
 	poolObj.cond = sync.NewCond(poolObj.mu)
-
 	obj := poolObj.allocator()
 	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("allocator must return a pointer, got %T", obj)
@@ -74,7 +75,8 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 
 	poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
 	for i := 1; i < config.initialCapacity; i++ {
-		obj := poolObj.allocator()
+		// cheaper way instead of calling allocator all the time
+		obj = poolObj.allocator()
 		poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
 	}
 

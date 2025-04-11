@@ -41,6 +41,7 @@ func runWorkload() {
 	allocator := func() *pool.Example {
 		return &pool.Example{}
 	}
+	
 	cleaner := func(e *pool.Example) {
 		e.Name = ""
 		e.Age = 0
