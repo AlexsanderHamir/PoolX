@@ -5,3 +5,4 @@ pool/cpu.prof
 pool/mem.prof
 pool/allocs.prof
 pool/pool.test
+profiling.md

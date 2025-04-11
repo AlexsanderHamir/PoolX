@@ -11,17 +11,15 @@ type poolConfigBuilder struct {
 }
 
 func NewPoolConfigBuilder() *poolConfigBuilder {
-	fastPath := defaultFastPathParameters()
-	fastPath.shrink.minCapacity = defaultL1MinCapacity
 
 	return &poolConfigBuilder{
 		config: &poolConfig{
 			initialCapacity:     defaultPoolCapacity,
 			hardLimit:           defaultHardLimit,
 			hardLimitBufferSize: defaultHardLimitBufferSize,
-			shrink:              defaultPoolShrinkParameters(),
-			growth:              defaultPoolGrowthParameters(),
-			fastPath:            fastPath,
+			shrink:              defaultShrinkParameters,
+			growth:              defaultGrowthParameters,
+			fastPath:            defaultFastPath,
 		},
 	}
 }
@@ -55,10 +53,16 @@ func (b *poolConfigBuilder) SetFixedGrowthFactor(factor float64) *poolConfigBuil
 // When called, all shrink parameters must be set manually.
 // For partial overrides, leave EnforceCustomConfig to its default and set values directly.
 func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
-	b.config.shrink.enforceCustomConfig = true
-	b.config.shrink.aggressivenessLevel = AggressivenessDisabled
-	b.config.shrink.ApplyDefaults(getShrinkDefaults())
-	return b
+	newBuilder := *b
+	copiedShrink := *b.config.shrink
+
+	copiedShrink.enforceCustomConfig = true
+	copiedShrink.aggressivenessLevel = AggressivenessDisabled
+	copiedShrink.ApplyDefaults(getShrinkDefaultsMap())
+
+	newBuilder.config.shrink = &copiedShrink
+
+	return &newBuilder
 }
 
 // This controls how quickly and frequently the pool will shrink when underutilized, or idle.
@@ -74,14 +78,21 @@ func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *
 		panic("aggressive level is out of bounds")
 	}
 
-	b.config.shrink.aggressivenessLevel = level
-	b.config.shrink.ApplyDefaults(getShrinkDefaults())
+	newBuilder := *b
 
-	b.config.fastPath.shrink.aggressivenessLevel = level
-	b.config.fastPath.shrink.ApplyDefaults(getShrinkDefaults())
-	b.config.fastPath.shrink.minCapacity = defaultL1MinCapacity
+	copiedShrink := *b.config.shrink
+	copiedShrink.aggressivenessLevel = level
+	copiedShrink.ApplyDefaults(getShrinkDefaultsMap())
 
-	return b
+	copiedFastPathShrink := *b.config.fastPath.shrink
+	copiedFastPathShrink.aggressivenessLevel = level
+	copiedFastPathShrink.ApplyDefaults(getShrinkDefaultsMap())
+	copiedFastPathShrink.minCapacity = defaultL1MinCapacity
+
+	newBuilder.config.shrink = &copiedShrink
+	newBuilder.config.fastPath.shrink = &copiedFastPathShrink
+
+	return &newBuilder
 }
 
 func (b *poolConfigBuilder) SetShrinkCheckInterval(interval time.Duration) *poolConfigBuilder {
@@ -185,16 +196,21 @@ func (b *poolConfigBuilder) SetShrinkEventsTrigger(count int) *poolConfigBuilder
 
 func (b *poolConfigBuilder) SetFastPathShrinkAggressiveness(level AggressivenessLevel) *poolConfigBuilder {
 	if b.config.fastPath.shrink.enforceCustomConfig {
-		panic("can't set AggressivenessLevel if EnforceCustomConfig is active")
+		panic("cannot set AggressivenessLevel if EnforceCustomConfig is active")
 	}
-
 	if level <= AggressivenessDisabled || level > AggressivenessExtreme {
-		panic("aggressive level is out of bounds")
+		panic("aggressiveness level is out of bounds")
 	}
 
-	b.config.fastPath.shrink.aggressivenessLevel = level
-	b.config.fastPath.shrink.ApplyDefaults(getShrinkDefaults())
-	return b
+	newBuilder := *b
+
+	copiedFastPathShrink := *b.config.fastPath.shrink
+	copiedFastPathShrink.aggressivenessLevel = level
+	copiedFastPathShrink.ApplyDefaults(getShrinkDefaultsMap())
+
+	newBuilder.config.fastPath.shrink = &copiedFastPathShrink
+
+	return &newBuilder
 }
 
 func (b *poolConfigBuilder) SetFastPathShrinkPercent(percent float64) *poolConfigBuilder {

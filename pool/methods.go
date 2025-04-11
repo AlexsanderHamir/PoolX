@@ -26,7 +26,7 @@ const (
 	defaultRefillPercent                                  = 0.5
 	defaultMinCapacity                                    = 128                 // for measuring, so it doesn't shrink
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
-	defaultPoolCapacity                                   = 64                  // pool and L1 buffer
+	defaultPoolCapacity                                   = 128                 // pool and L1 buffer
 	defaultHardLimit                                      = 128
 	defaultHardLimitBufferSize                            = 256
 	defaultGrowthEventsTrigger                            = 3
@@ -40,9 +40,9 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 			initialCapacity:     defaultPoolCapacity,
 			hardLimit:           defaultHardLimit,
 			hardLimitBufferSize: defaultHardLimitBufferSize,
-			shrink:              defaultPoolShrinkParameters(),
-			growth:              defaultPoolGrowthParameters(),
-			fastPath:            defaultFastPathParameters(),
+			shrink:              defaultShrinkParameters,
+			growth:              defaultGrowthParameters,
+			fastPath:            defaultFastPath,
 		}
 	}
 
@@ -78,7 +78,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
 	}
 
-	go poolObj.shrink()
+	// go poolObj.shrink() // WARNING - it will mess up the benchmark
 
 	return &poolObj, nil
 }

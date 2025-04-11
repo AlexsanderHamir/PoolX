@@ -186,27 +186,8 @@ func (p *pool[T]) PrintPoolStats() {
 	fmt.Println("=================================")
 }
 
-func getShrinkDefaults() map[AggressivenessLevel]*shrinkDefaults {
-	return map[AggressivenessLevel]*shrinkDefaults{
-		AggressivenessDisabled: {
-			0, 0, 0, 0, 0, 0, 0, 0,
-		},
-		AggressivenessConservative: {
-			5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.20, 3, 0.10, 1,
-		},
-		AggressivenessBalanced: {
-			2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.30, 3, 0.25, 2,
-		},
-		AggressivenessAggressive: {
-			1 * time.Minute, 2 * time.Minute, 2, 2 * time.Minute, 0.40, 2, 0.50, 3,
-		},
-		AggressivenessVeryAggressive: {
-			30 * time.Second, 1 * time.Minute, 1, 1 * time.Minute, 0.50, 1, 0.65, 4,
-		},
-		AggressivenessExtreme: {
-			10 * time.Second, 20 * time.Second, 1, 30 * time.Second, 0.60, 1, 0.80, 5,
-		},
-	}
+func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
+	return defaultShrinkMap
 }
 
 func maxUint64(a, b uint64) uint64 {
@@ -216,22 +197,6 @@ func maxUint64(a, b uint64) uint64 {
 	return b
 }
 
-func defaultFastPathParameters() *fastPathParameters {
-	fastPath := &fastPathParameters{
-		bufferSize:          defaultPoolCapacity,
-		fillAggressiveness:  defaultfillAggressiveness,
-		refillPercent:       defaultRefillPercent,
-		enableChannelGrowth: defaultEnableChannelGrowth,
-		growthEventsTrigger: defaultGrowthEventsTrigger,
-		shrinkEventsTrigger: defaultShrinkEventsTrigger,
-		growth:              defaultPoolGrowthParameters(),
-		shrink:              defaultPoolShrinkParameters(),
-	}
-
-	fastPath.shrink.minCapacity = defaultL1MinCapacity
-
-	return fastPath
-}
 
 func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
 	if *fastPathRemaining > 0 {
@@ -374,24 +339,6 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 	p.shrinkPercent = def.percent
 	p.maxConsecutiveShrinks = def.maxShrinks
 	p.minCapacity = defaultMinCapacity
-}
-
-func defaultPoolGrowthParameters() *growthParameters {
-	return &growthParameters{
-		exponentialThresholdFactor: defaultExponentialThresholdFactor,
-		growthPercent:              defaultGrowthPercent,
-		fixedGrowthFactor:          defaultFixedGrowthFactor,
-	}
-}
-
-func defaultPoolShrinkParameters() *shrinkParameters {
-	psp := &shrinkParameters{
-		aggressivenessLevel: defaultAggressiveness,
-	}
-
-	psp.ApplyDefaults(getShrinkDefaults())
-
-	return psp
 }
 
 func (p *pool[T]) refill(n int) bool {
@@ -621,4 +568,10 @@ func (p *pool[T]) logFastPathShrink(currentCap uint64, newCap int, inUse int) {
 	log.Printf("[SHRINK | FAST PATH] Minimum allowed         : %d", p.config.fastPath.shrink.minCapacity)
 	log.Printf("[SHRINK | FAST PATH] Currently in use        : %d", inUse)
 	log.Printf("[SHRINK | FAST PATH] Channel length (cached) : %d", len(p.cacheL1))
+}
+
+// Set default fields
+func InitDefaultFields() {
+	defaultFastPath.shrink.minCapacity = defaultL1MinCapacity
+	defaultShrinkParameters.ApplyDefaults(getShrinkDefaultsMap())
 }

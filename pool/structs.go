@@ -128,6 +128,21 @@ type fastPathParameters struct {
 	// to the slower, lock-protected main pool. (length <= currentCapacity)
 	bufferSize int
 
+	// growthEventsTrigger defines how many pool growth events must occur
+	// before triggering a capacity increase for the L1 channel.
+	// This helps align L1 growth with real demand, reducing premature allocations
+	// while still adapting to sustained load.
+	//
+	// ⚠️ WARNING:
+	// growing or shrinking the l1 buffer too often will cause goroutines to drop.
+	growthEventsTrigger int
+
+	// shrinkEventsTrigger defines how many pool shrink events must occur
+	// before triggering a capacity decrease for the L1 channel.
+	// This helps align L1 shrink with real demand, reducing premature allocations
+	// while still adapting to sustained load.
+	shrinkEventsTrigger int
+
 	// fillAggressiveness controls how aggressively the pool refills the fast path buffer
 	// from the main pool. It is a float between 0.0 and 1.0, representing the fraction of the
 	// fast path buffer that should be proactively filled during initialization, and refills.
@@ -144,29 +159,14 @@ type fastPathParameters struct {
 	// which is unnecessary and wasteful.
 	refillPercent float64
 
+	growth *growthParameters
+	shrink *shrinkParameters
+
 	// enableChannelGrowth allows the L1 channel (cache layer) to dynamically grow
 	// by reallocating it with a larger buffer size when needed.
 	// This can improve performance under high concurrency by reducing contention
 	// and increasing fast-path hit rates.
 	enableChannelGrowth bool
-
-	// growthEventsTrigger defines how many pool growth events must occur
-	// before triggering a capacity increase for the L1 channel.
-	// This helps align L1 growth with real demand, reducing premature allocations
-	// while still adapting to sustained load.
-	//
-	// ⚠️ WARNING:
-	// growing or shrinking the l1 buffer too often will cause goroutines to drop.
-	growthEventsTrigger int
-
-	// shrinkEventsTrigger defines how many pool shrink events must occur
-	// before triggering a capacity decrease for the L1 channel.
-	// This helps align L1 shrink with real demand, reducing premature allocations
-	// while still adapting to sustained load.
-	shrinkEventsTrigger int
-
-	growth *growthParameters
-	shrink *shrinkParameters
 }
 
 type shrinkParameters struct {

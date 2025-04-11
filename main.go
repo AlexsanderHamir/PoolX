@@ -1,21 +1,29 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"math/rand"
 	"memctx/pool"
 	"net/http"
 	_ "net/http/pprof" // Import pprof
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
 
 func main() {
 	enableProfiling()
-	runWorkloadForever()
 
-	select {}
+	debug.SetGCPercent(-1)
+
+	fmt.Println("[PPROF] Ready to profile at http://localhost:6060/debug/pprof/")
+	time.Sleep(5 * time.Second)
+
+	runWorkload()
+
+	fmt.Println("[DONE] Workload finished")
+	time.Sleep(30 * time.Second)
 }
 
 func enableProfiling() {
@@ -23,15 +31,16 @@ func enableProfiling() {
 	runtime.SetBlockProfileRate(1)
 
 	go func() {
+		log.Println("[PPROF] Server running on :6060")
 		http.ListenAndServe("localhost:6060", nil)
 	}()
 }
 
-func runWorkloadForever() {
+func runWorkload() {
+
 	allocator := func() *pool.Example {
 		return &pool.Example{}
 	}
-
 	cleaner := func(e *pool.Example) {
 		e.Name = ""
 		e.Age = 0
@@ -40,45 +49,36 @@ func runWorkloadForever() {
 	config, err := pool.NewPoolConfigBuilder().
 		SetShrinkAggressiveness(pool.AggressivenessExtreme).
 		Build()
-
 	if err != nil {
 		log.Fatalf("Failed to build pool config: %v", err)
 	}
 
 	poolObj, err := pool.NewPool(config, allocator, cleaner)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to create pool: %v", err)
 	}
 
-	numWorkers := 1000
-	objectsPerWorker := 5
+	numWorkers := 5
+	objectsPerWorker := 10000
+	delayBetweenTasks := 100 * time.Millisecond
 
-	log.Println("[WORKLOAD] Starting mixed workload test (infinite mode)")
+	log.Println("[WORKLOAD] Starting")
 
-	for {
-		var wg sync.WaitGroup
-
-		for i := range numWorkers {
-			wg.Add(1)
-
-			go func(workerID int) {
-				defer wg.Done()
-
-				time.Sleep(time.Duration(rand.Intn(20)) * time.Millisecond)
-
-				for j := 0; j < objectsPerWorker; j++ {
-					obj := poolObj.Get()
-
-					obj.Name = "user1"
-					obj.Age = 140
-
-					time.Sleep(time.Duration(rand.Intn(30)+10) * time.Millisecond)
-
-					poolObj.Put(obj)
-				}
-			}(i)
-		}
-
-		wg.Wait()
+	var innerWg sync.WaitGroup
+	for i := range numWorkers {
+		innerWg.Add(1)
+		go func(id int) {
+			defer innerWg.Done()
+			for range objectsPerWorker {
+				obj := poolObj.Get()
+				obj.Name = "user1"
+				obj.Age = 120
+				time.Sleep(50 * time.Millisecond)
+				poolObj.Put(obj)
+				time.Sleep(delayBetweenTasks)
+			}
+		}(i)
 	}
+	innerWg.Wait()
+	log.Println("[WORKLOAD] All done")
 }
