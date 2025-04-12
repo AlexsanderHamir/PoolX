@@ -6,24 +6,50 @@ import (
 	"memctx/pool"
 	"net/http"
 	_ "net/http/pprof" // Import pprof
+	"reflect"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"time"
 )
 
 func main() {
-	enableProfiling()
+	// enableProfiling()
 
-	debug.SetGCPercent(-1)
+	// debug.SetGCPercent(-1)
 
-	fmt.Println("[PPROF] Ready to profile at http://localhost:6060/debug/pprof/")
-	time.Sleep(5 * time.Second)
+	// fmt.Println("[PPROF] Ready to profile at http://localhost:6060/debug/pprof/")
+	// time.Sleep(5 * time.Second)
 
-	runWorkload()
+	// runWorkload()
 
-	fmt.Println("[DONE] Workload finished")
-	time.Sleep(30 * time.Second)
+	// fmt.Println("[DONE] Workload finished")
+	// time.Sleep(30 * time.Second)
+
+	type User struct {
+		Name string
+		Age  int
+	}
+
+	allocator := func() *User {
+		return &User{Name: "template", Age: 42}
+	}
+
+	template := allocator()
+
+	copy := cloneUnsafe(template)
+	copy.Name = "Alex"
+	copy.Age = 120
+
+	fmt.Printf("template: %+v\n", template)
+	fmt.Printf("copy: %+v\n", copy)
+
+}
+
+func cloneUnsafe[T any](src T) T {
+	v := reflect.ValueOf(src)
+	copied := reflect.New(v.Elem().Type()).Elem()
+	copied.Set(v.Elem())
+	return copied.Addr().Interface().(T)
 }
 
 func enableProfiling() {
@@ -41,7 +67,7 @@ func runWorkload() {
 	allocator := func() *pool.Example {
 		return &pool.Example{}
 	}
-	
+
 	cleaner := func(e *pool.Example) {
 		e.Name = ""
 		e.Age = 0

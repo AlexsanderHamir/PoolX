@@ -6,3 +6,10 @@ pool/mem.prof
 pool/allocs.prof
 pool/pool.test
 profiling.md
+pool/trace.out
+pool/cpu.out
+pool/mem.out
+pool/allocs.out
+pool/pool.out
+pool/pool.test.out
+pool/pool.test.out

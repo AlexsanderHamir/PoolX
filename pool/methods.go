@@ -18,20 +18,20 @@ const (
 	AggressivenessAggressive          AggressivenessLevel = 3
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
-	defaultExponentialThresholdFactor                     = 4.0
-	defaultGrowthPercent                                  = 0.5
-	defaultFixedGrowthFactor                              = 1.0
+	defaultExponentialThresholdFactor                     = 100.0
+	defaultGrowthPercent                                  = 0.95
+	defaultFixedGrowthFactor                              = 2.0
 	defaultfillAggressiveness                             = fillAggressivenessExtreme
 	fillAggressivenessExtreme                             = 1.0
-	defaultRefillPercent                                  = 0.5
-	defaultMinCapacity                                    = 128                 // for measuring, so it doesn't shrink
+	defaultRefillPercent                                  = 0.95
+	defaultMinCapacity                                    = 64                  // if both values are the same, the pool will not shrink
+	defaultPoolCapacity                                   = 64                  // pool and L1 buffer
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
-	defaultPoolCapacity                                   = 128                 // pool and L1 buffer
-	defaultHardLimit                                      = 128
-	defaultHardLimitBufferSize                            = 256
-	defaultGrowthEventsTrigger                            = 3
-	defaultShrinkEventsTrigger                            = 3
-	defaultEnableChannelGrowth                            = true
+	defaultHardLimit                                      = 20480
+	defaultHardLimitBufferSize                            = 20480
+	defaultGrowthEventsTrigger                            = 1
+	defaultShrinkEventsTrigger                            = 1
+	defaultEnableChannelGrowth                            = false
 )
 
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
@@ -46,7 +46,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		}
 	}
 
-	stats := &poolStats{mu: &sync.RWMutex{}}
+	stats := &poolStats{mu: sync.RWMutex{}}
 	stats.initialCapacity += config.initialCapacity
 	stats.currentCapacity.Store(uint64(config.initialCapacity))
 	stats.availableObjects.Store(uint64(config.initialCapacity))
@@ -55,16 +55,18 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 	// WARNING - be smart about the L1 size, and the hardLimitBufferSize,
 	// you will serve more requests faster, but you will also use more memory.
 	poolObj := pool[T]{
-		cacheL1:         make(chan T, config.fastPath.bufferSize),        // 8 * 128 = 1024
-		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize), // 8 * 256 = 2048
-		allocator:       allocator,                                       // 8
-		cleaner:         cleaner,                                         // 8
-		mu:              &sync.RWMutex{},                                 // 8
-		config:          config,                                          // 8
-		stats:           stats,                                           // 8 => total: 1024 + 2048 + 8 + 8 + 8 + 8 + 8 = 4112
+		cacheL1:         make(chan T, config.fastPath.bufferSize),
+		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize),
+		allocator:       allocator,
+		cleaner:         cleaner,
+		mu:              sync.RWMutex{},
+		config:          config,
+		stats:           stats,
 	}
 
-	poolObj.cond = sync.NewCond(poolObj.mu)
+	// removed the mem allocation caused my pool.mu = &sync.RWMutex{}, but since cond needs a pointer,
+	// it causes an allocation.
+	poolObj.cond = sync.NewCond(&poolObj.mu)
 	obj := poolObj.allocator()
 	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("allocator must return a pointer, got %T", obj)
@@ -73,11 +75,10 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 	fillTarget := int(float64(poolObj.config.fastPath.bufferSize) * poolObj.config.fastPath.fillAggressiveness)
 	fastPathRemaining := fillTarget
 
-	poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
+	fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
 	for i := 1; i < config.initialCapacity; i++ {
-		// cheaper way instead of calling allocator all the time
 		obj = poolObj.allocator()
-		poolObj.setPoolAndBuffer(obj, &fastPathRemaining)
+		fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
 	}
 
 	// go poolObj.shrink() // WARNING - it will mess up the benchmark
@@ -87,13 +88,11 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 
 func (p *pool[T]) Get() T {
 	if p.isShrinkBlocked {
-		log.Println("[POOL] Shrink logic was blocked — unblocking via cond.Broadcast()")
 		p.cond.Broadcast()
 	}
 
 	ableToRefill := p.tryRefillIfNeeded()
 	if !ableToRefill {
-		log.Printf("[POOL] Hard limit reached — blocking Get()")
 		p.stats.blockedGets.Add(1)
 		<-p.hardLimitResume
 		p.reduceBlockedGets()
@@ -110,7 +109,6 @@ func (p *pool[T]) Get() T {
 		return obj
 	default:
 		p.stats.l2HitCount.Add(1)
-		log.Printf("[POOL] Slow path accessed — total L2 hits: %d", p.stats.l2HitCount.Load())
 		obj := p.slowPath()
 		p.updateUsageStats()
 		return obj
@@ -136,11 +134,8 @@ func (p *pool[T]) Put(obj T) {
 	p.updateAvailableObjs()
 
 	if p.stats.blockedGets.Load() > 0 {
-		log.Printf("[POOL] Unblocking Get()")
 		p.hardLimitResume <- struct{}{}
 	}
-
-	log.Printf("[POOL] Put() called | Object returned to pool | pool size: %d | In-use: %d", len(p.pool), p.stats.objectsInUse.Load())
 }
 
 func (p *pool[T]) tryRefillIfNeeded() bool {

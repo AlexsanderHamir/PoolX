@@ -8,10 +8,8 @@ import (
 
 func (p *pool[T]) updateAvailableObjs() {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
-	fmt.Printf("pool length: %d, cacheLen: %d\n", len(p.pool), len(p.cacheL1))
 	p.stats.availableObjects.Store(uint64(len(p.pool) + len(p.cacheL1)))
-	fmt.Printf("availableObjects: %d\n", p.stats.availableObjects.Load())
+	p.mu.RUnlock()
 }
 
 func (p *pool[T]) reduceObjsInUse() {
@@ -76,14 +74,10 @@ func (p *pool[T]) needsToShrinkToHardLimit(currentCap, newCapacity uint64) bool 
 }
 
 func (p *pool[T]) resizePool(currentCap, newCap uint64) {
-	newPool := make([]T, len(p.pool), int(newCap))
-	copy(newPool, p.pool)
-
 	toAdd := newCap - currentCap
 	for range toAdd {
-		newPool = append(newPool, p.allocator())
+		p.pool = append(p.pool, p.allocator())
 	}
-	p.pool = newPool
 	p.stats.currentCapacity.Store(newCap)
 }
 
@@ -197,19 +191,19 @@ func maxUint64(a, b uint64) uint64 {
 	return b
 }
 
-
-func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining *int) {
-	if *fastPathRemaining > 0 {
+func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) int {
+	if fastPathRemaining > 0 {
 		select {
 		case p.cacheL1 <- obj:
-			*fastPathRemaining--
-			return
+			fastPathRemaining--
+			return fastPathRemaining
 		default:
 			// avoids blocking
 		}
 	}
 
 	p.pool = append(p.pool, obj)
+	return fastPathRemaining
 }
 
 func (p *pool[T]) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
@@ -284,13 +278,14 @@ func (p *pool[T]) updateDerivedStats() {
 	if totalObjects > 0 {
 		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
 	}
+
 	p.stats.mu.Unlock()
 }
 
 func (p *pool[T]) updateUsageStats() {
 	currentInUse := p.stats.objectsInUse.Add(1)
 	p.stats.totalGets.Add(1)
-	p.updateAvailableObjs() // safe
+	p.updateAvailableObjs()
 
 	for {
 		peak := p.stats.peakInUse.Load()

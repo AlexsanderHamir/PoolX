@@ -24,7 +24,7 @@ type pool[T any] struct {
 
 	config          *poolConfig
 	stats           *poolStats
-	mu              *sync.RWMutex
+	mu              sync.RWMutex
 	cond            *sync.Cond
 	isShrinkBlocked bool
 	isGrowthBlocked bool
@@ -78,7 +78,7 @@ type poolStats struct {
 	initialCapacity int
 
 	// Lock needed
-	mu          *sync.RWMutex
+	mu          sync.RWMutex
 	reqPerObj   float64
 	utilization float64 // not using it, just calculating value.
 
