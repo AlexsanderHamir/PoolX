@@ -378,6 +378,11 @@ func (p *pool[T]) slowPathGetObjBatch(requiredPrefill int) []T {
 	}
 
 	start := currentObjsAvailable - requiredPrefill
+
+	if start > len(p.pool) {
+		start = len(p.pool) - 1
+	}
+
 	batch := p.pool[start:]
 	p.pool = p.pool[:start]
 
@@ -407,21 +412,24 @@ func (p *pool[T]) fastRefill(batch []T) {
 }
 
 func (p *pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
-	availableObjsToCopy := newCapacity - inUse
-	if availableObjsToCopy <= 0 {
+	var zero T
+
+	availableToKeep := newCapacity - inUse
+	if availableToKeep <= 0 {
 		log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
 		return
 	}
 
-	copyCount := min(availableObjsToCopy, len(p.pool))
-	newPool := make([]T, copyCount, newCapacity)
-	copy(newPool, p.pool[:copyCount])
-	p.pool = newPool
+	copyCount := min(availableToKeep, len(p.pool))
+
+	for i := copyCount; i < len(p.pool); i++ {
+		p.pool[i] = zero
+	}
+
+	p.pool = p.pool[:copyCount]
 
 	log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d", currentCap, newCapacity, copyCount, inUse)
 
-	// copy count is the objects being copied from the existing pool,
-	// so they become the available objects
 	p.stats.currentCapacity.Store(uint64(newCapacity))
 	p.stats.totalShrinkEvents.Add(1)
 	p.stats.lastShrinkTime = time.Now()
