@@ -3,6 +3,7 @@ package pool
 import (
 	"runtime/debug"
 	"testing"
+	"time"
 )
 
 var allocator = func() *Example {
@@ -17,6 +18,7 @@ var cleaner = func(e *Example) {
 func setupPool(b *testing.B) *pool[*Example] {
 	config, err := NewPoolConfigBuilder().
 		SetShrinkAggressiveness(AggressivenessExtreme).
+		SetVerbose(true).
 		Build()
 	if err != nil {
 		b.Fatalf("Failed to build pool config: %v", err)
@@ -86,6 +88,18 @@ func Benchmark_Put(b *testing.B) {
 			poolObj.Put(&Example{})
 		}
 	})
+}
+
+func Benchmark_Grow(b *testing.B) {
+	debug.SetGCPercent(-1)
+	b.ReportAllocs()
+	InitDefaultFields()
+
+	poolObj := setupPool(b)
+
+	for i := 0; i < b.N; i++ {
+		poolObj.grow(time.Now())
+	}
 }
 
 // POOL CONFIG
