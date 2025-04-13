@@ -28,6 +28,7 @@ type pool[T any] struct {
 	cond            *sync.Cond
 	isShrinkBlocked bool
 	isGrowthBlocked bool
+	verbose         bool
 }
 
 type shrinkDefaults struct {

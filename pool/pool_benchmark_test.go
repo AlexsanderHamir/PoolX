@@ -1,10 +1,8 @@
 package pool
 
 import (
-	"fmt"
 	"runtime/debug"
 	"testing"
-	"time"
 )
 
 var allocator = func() *Example {
@@ -43,131 +41,50 @@ func Benchmark_Setup(b *testing.B) {
 }
 
 // POOL CONFIG
-//  defaultMinCapacity                                    = 8
-//	defaultPoolCapacity                                   = 8
-//	defaultHardLimit                                      = 1024
-//	defaultHardLimitBufferSize                            = 1024
-//	defaultGrowthEventsTrigger                            = 1
-//	defaultL1MinCapacity                                  = defaultPoolCapacity
+// fillAggressivenessExtreme                             = 1.0
+// defaultRefillPercent                                  = 0.10
+// defaultMinCapacity                                    = 128
+// defaultPoolCapacity                                   = 128
 
-//EXPERIMENT CONFIG
-// holdTimes := []time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}
-// The pool is being forced to grow as much as possible, small hold times yeild better results.
+// defaultHardLimit                                      = 10_000_000
+// defaultHardLimitBufferSize                            = 10_000_000
+// defaultGrowthEventsTrigger                            = 3
+// defaultEnableChannelGrowth                            = true
 
-func Benchmark_Growth(b *testing.B) {
+func Benchmark_Get(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 	InitDefaultFields()
 
-	holdTimes := []time.Duration{1 * time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond}
-	for _, holdTime := range holdTimes {
-		b.Run(fmt.Sprintf("hold_%v", holdTime), func(b *testing.B) {
-			b.SetParallelism(10)
-			poolObj := setupPool(b)
-			b.RunParallel(func(pb *testing.PB) {
-				for pb.Next() {
-					obj := poolObj.Get()
-					time.Sleep(holdTime)
-					poolObj.Put(obj)
-				}
-			})
-		})
-	}
+	b.SetParallelism(10)
+	poolObj := setupPool(b)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			for range 100 {
+				obj := poolObj.Get()
+				_ = obj
+			}
+		}
+	})
 }
 
 // POOL CONFIG
-// defaultExponentialThresholdFactor                     = 100.0
-// defaultGrowthPercent                                  = 0.95
-// defaultFixedGrowthFactor                              = 2.0
-// fillAggressivenessExtreme                             = 1.0 // 100%
-// defaultRefillPercent                                  = 0.95 // 95%
-//  defaultMinCapacity                                    = 64
-//	defaultPoolCapacity                                   = 64
-//	defaultHardLimit                                      = 20480
-//	defaultHardLimitBufferSize                            = 20480
-//	defaultGrowthEventsTrigger                            = 1
-//	defaultL1MinCapacity                                  = defaultPoolCapacity
-// defaultEnableChannelGrowth                            = false
-
-//EXPERIMENT
-// Making 100 get requests without any return puts a lot of pressure on get and its methods,
-// specially on the refill mode since the channel can't grow
-
-func Benchmark_tryRefillIfNeeded(b *testing.B) {
-	debug.SetGCPercent(-1)
-	b.ReportAllocs()
-	InitDefaultFields()
-
-	holdTimes := []time.Duration{5 * time.Millisecond, 10 * time.Millisecond, 15 * time.Millisecond}
-	for _, holdTime := range holdTimes {
-		b.Run(fmt.Sprintf("hold_%v", holdTime), func(b *testing.B) {
-			poolObj := setupPool(b)
-			b.SetParallelism(10)
-			b.RunParallel(func(pb *testing.PB) {
-				for pb.Next() {
-					var objs []*Example
-					for range 100 {
-						objs = append(objs, poolObj.Get())
-					}
-
-					time.Sleep(holdTime)
-
-					for _, obj := range objs {
-						poolObj.Put(obj)
-					}
-				}
-			})
-		})
-	}
-}
-
-//EXPERIMENT INTENT
-// Hit the slow path as much as possible.
-
-// POOL CONFIG
-// defaultExponentialThresholdFactor                     = 100.0
-// defaultGrowthPercent                                  = 0.95
-// defaultFixedGrowthFactor                              = 1.0
-// fillAggressivenessExtreme                             = 0.10 // 10%
-// defaultRefillPercent                                  = 0.10 // 10%
-//  defaultMinCapacity                                    = 16
-//	defaultPoolCapacity                                   = 16
-// defaultEnableChannelGrowth                            = false
-
-//	defaultHardLimit                                      = 20480
-//	defaultHardLimitBufferSize                            = 20480
-
-// 1. fastPath can't grow.
-// 2. fastpath needs to be small in relation to the numer of requests.
-// 3. fastPath needs to be rarely refilled.
+// defaultPoolCapacity                                   = 10_000_000
+// defaultHardLimit                                      = 10_000_000
 
 func Benchmark_SlowPath(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 	InitDefaultFields()
 
-	holdTimes := []time.Duration{5 * time.Millisecond}
-	for _, holdTime := range holdTimes {
-		b.Run(fmt.Sprintf("hold_%v", holdTime), func(b *testing.B) {
-			poolObj := setupPool(b)
-			b.SetParallelism(100)
-			b.RunParallel(func(pb *testing.PB) {
-				for pb.Next() {
-					var objs []*Example
-					for range 10 {
-						objs = append(objs, poolObj.Get())
-					}
-
-					time.Sleep(holdTime)
-
-					for _, obj := range objs {
-						poolObj.Put(obj)
-					}
-				}
-			})
-			poolObj.PrintPoolStats()
-		})
-	}
+	poolObj := setupPool(b)
+	b.SetParallelism(1)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			obj := poolObj.slowPath()
+			_ = obj
+		}
+	})
 }
 
 func Benchmark_RepeatedShrink(b *testing.B) {

@@ -18,20 +18,20 @@ const (
 	AggressivenessAggressive          AggressivenessLevel = 3
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
-	defaultExponentialThresholdFactor                     = 4.0
-	defaultGrowthPercent                                  = 0.5
-	defaultFixedGrowthFactor                              = 1.0
+	defaultExponentialThresholdFactor                     = 1000.0
+	defaultGrowthPercent                                  = 1.0
+	defaultFixedGrowthFactor                              = 1000.0
 	defaultfillAggressiveness                             = fillAggressivenessExtreme
-	fillAggressivenessExtreme                             = 0.10
+	fillAggressivenessExtreme                             = 1.0
 	defaultRefillPercent                                  = 0.10
-	defaultMinCapacity                                    = 64                  // if both values are the same, the pool will not shrink
-	defaultPoolCapacity                                   = 64                  // pool and L1 buffer
+	defaultMinCapacity                                    = 128
+	defaultPoolCapacity                                   = 128
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
-	defaultHardLimit                                      = 200000
-	defaultHardLimitBufferSize                            = 200000
-	defaultGrowthEventsTrigger                            = 1
-	defaultShrinkEventsTrigger                            = 1
-	defaultEnableChannelGrowth                            = false
+	defaultHardLimit                                      = 10_000_000
+	defaultHardLimitBufferSize                            = 10_000_000
+	defaultGrowthEventsTrigger                            = 3
+	defaultShrinkEventsTrigger                            = 3
+	defaultEnableChannelGrowth                            = true
 )
 
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
@@ -87,27 +87,47 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 }
 
 func (p *pool[T]) Get() T {
+	if p.verbose {
+		log.Println("[GET] Start")
+	}
+
 	if p.isShrinkBlocked {
+		if p.verbose {
+			log.Println("[GET] Shrink is blocked — broadcasting to cond")
+		}
 		p.cond.Broadcast()
 	}
 
 	ableToRefill := p.tryRefillIfNeeded()
 	if !ableToRefill {
+		if p.verbose {
+			log.Println("[GET] Unable to refill — blocking on hardLimitResume")
+		}
 		p.stats.blockedGets.Add(1)
 		<-p.hardLimitResume
+		if p.verbose {
+			log.Println("[GET] Unblocked from hardLimitResume")
+		}
 		p.reduceBlockedGets()
 	}
 
-	// WARNING - all goroutines wake up at <-p.hardLimitResume, but only one will be able to get the object from the fast path.
-	// the rest will go to the slow path, which has a mechanism to allow all goroutines to get an object.
+	if p.verbose {
+		log.Println("[GET] Attempting to get object from L1 cache")
+	}
 
 	select {
 	case obj := <-p.cacheL1:
+		if p.verbose {
+			log.Println("[GET] L1 hit")
+		}
 		p.stats.l1HitCount.Add(1)
 		p.updateUsageStats()
 		p.updateDerivedStats()
 		return obj
 	default:
+		if p.verbose {
+			log.Println("[GET] L1 miss — falling back to slow path")
+		}
 		p.stats.l2HitCount.Add(1)
 		obj := p.slowPath()
 		p.updateUsageStats()
@@ -116,17 +136,31 @@ func (p *pool[T]) Get() T {
 }
 
 func (p *pool[T]) Put(obj T) {
+	if p.verbose {
+		log.Println("[PUT] Start")
+	}
+
 	p.cleaner(obj)
+
+	if p.verbose {
+		log.Println("[PUT] Cleaning object")
+	}
 
 	select {
 	case p.cacheL1 <- obj:
 		p.stats.FastReturnHit.Add(1)
+		if p.verbose {
+			log.Println("[PUT] Fast return hit")
+		}
 	default:
 		p.mu.Lock()
 		p.stats.lastTimeCalledPut = time.Now()
-		p.pool = append(p.pool, obj)
+		p.pool = append(p.pool, obj) // TIP: could maybe use a different data structure to reduce allocations.
 		p.mu.Unlock()
 		p.stats.FastReturnMiss.Add(1)
+		if p.verbose {
+			log.Println("[PUT] Fast return miss")
+		}
 	}
 
 	p.stats.totalPuts.Add(1)
@@ -134,6 +168,9 @@ func (p *pool[T]) Put(obj T) {
 	p.updateAvailableObjs()
 
 	if p.stats.blockedGets.Load() > 0 {
+		if p.verbose {
+			log.Println("[PUT] Unblocking goroutines")
+		}
 		p.hardLimitResume <- struct{}{}
 	}
 }
@@ -141,24 +178,36 @@ func (p *pool[T]) Put(obj T) {
 func (p *pool[T]) tryRefillIfNeeded() bool {
 	bufferSize := p.config.fastPath.bufferSize
 	currentLength := len(p.cacheL1)
-
 	currentPercent := float64(currentLength) / float64(bufferSize)
 
-	// Even though multiple goroutines block right before calling tryRefillIfNeeded
-	// this condition will not be true right after a refill, so only one of them will refill.
+	if p.verbose {
+		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%", currentLength, bufferSize, currentPercent*100, p.config.fastPath.refillPercent*100)
+	}
+
 	if currentPercent <= p.config.fastPath.refillPercent {
 		fillTarget := int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
+
+		if p.verbose {
+			log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
+		}
+
 		ableToRefill := p.refill(fillTarget)
+
 		if !ableToRefill {
+			if p.verbose {
+				log.Println("[REFILL] Refill failed")
+			}
 			return false
+		}
+
+		if p.verbose {
+			log.Println("[REFILL] Refill succeeded")
 		}
 	}
 
 	return true
 }
 
-// WARNING - how can we avoid an infinit loop ? there may be a case where the L1 buffer is big enough,
-// where objects aren't returned to the pool.
 func (p *pool[T]) slowPath() T {
 	var now time.Time
 
@@ -174,15 +223,27 @@ func (p *pool[T]) slowPath() T {
 			p.pool = p.pool[1:]
 			p.mu.Unlock()
 
+			if p.verbose {
+				log.Printf("[SLOWPATH] Object retrieved from pool | Remaining: %d", len(p.pool))
+			}
+
 			p.updateDerivedStats()
-			log.Printf("[POOL] Object checked out | New pool size: %d", len(p.pool))
 			return obj
 		}
 
-		log.Printf("[POOL] Pool is empty — blocking Get(slowpath)")
+		if p.verbose {
+			log.Printf("[SLOWPATH] Pool empty — blocking on hardLimitResume")
+		}
+
 		p.stats.blockedGets.Add(1)
 		p.mu.Unlock()
+
 		<-p.hardLimitResume
+
+		if p.verbose {
+			log.Println("[SLOWPATH] Unblocked from hardLimitResume — retrying")
+		}
+
 		p.reduceBlockedGets()
 	}
 }
@@ -201,30 +262,39 @@ func (p *pool[T]) shrink() {
 		p.mu.Lock()
 
 		if p.stats.consecutiveShrinks.Load() == uint64(params.maxConsecutiveShrinks) {
-			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
+			if p.verbose {
+				log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
+			}
 			p.isShrinkBlocked = true
 			p.cond.Wait()
 			p.isShrinkBlocked = false
 		}
 
-		if time.Since(p.stats.lastShrinkTime) < params.shrinkCooldown {
-			remaining := params.shrinkCooldown - time.Since(p.stats.lastShrinkTime)
-			log.Printf("[SHRINK] Cooldown active: %v remaining", remaining)
+		timeSinceLastShrink := time.Since(p.stats.lastShrinkTime)
+		if timeSinceLastShrink < params.shrinkCooldown {
+			if p.verbose {
+				log.Printf("[SHRINK] Cooldown active: %v remaining", params.shrinkCooldown-timeSinceLastShrink)
+			}
 			p.mu.Unlock()
 			continue
 		}
 
 		p.IndleCheck(&idleCount, &idleOK)
-		log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", idleCount, params.minIdleBeforeShrink, idleOK)
+		if p.verbose {
+			log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", idleCount, params.minIdleBeforeShrink, idleOK)
+		}
 
 		p.UtilizationCheck(&underutilCount, &utilOK)
-		log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", underutilCount, params.stableUnderutilizationRounds, utilOK)
+		if p.verbose {
+			log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", underutilCount, params.stableUnderutilizationRounds, utilOK)
+		}
 
 		if idleOK || utilOK {
-			log.Println("[SHRINK] STATS (before shrink)")
-			p.PrintPoolStats()
-			log.Println("[SHRINK] Shrink conditions met — executing shrink.")
-
+			if p.verbose {
+				log.Println("[SHRINK] STATS (before shrink)")
+				p.PrintPoolStats()
+				log.Println("[SHRINK] Shrink conditions met — executing shrink.")
+			}
 			p.ShrinkExecution()
 			idleCount, underutilCount = 0, 0
 			idleOK, utilOK = false, false
@@ -233,7 +303,6 @@ func (p *pool[T]) shrink() {
 		p.mu.Unlock()
 		p.updateAvailableObjs()
 	}
-
 }
 
 // 1. grow is called when the pool is empty.
@@ -248,14 +317,18 @@ func (p *pool[T]) grow(now time.Time) bool {
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
 
 	if p.growthWouldExceedHardLimit(newCapacity) {
-		log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
+		if p.verbose {
+			log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
+		}
 		p.isGrowthBlocked = true
 		return false
 	}
 
 	if p.needsToShrinkToHardLimit(currentCap, newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
-		log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
+		if p.verbose {
+			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
+		}
 	}
 
 	p.resizePool(currentCap, newCapacity)
@@ -265,6 +338,8 @@ func (p *pool[T]) grow(now time.Time) bool {
 
 	p.tryL1ResizeIfTriggered()
 
-	log.Printf("[GROW] Final state | New capacity: %d | Pool size after grow: %d", newCapacity, len(p.pool))
+	if p.verbose {
+		log.Printf("[GROW] Final state | New capacity: %d | Pool size after grow: %d", newCapacity, len(p.pool))
+	}
 	return true
 }
