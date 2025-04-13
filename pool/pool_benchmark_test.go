@@ -60,10 +60,30 @@ func Benchmark_Get(b *testing.B) {
 	poolObj := setupPool(b)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			for range 100 {
-				obj := poolObj.Get()
-				_ = obj
-			}
+			obj := poolObj.Get()
+			_ = obj
+		}
+	})
+}
+
+// POOL CONFIG
+// fillAggressivenessExtreme                             = 1.0
+// defaultRefillPercent                                  = 0.10
+// defaultMinCapacity                                    = 128
+// defaultPoolCapacity                                   = 128
+
+// defaultHardLimit                                      = 10_000_000
+// defaultHardLimitBufferSize                            = 10_000_000
+func Benchmark_Put(b *testing.B) {
+	debug.SetGCPercent(-1)
+	b.ReportAllocs()
+	InitDefaultFields()
+
+	b.SetParallelism(10)
+	poolObj := setupPool(b)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			poolObj.Put(&Example{})
 		}
 	})
 }

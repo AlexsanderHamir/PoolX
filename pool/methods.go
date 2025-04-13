@@ -27,8 +27,8 @@ const (
 	defaultMinCapacity                                    = 128
 	defaultPoolCapacity                                   = 128
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
-	defaultHardLimit                                      = 10_000_000
-	defaultHardLimitBufferSize                            = 10_000_000
+	defaultHardLimit                                      = 100_000_000
+	defaultHardLimitBufferSize                            = 100_000_000
 	defaultGrowthEventsTrigger                            = 3
 	defaultShrinkEventsTrigger                            = 3
 	defaultEnableChannelGrowth                            = true
@@ -55,8 +55,8 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 	// WARNING - be smart about the L1 size, and the hardLimitBufferSize,
 	// you will serve more requests faster, but you will also use more memory.
 	poolObj := pool[T]{
-		cacheL1:         make(chan T, config.fastPath.bufferSize),
-		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize),
+		cacheL1:         make(chan T, config.fastPath.bufferSize),        // WARNING - careful with how much memory you allocate here.
+		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize), // WARNING - careful with how much memory you allocate here.
 		allocator:       allocator,
 		cleaner:         cleaner,
 		mu:              sync.RWMutex{},
@@ -87,88 +87,74 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 }
 
 func (p *pool[T]) Get() T {
-	if p.verbose {
-		log.Println("[GET] Start")
-	}
-
 	if p.isShrinkBlocked {
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
 		}
 		p.cond.Broadcast()
 	}
 
-	ableToRefill := p.tryRefillIfNeeded()
+	ableToRefill := p.tryRefillIfNeeded() // WARNING - contains heavy operations (resizePool, tryL1ResizeIfTriggered)
 	if !ableToRefill {
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[GET] Unable to refill — blocking on hardLimitResume")
 		}
 		p.stats.blockedGets.Add(1)
 		<-p.hardLimitResume
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[GET] Unblocked from hardLimitResume")
 		}
 		p.reduceBlockedGets()
 	}
 
-	if p.verbose {
+	if p.config.verbose {
 		log.Println("[GET] Attempting to get object from L1 cache")
 	}
 
 	select {
 	case obj := <-p.cacheL1:
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[GET] L1 hit")
 		}
+
 		p.stats.l1HitCount.Add(1)
 		p.updateUsageStats()
-		p.updateDerivedStats()
 		return obj
 	default:
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[GET] L1 miss — falling back to slow path")
 		}
-		p.stats.l2HitCount.Add(1)
+
 		obj := p.slowPath()
+
+		p.stats.l2HitCount.Add(1)
 		p.updateUsageStats()
 		return obj
 	}
 }
 
 func (p *pool[T]) Put(obj T) {
-	if p.verbose {
-		log.Println("[PUT] Start")
-	}
-
-	p.cleaner(obj)
-
-	if p.verbose {
-		log.Println("[PUT] Cleaning object")
-	}
+	p.releaseObj(obj)
 
 	select {
 	case p.cacheL1 <- obj:
 		p.stats.FastReturnHit.Add(1)
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[PUT] Fast return hit")
 		}
 	default:
 		p.mu.Lock()
-		p.stats.lastTimeCalledPut = time.Now()
-		p.pool = append(p.pool, obj) // TIP: could maybe use a different data structure to reduce allocations.
+		p.pool = append(p.pool, obj)  // WARNING - memory bottleneck.
+		p.stats.FastReturnMiss.Add(1) // WARNING - 90% faster if done inside the lock.
 		p.mu.Unlock()
-		p.stats.FastReturnMiss.Add(1)
-		if p.verbose {
+
+		if p.config.verbose {
 			log.Println("[PUT] Fast return miss")
 		}
 	}
 
-	p.stats.totalPuts.Add(1)
-	p.reduceObjsInUse()
-	p.updateAvailableObjs()
-
 	if p.stats.blockedGets.Load() > 0 {
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[PUT] Unblocking goroutines")
 		}
 		p.hardLimitResume <- struct{}{}
@@ -180,27 +166,27 @@ func (p *pool[T]) tryRefillIfNeeded() bool {
 	currentLength := len(p.cacheL1)
 	currentPercent := float64(currentLength) / float64(bufferSize)
 
-	if p.verbose {
+	if p.config.verbose {
 		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%", currentLength, bufferSize, currentPercent*100, p.config.fastPath.refillPercent*100)
 	}
 
 	if currentPercent <= p.config.fastPath.refillPercent {
 		fillTarget := int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
 
-		if p.verbose {
+		if p.config.verbose {
 			log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 		}
 
 		ableToRefill := p.refill(fillTarget)
 
 		if !ableToRefill {
-			if p.verbose {
+			if p.config.verbose {
 				log.Println("[REFILL] Refill failed")
 			}
 			return false
 		}
 
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[REFILL] Refill succeeded")
 		}
 	}
@@ -223,15 +209,14 @@ func (p *pool[T]) slowPath() T {
 			p.pool = p.pool[1:]
 			p.mu.Unlock()
 
-			if p.verbose {
+			if p.config.verbose {
 				log.Printf("[SLOWPATH] Object retrieved from pool | Remaining: %d", len(p.pool))
 			}
 
-			p.updateDerivedStats()
 			return obj
 		}
 
-		if p.verbose {
+		if p.config.verbose {
 			log.Printf("[SLOWPATH] Pool empty — blocking on hardLimitResume")
 		}
 
@@ -240,7 +225,7 @@ func (p *pool[T]) slowPath() T {
 
 		<-p.hardLimitResume
 
-		if p.verbose {
+		if p.config.verbose {
 			log.Println("[SLOWPATH] Unblocked from hardLimitResume — retrying")
 		}
 
@@ -262,7 +247,7 @@ func (p *pool[T]) shrink() {
 		p.mu.Lock()
 
 		if p.stats.consecutiveShrinks.Load() == uint64(params.maxConsecutiveShrinks) {
-			if p.verbose {
+			if p.config.verbose {
 				log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
 			}
 			p.isShrinkBlocked = true
@@ -272,7 +257,7 @@ func (p *pool[T]) shrink() {
 
 		timeSinceLastShrink := time.Since(p.stats.lastShrinkTime)
 		if timeSinceLastShrink < params.shrinkCooldown {
-			if p.verbose {
+			if p.config.verbose {
 				log.Printf("[SHRINK] Cooldown active: %v remaining", params.shrinkCooldown-timeSinceLastShrink)
 			}
 			p.mu.Unlock()
@@ -280,28 +265,27 @@ func (p *pool[T]) shrink() {
 		}
 
 		p.IndleCheck(&idleCount, &idleOK)
-		if p.verbose {
+		if p.config.verbose {
 			log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", idleCount, params.minIdleBeforeShrink, idleOK)
 		}
 
 		p.UtilizationCheck(&underutilCount, &utilOK)
-		if p.verbose {
+		if p.config.verbose {
 			log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", underutilCount, params.stableUnderutilizationRounds, utilOK)
 		}
 
 		if idleOK || utilOK {
-			if p.verbose {
+			if p.config.verbose {
 				log.Println("[SHRINK] STATS (before shrink)")
 				p.PrintPoolStats()
 				log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 			}
-			p.ShrinkExecution()
+			p.ShrinkExecution() // WARNING - contains heavy operations.
 			idleCount, underutilCount = 0, 0
 			idleOK, utilOK = false, false
 		}
 
 		p.mu.Unlock()
-		p.updateAvailableObjs()
 	}
 }
 
@@ -317,7 +301,7 @@ func (p *pool[T]) grow(now time.Time) bool {
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
 
 	if p.growthWouldExceedHardLimit(newCapacity) {
-		if p.verbose {
+		if p.config.verbose {
 			log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
 		}
 		p.isGrowthBlocked = true
@@ -326,19 +310,19 @@ func (p *pool[T]) grow(now time.Time) bool {
 
 	if p.needsToShrinkToHardLimit(currentCap, newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
-		if p.verbose {
+		if p.config.verbose {
 			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
 		}
 	}
 
-	p.resizePool(currentCap, newCapacity)
+	p.resizePool(currentCap, newCapacity) // WARNING - heavy operation, avoid resizing too often.
 	p.stats.lastGrowTime = now
 	p.stats.l3MissCount.Add(1)
 	p.stats.totalGrowthEvents.Add(1)
 
-	p.tryL1ResizeIfTriggered()
+	p.tryL1ResizeIfTriggered() // WARNING - heavy operation, avoid resizing too often.
 
-	if p.verbose {
+	if p.config.verbose {
 		log.Printf("[GROW] Final state | New capacity: %d | Pool size after grow: %d", newCapacity, len(p.pool))
 	}
 	return true

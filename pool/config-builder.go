@@ -223,6 +223,12 @@ func (b *poolConfigBuilder) SetFastPathShrinkMinCapacity(minCap int) *poolConfig
 	return b
 }
 
+func (b *poolConfigBuilder) SetVerbose(verbose bool) *poolConfigBuilder {
+	b.config.verbose = verbose
+	return b
+}
+
+
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.initialCapacity <= 0 {
 		return nil, fmt.Errorf("InitialCapacity must be greater than 0")

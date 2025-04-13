@@ -9,6 +9,9 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type pool[T any] struct {
+
+	// Hot
+	pool    []T
 	cacheL1 chan T
 
 	// hardLimitResume is used to signal goroutines waiting
@@ -18,17 +21,16 @@ type pool[T any] struct {
 	// goroutines calling Get() will block on this channel until a Put()
 	// call signals that an object has been returned.
 	hardLimitResume chan struct{}
-	pool            []T
-	allocator       func() T
-	cleaner         func(T)
-
-	config          *poolConfig
-	stats           *poolStats
 	mu              sync.RWMutex
 	cond            *sync.Cond
+	stats           *poolStats
 	isShrinkBlocked bool
 	isGrowthBlocked bool
-	verbose         bool
+
+	// Cold
+	config    *poolConfig
+	cleaner   func(T)
+	allocator func() T
 }
 
 type shrinkDefaults struct {
@@ -43,50 +45,46 @@ type shrinkDefaults struct {
 }
 
 type poolStats struct {
-	// No lock needed
+	// --- Hot Path Atomic Counters ---
 
-	objectsInUse atomic.Uint64
-
-	// total objects in the pool and on the buffer.
+	objectsInUse       atomic.Uint64
 	availableObjects   atomic.Uint64
 	peakInUse          atomic.Uint64
-	totalGets          atomic.Uint64
-	totalPuts          atomic.Uint64 // not using it, just calculating value.
-	totalGrowthEvents  atomic.Uint64 // not using it, just calculating value.
-	totalShrinkEvents  atomic.Uint64 // not using it, just calculating value.
-	consecutiveShrinks atomic.Uint64
-	currentCapacity    atomic.Uint64
 	blockedGets        atomic.Uint64
+	currentCapacity    atomic.Uint64
+	consecutiveShrinks atomic.Uint64
+	totalGets          atomic.Uint64
 
-	currentL1Capacity     atomic.Uint64
+	// --- Growth / Shrink Tracking ---
+
+	totalGrowthEvents     atomic.Uint64 // rarely used
+	totalShrinkEvents     atomic.Uint64 // rarely used
 	lastResizeAtGrowthNum atomic.Uint64
 	lastResizeAtShrinkNum atomic.Uint64
+	currentL1Capacity     atomic.Uint64
 
-	FastReturnMiss atomic.Uint64
+	// --- Fast Path / Hit/Miss Stats ---
+
 	FastReturnHit  atomic.Uint64
-	L2SplillRate   float64
+	FastReturnMiss atomic.Uint64
+	l1HitCount     atomic.Uint64
+	l2HitCount     atomic.Uint64
+	l3MissCount    atomic.Uint64
 
-	// successful Get() calls served from the fast path.
-	l1HitCount atomic.Uint64
+	// --- Configuration (static or cold values) ---
 
-	// successful Get() calls served from the large pool.
-	l2HitCount atomic.Uint64
-
-	// number of times the allocator was invoked to create a new object
-	l3MissCount atomic.Uint64
-
-	// Config set value, never changes
 	initialCapacity int
 
-	// Lock needed
-	mu          sync.RWMutex
-	reqPerObj   float64
-	utilization float64 // not using it, just calculating value.
+	// --- Cold Path / Derived or Locked ---
+
+	mu           sync.RWMutex
+	reqPerObj    float64 // derived
+	utilization  float64 // derived
+	L2SplillRate float64 // calculated
 
 	lastTimeCalledGet time.Time
-	lastTimeCalledPut time.Time // not using it, just calculating value. // (useful for possibly detecting leaks) \\
 	lastShrinkTime    time.Time
-	lastGrowTime      time.Time // not using it, just calculating value.
+	lastGrowTime      time.Time // not used
 }
 
 type poolConfig struct {
@@ -121,6 +119,8 @@ type poolConfig struct {
 
 	// Determines how fast path is utilized.
 	fastPath *fastPathParameters
+
+	verbose bool
 }
 
 type fastPathParameters struct {
