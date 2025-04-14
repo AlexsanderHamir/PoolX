@@ -88,32 +88,32 @@ func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
 
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(100).
-		SetHardLimit(1000).
+		SetHardLimit(10000000028182820).
 		SetGrowthPercent(0.5).
 		SetFixedGrowthFactor(1.0).
 		SetGrowthExponentialThresholdFactor(4.0).
 		SetShrinkAggressiveness(pool.AggressivenessAggressive).
 		SetShrinkCheckInterval(2 * time.Second).
 		SetIdleThreshold(5 * time.Second).
-		SetMinIdleBeforeShrink(2).
+		SetMinIdleBeforeShrink(29).
 		SetShrinkCooldown(10 * time.Second).
-		SetMinUtilizationBeforeShrink(0.3).
-		SetStableUnderutilizationRounds(3).
-		SetShrinkPercent(0.25).
-		SetMinShrinkCapacity(10).
-		SetMaxConsecutiveShrinks(3).
-		SetBufferSize(50).
-		SetFillAggressiveness(0.8).
-		SetRefillPercent(0.2).
-		SetEnableChannelGrowth(true).
-		SetGrowthEventsTrigger(5).
-		SetFastPathGrowthPercent(0.6).
-		SetFastPathExponentialThresholdFactor(3.0).
-		SetFastPathFixedGrowthFactor(0.8).
-		SetShrinkEventsTrigger(4).
-		SetFastPathShrinkAggressiveness(pool.AggressivenessBalanced).
-		SetFastPathShrinkPercent(0.3).
-		SetFastPathShrinkMinCapacity(20).
+		SetMinUtilizationBeforeShrink(0.321).
+		SetStableUnderutilizationRounds(3121).
+		SetShrinkPercent(0.25121).
+		SetMinShrinkCapacity(10121).
+		SetMaxConsecutiveShrinks(3121).
+		SetBufferSize(50121).
+		SetFillAggressiveness(0.8121).
+		SetRefillPercent(0.2121).
+		SetEnableChannelGrowth(false).
+		SetGrowthEventsTrigger(5121).
+		SetFastPathGrowthPercent(0.6121).
+		SetFastPathExponentialThresholdFactor(3.0121).
+		SetFastPathFixedGrowthFactor(0.8121).
+		SetShrinkEventsTrigger(4121).
+		SetFastPathShrinkAggressiveness(pool.AggressivenessAggressive).
+		SetFastPathShrinkPercent(0.3121).
+		SetFastPathShrinkMinCapacity(20121).
 		SetVerbose(true).
 		SetRingBufferBlocking(true).
 		WithTimeOut(5 * time.Second).
@@ -122,41 +122,6 @@ func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
 	require.NoError(t, err)
 
 	return config, cancel
-}
-
-// verifyDefaultValuesUnchanged verifies that default values remain unchanged
-func verifyDefaultValuesUnchanged(t *testing.T, original, newDefault DefaultConfigValues) {
-	assert.Equal(t, original.InitialCapacity, newDefault.InitialCapacity)
-	assert.Equal(t, original.HardLimit, newDefault.HardLimit)
-	assert.Equal(t, original.GrowthPercent, newDefault.GrowthPercent)
-	assert.Equal(t, original.FixedGrowthFactor, newDefault.FixedGrowthFactor)
-	assert.Equal(t, original.ExponentialThresholdFactor, newDefault.ExponentialThresholdFactor)
-	assert.Equal(t, original.ShrinkAggressiveness, newDefault.ShrinkAggressiveness)
-	assert.Equal(t, original.ShrinkCheckInterval, newDefault.ShrinkCheckInterval)
-	assert.Equal(t, original.IdleThreshold, newDefault.IdleThreshold)
-	assert.Equal(t, original.MinIdleBeforeShrink, newDefault.MinIdleBeforeShrink)
-	assert.Equal(t, original.ShrinkCooldown, newDefault.ShrinkCooldown)
-	assert.Equal(t, original.MinUtilizationBeforeShrink, newDefault.MinUtilizationBeforeShrink)
-	assert.Equal(t, original.StableUnderutilizationRounds, newDefault.StableUnderutilizationRounds)
-	assert.Equal(t, original.ShrinkPercent, newDefault.ShrinkPercent)
-	assert.Equal(t, original.MinShrinkCapacity, newDefault.MinShrinkCapacity)
-	assert.Equal(t, original.MaxConsecutiveShrinks, newDefault.MaxConsecutiveShrinks)
-	assert.Equal(t, original.BufferSize, newDefault.BufferSize)
-	assert.Equal(t, original.FillAggressiveness, newDefault.FillAggressiveness)
-	assert.Equal(t, original.RefillPercent, newDefault.RefillPercent)
-	assert.Equal(t, original.EnableChannelGrowth, newDefault.EnableChannelGrowth)
-	assert.Equal(t, original.GrowthEventsTrigger, newDefault.GrowthEventsTrigger)
-	assert.Equal(t, original.FastPathGrowthPercent, newDefault.FastPathGrowthPercent)
-	assert.Equal(t, original.FastPathExponentialThresholdFactor, newDefault.FastPathExponentialThresholdFactor)
-	assert.Equal(t, original.FastPathFixedGrowthFactor, newDefault.FastPathFixedGrowthFactor)
-	assert.Equal(t, original.ShrinkEventsTrigger, newDefault.ShrinkEventsTrigger)
-	assert.Equal(t, original.FastPathShrinkAggressiveness, newDefault.FastPathShrinkAggressiveness)
-	assert.Equal(t, original.FastPathShrinkPercent, newDefault.FastPathShrinkPercent)
-	assert.Equal(t, original.FastPathShrinkMinCapacity, newDefault.FastPathShrinkMinCapacity)
-	assert.Equal(t, original.Verbose, newDefault.Verbose)
-	assert.Equal(t, original.RingBufferBlocking, newDefault.RingBufferBlocking)
-	assert.Equal(t, original.ReadTimeout, newDefault.ReadTimeout)
-	assert.Equal(t, original.WriteTimeout, newDefault.WriteTimeout)
 }
 
 // verifyCustomValuesDifferent verifies that custom values are different from default values

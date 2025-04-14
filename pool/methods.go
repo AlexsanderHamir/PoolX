@@ -94,6 +94,10 @@ func (p *pool[T]) Get() T {
 func (p *pool[T]) Put(obj T) {
 	p.releaseObj(obj)
 
+	if p.config.verbose {
+		log.Printf("[PUT] Releasing object")
+	}
+
 	if p.tryFastPathPut(obj) {
 		return
 	}

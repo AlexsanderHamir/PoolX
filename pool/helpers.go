@@ -716,6 +716,9 @@ func (p *pool[T]) tryFastPathPut(obj T) bool {
 		p.logPut("Fast return hit")
 		return true
 	default:
+		if p.config.verbose {
+			log.Println("[PUT] L1 miss — falling back to slow path")
+		}
 		return false
 	}
 }
@@ -724,6 +727,7 @@ func (p *pool[T]) slowPathPut(obj T) {
 	if err := p.pool.Write(obj); err != nil { // WARNING - writing to a full ring buffer will block.
 		p.logPut(fmt.Sprintf("Error writing to ring buffer: %v", err))
 	}
+
 	p.stats.FastReturnMiss.Add(1)
 	p.logPut("Fast return miss")
 }

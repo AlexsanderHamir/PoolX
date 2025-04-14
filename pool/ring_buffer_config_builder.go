@@ -36,12 +36,7 @@ type RingBufferConfigBuilder struct {
 
 func NewRingBufferConfigBuilder() *RingBufferConfigBuilder {
 	return &RingBufferConfigBuilder{
-		config: &RingBufferConfig{
-			block:    false,
-			rTimeout: 0,
-			wTimeout: 0,
-			cancel:   nil,
-		},
+		config: defaultRingBufferConfig,
 	}
 }
 
