@@ -87,10 +87,17 @@ func TestPoolGrowth(t *testing.T) {
 
 func TestPoolShrink(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
-		SetInitialCapacity(10).
-		SetShrinkAggressiveness(pool.AggressivenessExtreme).
-		SetMinShrinkCapacity(1).
-		SetShrinkCheckInterval(1 * time.Second).
+		SetInitialCapacity(64).
+		EnforceCustomConfig().
+		SetShrinkCheckInterval(10 * time.Millisecond). // Very frequent checks
+		SetIdleThreshold(20 * time.Millisecond).       // Short idle time
+		SetMinIdleBeforeShrink(1).                     // Shrink after just 1 idle check
+		SetShrinkCooldown(10 * time.Millisecond).      // Short cooldown
+		SetMinUtilizationBeforeShrink(0.1).            // Shrink if utilization below 10%
+		SetStableUnderutilizationRounds(1).            // Only need 1 round of underutilization
+		SetShrinkPercent(0.5).                         // Shrink by 50%
+		SetMinShrinkCapacity(1).                       // Can shrink down to 1
+		SetMaxConsecutiveShrinks(5).                   // Allow multiple consecutive shrinks
 		SetVerbose(true).
 		Build()
 	require.NoError(t, err)
@@ -107,13 +114,13 @@ func TestPoolShrink(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get and return objects to trigger shrink
-	objects := make([]*testObject, 5)
-	for i := range 5 {
+	objects := make([]*testObject, 10)
+	for i := range 10 {
 		objects[i] = p.Get()
 	}
 
 	// Wait for shrink to potentially occur
-	time.Sleep(20 * time.Second)
+	time.Sleep(20 * time.Millisecond)
 
 	assert.True(t, p.IsShrunk())
 }

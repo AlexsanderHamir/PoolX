@@ -193,7 +193,7 @@ func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) int {
 	return fastPathRemaining
 }
 
-func (p *pool[T]) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
+func (p *pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 	idleDuration := time.Since(p.stats.lastTimeCalledGet)
 	threshold := p.config.shrink.idleThreshold
 	required := p.config.shrink.minIdleBeforeShrink
@@ -217,11 +217,15 @@ func (p *pool[T]) IndleCheck(idles *int, shrinkPermissionIdleness *bool) {
 }
 
 func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
+	p.mu.Unlock()
 	p.updateAvailableObjs()
+	p.mu.Lock()
 
 	inUse := p.stats.objectsInUse.Load()
 	available := p.stats.availableObjects.Load()
 	total := inUse + available
+
+	fmt.Printf("[DEBUG] UtilizationCheck - inUse: %d, available: %d, total: %d\n", inUse, available, total)
 
 	var utilization float64
 	if total > 0 {
@@ -231,7 +235,11 @@ func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermission
 	minUtil := p.config.shrink.minUtilizationBeforeShrink
 	requiredRounds := p.config.shrink.stableUnderutilizationRounds
 
+	fmt.Printf("[DEBUG] UtilizationCheck - current utilization: %.2f%%, minUtil: %.2f%%, requiredRounds: %d\n",
+		utilization, minUtil, requiredRounds)
+
 	if utilization <= minUtil {
+		fmt.Println("[DEBUG] UtilizationCheck - utilization below threshold")
 		*underutilizationRounds += 1
 		if p.config.verbose {
 			log.Printf("[SHRINK] UtilizationCheck — utilization: %.2f%% (threshold: %.2f%%) | round: %d/%d",
@@ -239,24 +247,29 @@ func (p *pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermission
 		}
 
 		if *underutilizationRounds >= requiredRounds {
+			fmt.Println("[DEBUG] UtilizationCheck - reached required rounds, setting shrink permission")
 			*shrinkPermissionUtilization = true
 			if p.config.verbose {
 				log.Println("[SHRINK] UtilizationCheck — underutilization stable, shrink allowed")
 			}
 		}
 	} else {
+		fmt.Println("[DEBUG] UtilizationCheck - utilization above threshold")
 		if *underutilizationRounds > 0 {
+			fmt.Println("[DEBUG] UtilizationCheck - reducing underutilization rounds")
 			*underutilizationRounds -= 1
 			if p.config.verbose {
 				log.Printf("[SHRINK] UtilizationCheck — usage recovered, reducing rounds: %d/%d",
 					*underutilizationRounds, requiredRounds)
 			}
 		} else {
+			fmt.Println("[DEBUG] UtilizationCheck - healthy utilization")
 			if p.config.verbose {
 				log.Printf("[SHRINK] UtilizationCheck — usage healthy: %.2f%% > %.2f%%", utilization, minUtil)
 			}
 		}
 	}
+	fmt.Println("[DEBUG] Ending UtilizationCheck")
 }
 
 func (p *pool[T]) updateUsageStats() {
@@ -788,7 +801,7 @@ func (p *pool[T]) handleShrinkCooldown(params *shrinkParameters) bool {
 }
 
 func (p *pool[T]) performShrinkChecks(params *shrinkParameters, idleCount, underutilCount *int, idleOK, utilOK *bool) {
-	p.IndleCheck(idleCount, idleOK)
+	p.IdleCheck(idleCount, idleOK)
 	if p.config.verbose {
 		log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", *idleCount, params.minIdleBeforeShrink, *idleOK)
 	}
@@ -802,9 +815,12 @@ func (p *pool[T]) performShrinkChecks(params *shrinkParameters, idleCount, under
 func (p *pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *bool) {
 	if p.config.verbose {
 		log.Println("[SHRINK] STATS (before shrink)")
+		p.mu.Unlock()
 		p.PrintPoolStats()
+		p.mu.Lock()
 		log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 	}
+
 	p.ShrinkExecution() // WARNING - contains heavy operations.
 	*idleCount, *underutilCount = 0, 0
 	*idleOK, *utilOK = false, false

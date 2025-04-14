@@ -66,7 +66,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		return nil, err
 	}
 
-	go poolObj.shrink() // WARNING - remove if you want to benchmark
+	go poolObj.shrink()
 
 	return poolObj, nil
 }
