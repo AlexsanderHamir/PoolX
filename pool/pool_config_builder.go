@@ -12,18 +12,25 @@ type poolConfigBuilder struct {
 }
 
 func NewPoolConfigBuilder() *poolConfigBuilder {
-	return &poolConfigBuilder{
+	pgb := &poolConfigBuilder{
 		config: &poolConfig{
-			initialCapacity:     defaultPoolCapacity,
-			hardLimit:           defaultHardLimit,
-			hardLimitBufferSize: defaultHardLimitBufferSize,
-			shrink:              defaultShrinkParameters,
-			growth:              defaultGrowthParameters,
-			fastPath:            defaultFastPath,
-			ringBufferConfig:    defaultRingBufferConfig,
+			initialCapacity:  defaultPoolCapacity,
+			hardLimit:        defaultHardLimit,
+			shrink:           defaultShrinkParameters,
+			growth:           defaultGrowthParameters,
+			fastPath:         defaultFastPath,
+			ringBufferConfig: defaultRingBufferConfig,
 		},
 	}
+
+	pgb.config.shrink.ApplyDefaults(getShrinkDefaultsMap())
+	pgb.config.fastPath.shrink.minCapacity = defaultL1MinCapacity
+
+	return pgb
 }
+
+// since shrink, growth, fastpath and ringBufferConfig are all pointers, we need to copy the values
+// to avoid mutating the default values.
 
 func (b *poolConfigBuilder) SetInitialCapacity(cap int) *poolConfigBuilder {
 	b.config.initialCapacity = cap
@@ -31,6 +38,7 @@ func (b *poolConfigBuilder) SetInitialCapacity(cap int) *poolConfigBuilder {
 }
 
 func (b *poolConfigBuilder) SetGrowthExponentialThresholdFactor(factor float64) *poolConfigBuilder {
+
 	if factor > 0 {
 		b.config.growth.exponentialThresholdFactor = factor
 	}
@@ -161,11 +169,6 @@ func (b *poolConfigBuilder) SetHardLimit(count int) *poolConfigBuilder {
 	return b
 }
 
-func (b *poolConfigBuilder) SetHardLimitBufferSize(count int) *poolConfigBuilder {
-	b.config.hardLimitBufferSize = count
-	return b
-}
-
 func (b *poolConfigBuilder) SetEnableChannelGrowth(enable bool) *poolConfigBuilder {
 	b.config.fastPath.enableChannelGrowth = enable
 	return b
@@ -176,7 +179,9 @@ func (b *poolConfigBuilder) SetGrowthEventsTrigger(count int) *poolConfigBuilder
 	return b
 }
 func (b *poolConfigBuilder) SetFastPathGrowthPercent(percent float64) *poolConfigBuilder {
-	b.config.fastPath.growth.growthPercent = percent
+	copiedGrowth := *b.config.fastPath.growth
+	copiedGrowth.growthPercent = percent
+	b.config.fastPath.growth = &copiedGrowth
 	return b
 }
 
@@ -277,13 +282,6 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	}
 	if b.config.hardLimit < b.config.shrink.minCapacity {
 		return nil, fmt.Errorf("HardLimit must be >= MinCapacity")
-	}
-	if b.config.hardLimit < b.config.fastPath.bufferSize {
-		return nil, fmt.Errorf("HardLimit must be >= BufferSize")
-	}
-
-	if b.config.hardLimitBufferSize < 2 {
-		return nil, fmt.Errorf("HardLimitBufferSize must be >= 2")
 	}
 
 	sp := b.config.shrink

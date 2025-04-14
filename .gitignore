@@ -13,3 +13,4 @@ pool/allocs.out
 pool/pool.out
 pool/pool.test.out
 pool/pool.test.out
+go.sum

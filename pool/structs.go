@@ -89,14 +89,6 @@ type poolConfig struct {
 	// trading off performance for tighter memory control.
 	hardLimit int
 
-	// When the pool reaches the hardLimit, no new objects will be created.
-	// Goroutines calling Get() will block and wait for existing objects to be recycled via Put().
-	// To prevent Put() from blocking when sending notifications, the channel should be buffered.
-	// A buffer size of at least 2 is recommended, but if you expect more than 1,000 concurrent goroutines,
-	// consider increasing the buffer size accordingly. An undersized buffer may lead to dropped wake-ups
-	// and prolonged blocking for some goroutines.
-	hardLimitBufferSize int
-
 	// Determines how the pool grows.
 	growth *growthParameters
 
@@ -111,51 +103,83 @@ type poolConfig struct {
 	verbose bool
 }
 
-type fastPathParameters struct {
-	// bufferSize defines the capacity of the fast path channel.
-	// This determines how many objects can be held in the fast path before falling back
-	// to the slower, lock-protected main pool. (length <= currentCapacity)
-	bufferSize int
+// Getter methods for poolConfig
+func (c *poolConfig) GetInitialCapacity() int {
+	return c.initialCapacity
+}
 
-	// growthEventsTrigger defines how many pool growth events must occur
-	// before triggering a capacity increase for the L1 channel.
-	// This helps align L1 growth with real demand, reducing premature allocations
-	// while still adapting to sustained load.
+func (c *poolConfig) GetHardLimit() int {
+	return c.hardLimit
+}
+
+func (c *poolConfig) GetGrowth() *growthParameters {
+	return c.growth
+}
+
+func (c *poolConfig) GetShrink() *shrinkParameters {
+	return c.shrink
+}
+
+func (c *poolConfig) GetFastPath() *fastPathParameters {
+	return c.fastPath
+}
+
+func (c *poolConfig) GetRingBufferConfig() *RingBufferConfig {
+	return c.ringBufferConfig
+}
+
+func (c *poolConfig) IsVerbose() bool {
+	return c.verbose
+}
+
+type growthParameters struct {
+	// Threshold multiplier that determines when to switch from exponential to fixed growth.
+	// Once the capacity reaches (InitialCapacity * ExponentialThresholdFactor), the growth
+	// strategy switches to fixed mode.
 	//
-	// ⚠️ WARNING:
-	// growing or shrinking the l1 buffer too often will cause goroutines to drop.
-	growthEventsTrigger int
-
-	// shrinkEventsTrigger defines how many pool shrink events must occur
-	// before triggering a capacity decrease for the L1 channel.
-	// This helps align L1 shrink with real demand, reducing premature allocations
-	// while still adapting to sustained load.
-	shrinkEventsTrigger int
-
-	// fillAggressiveness controls how aggressively the pool refills the fast path buffer
-	// from the main pool. It is a float between 0.0 and 1.0, representing the fraction of the
-	// fast path buffer that should be proactively filled during initialization, and refills.
-	// Example: 0.5 means fill the fast path up to 50% of its capacity.
-	fillAggressiveness float64
-
-	// refillPercent defines the minimum occupancy threshold (as a fraction of bufferSize)
-	// at which the fast path buffer should be refilled from the main pool.
-	// When the number of objects in the fast path drops below this percentage of its capacity,
-	// a refill is triggered.
+	// Example:
+	//   InitialCapacity = 12
+	//   ExponentialThresholdFactor = 4.0
+	//   Threshold = 12 * 4.0 = 48
 	//
-	// Must be a float > 0.0 and < 1.0 (e.g., 0.99). A value of 1.0 is invalid,
-	// because it would cause a refill attempt even when the buffer is completely full,
-	// which is unnecessary and wasteful.
-	refillPercent float64
+	//   → Pool grows exponentially until it reaches capacity 48,
+	//     then it grows at a fixed pace.
+	exponentialThresholdFactor float64
 
-	growth *growthParameters
-	shrink *shrinkParameters
+	// Growth percentage used while in exponential mode.
+	// Determines how much the capacity increases as a percentage of the current capacity.
+	//
+	// Example:
+	//   CurrentCapacity = 20
+	//   GrowthPercent = 0.5 (50%)
+	//   Growth = 20 * 0.5 = 10 → NewCapacity = 30
+	//
+	//   → Pool grows: 12 → 18 → 27 → 40 → 60 → ...
+	growthPercent float64
 
-	// enableChannelGrowth allows the L1 channel (cache layer) to dynamically grow
-	// by reallocating it with a larger buffer size when needed.
-	// This can improve performance under high concurrency by reducing contention
-	// and increasing fast-path hit rates.
-	enableChannelGrowth bool
+	// Once in fixed growth mode, this fixed value is added to the current capacity
+	// each time the pool grows.
+	//
+	// Example:
+	//   InitialCapacity = 12
+	//   FixedGrowthFactor = 1.0
+	//   fixed step = 12 * 1.0 = 12
+	//
+	//   → Pool grows: 48 → 60 → 72 → ...
+	fixedGrowthFactor float64
+}
+
+// Getter methods for growthParameters
+func (g *growthParameters) GetExponentialThresholdFactor() float64 {
+	return g.exponentialThresholdFactor
+}
+
+func (g *growthParameters) GetGrowthPercent() float64 {
+	return g.growthPercent
+}
+
+func (g *growthParameters) GetFixedGrowthFactor() float64 {
+	return g.fixedGrowthFactor
 }
 
 type shrinkParameters struct {
@@ -213,41 +237,129 @@ type shrinkParameters struct {
 	minCapacity int
 }
 
-type growthParameters struct {
-	// Threshold multiplier that determines when to switch from exponential to fixed growth.
-	// Once the capacity reaches (InitialCapacity * ExponentialThresholdFactor), the growth
-	// strategy switches to fixed mode.
-	//
-	// Example:
-	//   InitialCapacity = 12
-	//   ExponentialThresholdFactor = 4.0
-	//   Threshold = 12 * 4.0 = 48
-	//
-	//   → Pool grows exponentially until it reaches capacity 48,
-	//     then it grows at a fixed pace.
-	exponentialThresholdFactor float64
+// Getter methods for shrinkParameters
+func (s *shrinkParameters) GetEnforceCustomConfig() bool {
+	return s.enforceCustomConfig
+}
 
-	// Growth percentage used while in exponential mode.
-	// Determines how much the capacity increases as a percentage of the current capacity.
-	//
-	// Example:
-	//   CurrentCapacity = 20
-	//   GrowthPercent = 0.5 (50%)
-	//   Growth = 20 * 0.5 = 10 → NewCapacity = 30
-	//
-	//   → Pool grows: 12 → 18 → 27 → 40 → 60 → ...
-	growthPercent float64
+func (s *shrinkParameters) GetAggressivenessLevel() AggressivenessLevel {
+	return s.aggressivenessLevel
+}
 
-	// Once in fixed growth mode, this fixed value is added to the current capacity
-	// each time the pool grows.
+func (s *shrinkParameters) GetCheckInterval() time.Duration {
+	return s.checkInterval
+}
+
+func (s *shrinkParameters) GetIdleThreshold() time.Duration {
+	return s.idleThreshold
+}
+
+func (s *shrinkParameters) GetMinIdleBeforeShrink() int {
+	return s.minIdleBeforeShrink
+}
+
+func (s *shrinkParameters) GetShrinkCooldown() time.Duration {
+	return s.shrinkCooldown
+}
+
+func (s *shrinkParameters) GetMinUtilizationBeforeShrink() float64 {
+	return s.minUtilizationBeforeShrink
+}
+
+func (s *shrinkParameters) GetStableUnderutilizationRounds() int {
+	return s.stableUnderutilizationRounds
+}
+
+func (s *shrinkParameters) GetShrinkPercent() float64 {
+	return s.shrinkPercent
+}
+
+func (s *shrinkParameters) GetMaxConsecutiveShrinks() int {
+	return s.maxConsecutiveShrinks
+}
+
+func (s *shrinkParameters) GetMinCapacity() int {
+	return s.minCapacity
+}
+
+type fastPathParameters struct {
+	// bufferSize defines the capacity of the fast path channel.
+	// This determines how many objects can be held in the fast path before falling back
+	// to the slower, lock-protected main pool. (length <= currentCapacity)
+	bufferSize int
+
+	// growthEventsTrigger defines how many pool growth events must occur
+	// before triggering a capacity increase for the L1 channel.
+	// This helps align L1 growth with real demand, reducing premature allocations
+	// while still adapting to sustained load.
 	//
-	// Example:
-	//   InitialCapacity = 12
-	//   FixedGrowthFactor = 1.0
-	//   fixed step = 12 * 1.0 = 12
+	// ⚠️ WARNING:
+	// growing or shrinking the l1 buffer too often will cause goroutines to drop.
+	growthEventsTrigger int
+
+	// shrinkEventsTrigger defines how many pool shrink events must occur
+	// before triggering a capacity decrease for the L1 channel.
+	// This helps align L1 shrink with real demand, reducing premature allocations
+	// while still adapting to sustained load.
+	shrinkEventsTrigger int
+
+	// fillAggressiveness controls how aggressively the pool refills the fast path buffer
+	// from the main pool. It is a float between 0.0 and 1.0, representing the fraction of the
+	// fast path buffer that should be proactively filled during initialization, and refills.
+	// Example: 0.5 means fill the fast path up to 50% of its capacity.
+	fillAggressiveness float64
+
+	// refillPercent defines the minimum occupancy threshold (as a fraction of bufferSize)
+	// at which the fast path buffer should be refilled from the main pool.
+	// When the number of objects in the fast path drops below this percentage of its capacity,
+	// a refill is triggered.
 	//
-	//   → Pool grows: 48 → 60 → 72 → ...
-	fixedGrowthFactor float64
+	// Must be a float > 0.0 and < 1.0 (e.g., 0.99). A value of 1.0 is invalid,
+	// because it would cause a refill attempt even when the buffer is completely full,
+	// which is unnecessary and wasteful.
+	refillPercent float64
+
+	growth *growthParameters
+	shrink *shrinkParameters
+
+	// enableChannelGrowth allows the L1 channel (cache layer) to dynamically grow
+	// by reallocating it with a larger buffer size when needed.
+	// This can improve performance under high concurrency by reducing contention
+	// and increasing fast-path hit rates.
+	enableChannelGrowth bool
+}
+
+// Getter methods for fastPathParameters
+func (f *fastPathParameters) GetBufferSize() int {
+	return f.bufferSize
+}
+
+func (f *fastPathParameters) GetGrowthEventsTrigger() int {
+	return f.growthEventsTrigger
+}
+
+func (f *fastPathParameters) GetShrinkEventsTrigger() int {
+	return f.shrinkEventsTrigger
+}
+
+func (f *fastPathParameters) GetFillAggressiveness() float64 {
+	return f.fillAggressiveness
+}
+
+func (f *fastPathParameters) GetRefillPercent() float64 {
+	return f.refillPercent
+}
+
+func (f *fastPathParameters) GetGrowth() *growthParameters {
+	return f.growth
+}
+
+func (f *fastPathParameters) GetShrink() *shrinkParameters {
+	return f.shrink
+}
+
+func (f *fastPathParameters) IsEnableChannelGrowth() bool {
+	return f.enableChannelGrowth
 }
 
 type Example struct {

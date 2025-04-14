@@ -34,7 +34,6 @@ func setupPool(b *testing.B) *pool[*Example] {
 func Benchmark_Setup(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
-	InitDefaultFields()
 
 	for i := 0; i < b.N; i++ {
 		poolObj := setupPool(b)
@@ -56,7 +55,6 @@ func Benchmark_Setup(b *testing.B) {
 func Benchmark_Get(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
-	InitDefaultFields()
 
 	b.SetParallelism(10)
 	poolObj := setupPool(b)
@@ -79,7 +77,6 @@ func Benchmark_Get(b *testing.B) {
 func Benchmark_Put(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
-	InitDefaultFields()
 
 	b.SetParallelism(10)
 	poolObj := setupPool(b)
@@ -93,7 +90,6 @@ func Benchmark_Put(b *testing.B) {
 func Benchmark_Grow(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
-	InitDefaultFields()
 
 	poolObj := setupPool(b)
 
@@ -109,7 +105,6 @@ func Benchmark_Grow(b *testing.B) {
 func Benchmark_SlowPath(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
-	InitDefaultFields()
 
 	poolObj := setupPool(b)
 	b.SetParallelism(1)
@@ -124,7 +119,7 @@ func Benchmark_SlowPath(b *testing.B) {
 // func Benchmark_RepeatedShrink(b *testing.B) {
 // 	debug.SetGCPercent(-1)
 // 	b.ReportAllocs()
-// 	InitDefaultFields()
+//
 // 	poolObj := setupPool(b)
 
 // 	for range 2_000_000 {

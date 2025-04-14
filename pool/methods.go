@@ -179,6 +179,11 @@ func (p *pool[T]) shrink() {
 	}
 }
 
+// isShrunk returns true if the pool is shrunk.
+func (p *pool[T]) IsShrunk() bool {
+	return p.stats.currentCapacity.Load() < uint64(p.config.initialCapacity)
+}
+
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and populates it
 // with existing items from the old buffer and new items from the allocator.
 func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {
@@ -216,6 +221,8 @@ func (p *pool[T]) grow(now time.Time) bool {
 		if p.config.verbose {
 			log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
 		}
+
+		p.isGrowthBlocked = true
 		return false
 	}
 
@@ -224,7 +231,6 @@ func (p *pool[T]) grow(now time.Time) bool {
 		if p.config.verbose {
 			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
 		}
-		p.isGrowthBlocked = true
 	}
 
 	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)

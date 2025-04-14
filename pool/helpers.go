@@ -316,10 +316,9 @@ func (p *pool[T]) refill(fillTarget int) RefillResult {
 	noObjsAvailable := p.pool.Length() == 0
 	biggerRequestThanAvailable := fillTarget > p.pool.Length() // WARNING - reading more than available objects will block.
 
-	if noObjsAvailable || biggerRequestThanAvailable {
+	if noObjsAvailable || biggerRequestThanAvailable && !p.isGrowthBlocked {
 		if p.isGrowthBlocked {
 			result.Reason = GrowthBlocked
-			result.GrowthBlocked = true
 			return result
 		}
 
@@ -587,12 +586,6 @@ func (p *pool[T]) logFastPathShrink(currentCap uint64, newCap int, inUse int) {
 	}
 }
 
-// Set default fields
-func InitDefaultFields() {
-	defaultFastPath.shrink.minCapacity = defaultL1MinCapacity
-	defaultShrinkParameters.ApplyDefaults(getShrinkDefaultsMap())
-}
-
 func (p *pool[T]) updateDerivedStats() {
 	totalGets := p.stats.totalGets.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
@@ -619,13 +612,12 @@ func (p *pool[T]) updateDerivedStats() {
 
 func createDefaultConfig() *poolConfig {
 	return &poolConfig{
-		initialCapacity:     defaultPoolCapacity,
-		hardLimit:           defaultHardLimit,
-		hardLimitBufferSize: defaultHardLimitBufferSize,
-		shrink:              defaultShrinkParameters,
-		growth:              defaultGrowthParameters,
-		fastPath:            defaultFastPath,
-		ringBufferConfig:    defaultRingBufferConfig,
+		initialCapacity:  defaultPoolCapacity,
+		hardLimit:        defaultHardLimit,
+		shrink:           defaultShrinkParameters,
+		growth:           defaultGrowthParameters,
+		fastPath:         defaultFastPath,
+		ringBufferConfig: defaultRingBufferConfig,
 	}
 }
 

@@ -13,6 +13,23 @@ type RingBufferConfig struct {
 	cancel   context.Context
 }
 
+// Getter methods for RingBufferConfig
+func (c *RingBufferConfig) IsBlocking() bool {
+	return c.block
+}
+
+func (c *RingBufferConfig) GetReadTimeout() time.Duration {
+	return c.rTimeout
+}
+
+func (c *RingBufferConfig) GetWriteTimeout() time.Duration {
+	return c.wTimeout
+}
+
+func (c *RingBufferConfig) GetCancelContext() context.Context {
+	return c.cancel
+}
+
 type RingBufferConfigBuilder struct {
 	config *RingBufferConfig
 }
