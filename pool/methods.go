@@ -34,6 +34,15 @@ const (
 	defaultEnableChannelGrowth                            = true
 )
 
+const (
+	NoRefillNeeded  = "no refill needed"
+	RefillSucceeded = "refill succeeded"
+	GrowthBlocked   = "growth is blocked"
+	GrowthFailed    = "growth failed"
+	NoItemsToMove   = "no items to move"
+	RingBufferError = "error getting items from ring buffer"
+)
+
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
 	if config == nil {
 		config = &poolConfig{
@@ -62,6 +71,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		mu:              sync.RWMutex{},
 		config:          config,
 		stats:           stats,
+		pool:            New[T](config.initialCapacity),
 	}
 
 	// removed the mem allocation caused my pool.mu = &sync.RWMutex{}, but since cond needs a pointer,
@@ -81,6 +91,14 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
 	}
 
+	// Initialize the ring buffer with the initial objects
+	poolObj.pool.SetBlocking(true)
+	for range config.initialCapacity {
+		if err := poolObj.pool.Write(poolObj.allocator()); err != nil {
+			return nil, fmt.Errorf("failed to initialize ring buffer: %v", err)
+		}
+	}
+
 	// go poolObj.shrink() // WARNING - it will mess up the benchmark
 
 	return &poolObj, nil
@@ -94,17 +112,17 @@ func (p *pool[T]) Get() T {
 		p.cond.Broadcast()
 	}
 
-	ableToRefill := p.tryRefillIfNeeded() // WARNING - contains heavy operations (resizePool, tryL1ResizeIfTriggered)
+	ableToRefill, refillReason := p.tryRefillIfNeeded()
 	if !ableToRefill {
 		if p.config.verbose {
-			log.Println("[GET] Unable to refill — blocking on hardLimitResume")
+			log.Printf("[GET] Unable to refill — reason: %s", refillReason)
 		}
-		p.stats.blockedGets.Add(1)
-		<-p.hardLimitResume
-		if p.config.verbose {
-			log.Println("[GET] Unblocked from hardLimitResume")
+
+		// everything outside GrowthBlocked is an error, return nil (since T is always a pointer, its zero value is nil)
+		if refillReason != GrowthBlocked {
+			var zero T
+			return zero
 		}
-		p.reduceBlockedGets()
 	}
 
 	if p.config.verbose {
@@ -143,25 +161,20 @@ func (p *pool[T]) Put(obj T) {
 			log.Println("[PUT] Fast return hit")
 		}
 	default:
-		p.mu.Lock()
-		p.pool = append(p.pool, obj)  // WARNING - memory bottleneck.
-		p.stats.FastReturnMiss.Add(1) // WARNING - 90% faster if done inside the lock.
-		p.mu.Unlock()
+		if err := p.pool.Write(obj); err != nil { // WARNING - writing to a full ring buffer will block.
+			if p.config.verbose {
+				log.Printf("[PUT] Error writing to ring buffer: %v", err)
+			}
+		}
+		p.stats.FastReturnMiss.Add(1)
 
 		if p.config.verbose {
 			log.Println("[PUT] Fast return miss")
 		}
 	}
-
-	if p.stats.blockedGets.Load() > 0 {
-		if p.config.verbose {
-			log.Println("[PUT] Unblocking goroutines")
-		}
-		p.hardLimitResume <- struct{}{}
-	}
 }
 
-func (p *pool[T]) tryRefillIfNeeded() bool {
+func (p *pool[T]) tryRefillIfNeeded() (bool, string) {
 	bufferSize := p.config.fastPath.bufferSize
 	currentLength := len(p.cacheL1)
 	currentPercent := float64(currentLength) / float64(bufferSize)
@@ -177,60 +190,43 @@ func (p *pool[T]) tryRefillIfNeeded() bool {
 			log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 		}
 
-		ableToRefill := p.refill(fillTarget)
-
-		if !ableToRefill {
+		result := p.refill(fillTarget)
+		if !result.Success {
 			if p.config.verbose {
-				log.Println("[REFILL] Refill failed")
+				log.Printf("[REFILL] Refill failed: %s", result.Reason)
 			}
-			return false
+			return false, result.Reason
 		}
 
 		if p.config.verbose {
-			log.Println("[REFILL] Refill succeeded")
+			log.Printf("[REFILL] Refill succeeded: %s | Moved: %d | Failed: %d | Growth needed: %v | Growth blocked: %v",
+				result.Reason, result.ItemsMoved, result.ItemsFailed, result.GrowthNeeded, result.GrowthBlocked)
 		}
+
+		return true, RefillSucceeded
 	}
 
-	return true
+	return true, NoRefillNeeded
 }
 
+// It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
+// We always try to refill the pool before calling the slow path.
 func (p *pool[T]) slowPath() T {
-	var now time.Time
-
-	for {
-		p.mu.Lock()
-		lenPool := len(p.pool)
-
-		if lenPool > 0 {
-			now = time.Now()
-			p.stats.lastTimeCalledGet = now
-
-			obj := p.pool[0]
-			p.pool = p.pool[1:]
-			p.mu.Unlock()
-
-			if p.config.verbose {
-				log.Printf("[SLOWPATH] Object retrieved from pool | Remaining: %d", len(p.pool))
-			}
-
-			return obj
-		}
-
+	var zero T
+	obj, err := p.pool.GetOne()
+	if err != nil {
 		if p.config.verbose {
-			log.Printf("[SLOWPATH] Pool empty — blocking on hardLimitResume")
+			log.Printf("[SLOWPATH] Error getting object from ring buffer: %v", err)
 		}
-
-		p.stats.blockedGets.Add(1)
-		p.mu.Unlock()
-
-		<-p.hardLimitResume
-
-		if p.config.verbose {
-			log.Println("[SLOWPATH] Unblocked from hardLimitResume — retrying")
-		}
-
-		p.reduceBlockedGets()
+		return zero
 	}
+
+	if p.config.verbose {
+		log.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
+	}
+
+	p.stats.lastTimeCalledGet = time.Now()
+	return obj
 }
 
 func (p *pool[T]) shrink() {
@@ -289,8 +285,58 @@ func (p *pool[T]) shrink() {
 	}
 }
 
-// 1. grow is called when the pool is empty.
-// 2. grow is called in one place, if you call in another one, you need to check if p.isGrowthBlocked is true before calling.
+// createAndPopulateBuffer creates a new ring buffer with the specified capacity and populates it
+// with existing items from the old buffer and new items from the allocator.
+func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) *RingBuffer[T] {
+	newRingBuffer := New[T](int(newCapacity))
+	newRingBuffer.CopyConfig(p.pool)
+
+	if p.pool == nil {
+		return nil
+	}
+
+	items, err := p.pool.GetN(int(p.pool.Length()))
+	if err != nil && err != ErrIsEmpty {
+		if p.config.verbose {
+			log.Printf("[GROW] Error getting items from old ring buffer: %v", err)
+		}
+		return nil
+	}
+
+	if len(items) > int(newCapacity) {
+		if p.config.verbose {
+			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(items))
+		}
+		return nil
+	}
+
+	if _, err := newRingBuffer.WriteMany(items); err != nil {
+		if p.config.verbose {
+			log.Printf("[GROW] Error writing items to new ring buffer: %v", err)
+		}
+		return nil
+	}
+
+	toAdd := int(newCapacity) - newRingBuffer.Length()
+	if toAdd <= 0 {
+		if p.config.verbose {
+			log.Printf("[GROW] No new items to add | New capacity: %d | Ring buffer length: %d", newCapacity, newRingBuffer.Length())
+		}
+		return newRingBuffer
+	}
+
+	for range toAdd {
+		if err := newRingBuffer.Write(p.allocator()); err != nil {
+			if p.config.verbose {
+				log.Printf("[GROW] Error writing new item to ring buffer: %v", err)
+			}
+			return nil
+		}
+	}
+
+	return newRingBuffer
+}
+
 func (p *pool[T]) grow(now time.Time) bool {
 	cfg := p.config.growth
 	initialCap := uint64(p.config.initialCapacity)
@@ -304,7 +350,6 @@ func (p *pool[T]) grow(now time.Time) bool {
 		if p.config.verbose {
 			log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
 		}
-		p.isGrowthBlocked = true
 		return false
 	}
 
@@ -313,9 +358,16 @@ func (p *pool[T]) grow(now time.Time) bool {
 		if p.config.verbose {
 			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
 		}
+		p.isGrowthBlocked = true
 	}
 
-	p.resizePool(currentCap, newCapacity) // WARNING - heavy operation, avoid resizing too often.
+	newRingBuffer := p.createAndPopulateBuffer(newCapacity)
+	if newRingBuffer == nil {
+		return false
+	}
+
+	p.pool = newRingBuffer
+	p.stats.currentCapacity.Store(newCapacity)
 	p.stats.lastGrowTime = now
 	p.stats.l3MissCount.Add(1)
 	p.stats.totalGrowthEvents.Add(1)
@@ -323,7 +375,7 @@ func (p *pool[T]) grow(now time.Time) bool {
 	p.tryL1ResizeIfTriggered() // WARNING - heavy operation, avoid resizing too often.
 
 	if p.config.verbose {
-		log.Printf("[GROW] Final state | New capacity: %d | Pool size after grow: %d", newCapacity, len(p.pool))
+		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d", newCapacity, p.pool.Length())
 	}
 	return true
 }

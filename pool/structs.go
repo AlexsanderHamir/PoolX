@@ -9,10 +9,8 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type pool[T any] struct {
-
-	// Hot
-	pool    []T
 	cacheL1 chan T
+	pool    *RingBuffer[T]
 
 	// hardLimitResume is used to signal goroutines waiting
 	// that new objects have been returned to the pool.
@@ -27,7 +25,6 @@ type pool[T any] struct {
 	isShrinkBlocked bool
 	isGrowthBlocked bool
 
-	// Cold
 	config    *poolConfig
 	cleaner   func(T)
 	allocator func() T
@@ -45,8 +42,6 @@ type shrinkDefaults struct {
 }
 
 type poolStats struct {
-	// --- Hot Path Atomic Counters ---
-
 	objectsInUse       atomic.Uint64
 	availableObjects   atomic.Uint64
 	peakInUse          atomic.Uint64
@@ -55,15 +50,11 @@ type poolStats struct {
 	consecutiveShrinks atomic.Uint64
 	totalGets          atomic.Uint64
 
-	// --- Growth / Shrink Tracking ---
-
-	totalGrowthEvents     atomic.Uint64 // rarely used
-	totalShrinkEvents     atomic.Uint64 // rarely used
+	totalGrowthEvents     atomic.Uint64
+	totalShrinkEvents     atomic.Uint64
 	lastResizeAtGrowthNum atomic.Uint64
 	lastResizeAtShrinkNum atomic.Uint64
 	currentL1Capacity     atomic.Uint64
-
-	// --- Fast Path / Hit/Miss Stats ---
 
 	FastReturnHit  atomic.Uint64
 	FastReturnMiss atomic.Uint64
@@ -71,11 +62,7 @@ type poolStats struct {
 	l2HitCount     atomic.Uint64
 	l3MissCount    atomic.Uint64
 
-	// --- Configuration (static or cold values) ---
-
 	initialCapacity int
-
-	// --- Cold Path / Derived or Locked ---
 
 	mu           sync.RWMutex
 	reqPerObj    float64 // derived
@@ -84,7 +71,7 @@ type poolStats struct {
 
 	lastTimeCalledGet time.Time
 	lastShrinkTime    time.Time
-	lastGrowTime      time.Time // not used
+	lastGrowTime      time.Time
 }
 
 type poolConfig struct {
@@ -265,4 +252,13 @@ type growthParameters struct {
 type Example struct {
 	Name string
 	Age  int
+}
+
+type RefillResult struct {
+	Success       bool
+	Reason        string
+	ItemsMoved    int
+	ItemsFailed   int
+	GrowthNeeded  bool
+	GrowthBlocked bool
 }

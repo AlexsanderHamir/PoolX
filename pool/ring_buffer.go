@@ -46,9 +46,10 @@ type RingBuffer[T any] struct {
 	rTimeout  time.Duration // Applies to writes (waits for the read condition)
 	wTimeout  time.Duration // Applies to read (wait for the write condition)
 	mu        sync.Mutex
-	readCond  *sync.Cond // Signaled when data has been read.
-	writeCond *sync.Cond // Signaled when data has been written.
-	closed    bool       // Tracks if the writer is closed
+	readCond  *sync.Cond      // Signaled when data has been read.
+	writeCond *sync.Cond      // Signaled when data has been written.
+	closed    bool            // Tracks if the writer is closed
+	cancel    context.Context // Context for cancellation
 }
 
 // New returns a new RingBuffer whose buffer has the given size.
@@ -56,14 +57,6 @@ func New[T any](size int) *RingBuffer[T] {
 	return &RingBuffer[T]{
 		buf:  make([]T, size),
 		size: size,
-	}
-}
-
-// NewBuffer returns a new RingBuffer whose buffer is provided.
-func NewBuffer[T any](b []T) *RingBuffer[T] {
-	return &RingBuffer[T]{
-		buf:  b,
-		size: len(b),
 	}
 }
 
@@ -85,8 +78,16 @@ func (r *RingBuffer[T]) SetBlocking(block bool) *RingBuffer[T] {
 // When the context is canceled, the ring buffer will be closed with the context error.
 // A goroutine will be started and run until the provided context is canceled.
 func (r *RingBuffer[T]) WithCancel(ctx context.Context) *RingBuffer[T] {
+	r.mu.Lock()
+	r.cancel = ctx
+	r.mu.Unlock()
+
 	go func() {
 		<-ctx.Done()
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.closed = true
+		r.setErr(ctx.Err(), true)
 	}()
 	return r
 }
@@ -209,10 +210,12 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 		r.setErr(context.DeadlineExceeded, true)
 		return false
 	}
+
 	return true
 }
 
-// Write writes a single item to the buffer
+// Write writes a single item to the buffer.
+// Blocks if the buffer is full and the ring buffer is in blocking mode, only a read will unblock it.
 func (r *RingBuffer[T]) Write(item T) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -288,6 +291,7 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 	if r.block && n > 0 {
 		r.writeCond.Broadcast()
 	}
+
 	return n, nil
 }
 
@@ -315,7 +319,7 @@ func (r *RingBuffer[T]) Capacity() int {
 	return r.size
 }
 
-// Free returns the number of bytes that can be written without blocking.
+// Free returns the number of items that can be written without blocking.
 func (r *RingBuffer[T]) Free() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -427,6 +431,7 @@ func (r *RingBuffer[T]) PeekN(n int) (items []T, err error) {
 
 // GetOne returns a single item from the buffer.
 // Returns ErrIsEmpty if the buffer is empty.
+// Blocks if the buffer is empty and the ring buffer is in blocking mode, only a write will unblock it.
 func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -455,6 +460,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	if r.block {
 		r.readCond.Broadcast()
 	}
+
 	return item, r.readErr(true)
 }
 
@@ -517,4 +523,55 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		r.readCond.Broadcast()
 	}
 	return items, r.readErr(true)
+}
+
+// CopyConfig copies the configuration settings from the source buffer to the target buffer.
+// This includes blocking mode, timeouts, and cancellation context.
+func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
+	if source.block {
+		r.SetBlocking(true)
+	}
+
+	if source.rTimeout > 0 {
+		r.WithReadTimeout(source.rTimeout)
+	}
+
+	if source.wTimeout > 0 {
+		r.WithWriteTimeout(source.wTimeout)
+	}
+
+	if source.cancel != nil {
+		r.WithCancel(source.cancel)
+	}
+
+	return r
+}
+
+// ClearRemaining clears all remaining items in the buffer and sets them to nil.
+// This is useful when shrinking the buffer and we need to clean up items that won't fit.
+func (r *RingBuffer[T]) ClearRemaining() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.w == r.r && !r.isFull {
+		return
+	}
+
+	var zero T
+	if r.w > r.r {
+		for i := r.r; i < r.w; i++ {
+			r.buf[i] = zero
+		}
+	} else {
+		for i := r.r; i < r.size; i++ {
+			r.buf[i] = zero
+		}
+		for i := range r.w {
+			r.buf[i] = zero
+		}
+	}
+
+	r.r = 0
+	r.w = 0
+	r.isFull = false
 }
