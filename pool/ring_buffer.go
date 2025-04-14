@@ -29,6 +29,9 @@ var (
 
 	// ErrReaderClosed is returned when a ReadClosed closed the ringbuffer.
 	ErrReaderClosed = errors.New("reader closed")
+
+	// ErrInvalidLength is returned when the length of the buffer is invalid.
+	ErrInvalidLength = errors.New("invalid length")
 )
 
 // RingBuffer is a circular buffer that implements io.ReaderWriter interface.

@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"fmt"
 	"log"
 	"time"
 )
@@ -65,7 +66,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		return nil, err
 	}
 
-	// go poolObj.shrink() // WARNING - remove if you want to benchmark
+	go poolObj.shrink() // WARNING - remove if you want to benchmark
 
 	return poolObj, nil
 }
@@ -158,43 +159,20 @@ func (p *pool[T]) shrink() {
 	for range ticker.C {
 		p.mu.Lock()
 
-		if p.stats.consecutiveShrinks.Load() == uint64(params.maxConsecutiveShrinks) {
-			if p.config.verbose {
-				log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
-			}
-			p.isShrinkBlocked = true
-			p.cond.Wait()
-			p.isShrinkBlocked = false
-		}
-
-		timeSinceLastShrink := time.Since(p.stats.lastShrinkTime)
-		if timeSinceLastShrink < params.shrinkCooldown {
-			if p.config.verbose {
-				log.Printf("[SHRINK] Cooldown active: %v remaining", params.shrinkCooldown-timeSinceLastShrink)
-			}
+		if p.handleMaxConsecutiveShrinks(params) {
 			p.mu.Unlock()
 			continue
 		}
 
-		p.IndleCheck(&idleCount, &idleOK)
-		if p.config.verbose {
-			log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", idleCount, params.minIdleBeforeShrink, idleOK)
+		if p.handleShrinkCooldown(params) {
+			p.mu.Unlock()
+			continue
 		}
 
-		p.UtilizationCheck(&underutilCount, &utilOK)
-		if p.config.verbose {
-			log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", underutilCount, params.stableUnderutilizationRounds, utilOK)
-		}
+		p.performShrinkChecks(params, &idleCount, &underutilCount, &idleOK, &utilOK)
 
 		if idleOK || utilOK {
-			if p.config.verbose {
-				log.Println("[SHRINK] STATS (before shrink)")
-				p.PrintPoolStats()
-				log.Println("[SHRINK] Shrink conditions met — executing shrink.")
-			}
-			p.ShrinkExecution() // WARNING - contains heavy operations.
-			idleCount, underutilCount = 0, 0
-			idleOK, utilOK = false, false
+			p.executeShrink(&idleCount, &underutilCount, &idleOK, &utilOK)
 		}
 
 		p.mu.Unlock()
@@ -203,54 +181,26 @@ func (p *pool[T]) shrink() {
 
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and populates it
 // with existing items from the old buffer and new items from the allocator.
-func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) *RingBuffer[T] {
-	newRingBuffer := New[T](int(newCapacity))
-	newRingBuffer.CopyConfig(p.pool)
-
-	if p.pool == nil {
-		return nil
+func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {
+	newRingBuffer := p.createNewBuffer(newCapacity)
+	if newRingBuffer == nil {
+		return nil, fmt.Errorf("failed to create ring buffer")
 	}
 
-	items, err := p.pool.GetN(int(p.pool.Length()))
-	if err != nil && err != ErrIsEmpty {
-		if p.config.verbose {
-			log.Printf("[GROW] Error getting items from old ring buffer: %v", err)
-		}
-		return nil
+	items, err := p.getItemsFromOldBuffer()
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve items from old buffer: %w", err)
 	}
 
-	if len(items) > int(newCapacity) {
-		if p.config.verbose {
-			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(items))
-		}
-		return nil
+	if err := p.validateAndWriteItems(newRingBuffer, items, newCapacity); err != nil {
+		return nil, fmt.Errorf("failed to write items to new buffer: %w", err)
 	}
 
-	if _, err := newRingBuffer.WriteMany(items); err != nil {
-		if p.config.verbose {
-			log.Printf("[GROW] Error writing items to new ring buffer: %v", err)
-		}
-		return nil
+	if err := p.fillRemainingCapacity(newRingBuffer, newCapacity); err != nil {
+		return nil, fmt.Errorf("failed to fill remaining capacity: %w", err)
 	}
 
-	toAdd := int(newCapacity) - newRingBuffer.Length()
-	if toAdd <= 0 {
-		if p.config.verbose {
-			log.Printf("[GROW] No new items to add | New capacity: %d | Ring buffer length: %d", newCapacity, newRingBuffer.Length())
-		}
-		return newRingBuffer
-	}
-
-	for range toAdd {
-		if err := newRingBuffer.Write(p.allocator()); err != nil {
-			if p.config.verbose {
-				log.Printf("[GROW] Error writing new item to ring buffer: %v", err)
-			}
-			return nil
-		}
-	}
-
-	return newRingBuffer
+	return newRingBuffer, nil
 }
 
 func (p *pool[T]) grow(now time.Time) bool {
@@ -277,8 +227,11 @@ func (p *pool[T]) grow(now time.Time) bool {
 		p.isGrowthBlocked = true
 	}
 
-	newRingBuffer := p.createAndPopulateBuffer(newCapacity)
-	if newRingBuffer == nil {
+	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)
+	if err != nil {
+		if p.config.verbose {
+			log.Printf("[GROW] Failed to create and populate buffer: %v", err)
+		}
 		return false
 	}
 

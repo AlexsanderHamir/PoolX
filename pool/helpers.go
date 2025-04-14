@@ -766,3 +766,107 @@ func (p *pool[T]) logRefillResult(result RefillResult) {
 			result.Reason, result.ItemsMoved, result.ItemsFailed, result.GrowthNeeded, result.GrowthBlocked)
 	}
 }
+
+func (p *pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) bool {
+	if p.stats.consecutiveShrinks.Load() == uint64(params.maxConsecutiveShrinks) {
+		if p.config.verbose {
+			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
+		}
+		p.isShrinkBlocked = true
+		p.cond.Wait()
+		p.isShrinkBlocked = false
+		return true
+	}
+	return false
+}
+
+func (p *pool[T]) handleShrinkCooldown(params *shrinkParameters) bool {
+	timeSinceLastShrink := time.Since(p.stats.lastShrinkTime)
+	if timeSinceLastShrink < params.shrinkCooldown {
+		if p.config.verbose {
+			log.Printf("[SHRINK] Cooldown active: %v remaining", params.shrinkCooldown-timeSinceLastShrink)
+		}
+		return true
+	}
+	return false
+}
+
+func (p *pool[T]) performShrinkChecks(params *shrinkParameters, idleCount, underutilCount *int, idleOK, utilOK *bool) {
+	p.IndleCheck(idleCount, idleOK)
+	if p.config.verbose {
+		log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", *idleCount, params.minIdleBeforeShrink, *idleOK)
+	}
+
+	p.UtilizationCheck(underutilCount, utilOK)
+	if p.config.verbose {
+		log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", *underutilCount, params.stableUnderutilizationRounds, *utilOK)
+	}
+}
+
+func (p *pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *bool) {
+	if p.config.verbose {
+		log.Println("[SHRINK] STATS (before shrink)")
+		p.PrintPoolStats()
+		log.Println("[SHRINK] Shrink conditions met — executing shrink.")
+	}
+	p.ShrinkExecution() // WARNING - contains heavy operations.
+	*idleCount, *underutilCount = 0, 0
+	*idleOK, *utilOK = false, false
+}
+
+func (p *pool[T]) createNewBuffer(newCapacity uint64) *RingBuffer[T] {
+	newRingBuffer := New[T](int(newCapacity))
+	if p.pool == nil {
+		return nil
+	}
+	newRingBuffer.CopyConfig(p.pool)
+	return newRingBuffer
+}
+
+func (p *pool[T]) getItemsFromOldBuffer() ([]T, error) {
+	items, err := p.pool.GetN(int(p.pool.Length()))
+	if err != nil && err != ErrIsEmpty {
+		if p.config.verbose {
+			log.Printf("[GROW] Error getting items from old ring buffer: %v", err)
+		}
+		return nil, err
+	}
+	return items, nil
+}
+
+func (p *pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], items []T, newCapacity uint64) error {
+	if len(items) > int(newCapacity) {
+		if p.config.verbose {
+			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(items))
+		}
+		return ErrInvalidLength
+	}
+
+	if _, err := newRingBuffer.WriteMany(items); err != nil {
+		if p.config.verbose {
+			log.Printf("[GROW] Error writing items to new ring buffer: %v", err)
+		}
+		return err
+	}
+	return nil
+}
+
+func (p *pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacity uint64) error {
+	toAdd := int(newCapacity) - newRingBuffer.Length()
+	if toAdd <= 0 {
+		if p.config.verbose {
+			log.Printf("[GROW] No new items to add | New capacity: %d | Ring buffer length: %d", newCapacity, newRingBuffer.Length())
+		}
+		return nil
+	}
+
+	for range toAdd {
+		if err := newRingBuffer.Write(p.allocator()); err != nil {
+			if p.config.verbose {
+				log.Printf("[GROW] Error writing new item to ring buffer: %v", err)
+			}
+			return err
+		}
+	}
+	return nil
+}

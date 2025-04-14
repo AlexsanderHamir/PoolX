@@ -18,7 +18,6 @@ type pool[T any] struct {
 	// When the pool reaches a "hard limit" and no objects are available,
 	// goroutines calling Get() will block on this channel until a Put()
 	// call signals that an object has been returned.
-	hardLimitResume chan struct{}
 	mu              sync.RWMutex
 	cond            *sync.Cond
 	stats           *poolStats
