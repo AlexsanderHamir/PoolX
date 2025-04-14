@@ -3,6 +3,8 @@ package pool
 import (
 	"fmt"
 	"log"
+	"reflect"
+	"sync"
 	"time"
 )
 
@@ -36,19 +38,6 @@ func (p *pool[T]) reduceL1Hit() {
 		}
 
 		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
-			break
-		}
-	}
-}
-
-func (p *pool[T]) reduceBlockedGets() {
-	for {
-		old := p.stats.blockedGets.Load()
-		if old == 0 {
-			break
-		}
-
-		if p.stats.blockedGets.CompareAndSwap(old, old-1) {
 			break
 		}
 	}
@@ -119,10 +108,64 @@ done:
 }
 
 func (p *pool[T]) PrintPoolStats() {
-	totalAvailable := p.pool.Length() + len(p.cacheL1)
-	log.Printf("[STATS] Total available objects: %d", totalAvailable)
-	log.Printf("[STATS] Ring buffer length: %d", p.pool.Length())
-	log.Printf("[STATS] L1 cache length: %d", len(p.cacheL1))
+	p.updateAvailableObjs()
+
+	fmt.Println("========== Pool Stats ==========")
+	fmt.Printf("Objects In Use       : %d\n", p.stats.objectsInUse.Load())
+	fmt.Printf("Available Objects    : %d\n", p.stats.availableObjects.Load())
+	fmt.Printf("Current Capacity     : %d\n", p.stats.currentCapacity.Load())
+	fmt.Printf("Peak In Use          : %d\n", p.stats.peakInUse.Load())
+	fmt.Printf("Total Gets           : %d\n", p.stats.totalGets.Load())
+	fmt.Printf("Total Growth Events  : %d\n", p.stats.totalGrowthEvents.Load())
+	fmt.Printf("Total Shrink Events  : %d\n", p.stats.totalShrinkEvents.Load())
+	fmt.Printf("Consecutive Shrinks  : %d\n", p.stats.consecutiveShrinks.Load())
+	fmt.Printf("Blocked Gets         : %d\n", p.stats.blockedGets.Load())
+
+	fmt.Println()
+	fmt.Println("---------- Fast Path Resize Stats ----------")
+	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastResizeAtGrowthNum.Load())
+	fmt.Printf("Current L1 Capacity     : %d\n", p.stats.currentL1Capacity.Load())
+	fmt.Println("---------------------------------------")
+	fmt.Println()
+
+	fmt.Println()
+	fmt.Println("---------- Fast Get Stats ----------")
+	fmt.Printf("Fast Path (L1) Hits  : %d\n", p.stats.l1HitCount.Load())
+	fmt.Printf("Slow Path (L2) Hits  : %d\n", p.stats.l2HitCount.Load())
+	fmt.Printf("Allocator Misses (L3): %d\n", p.stats.l3MissCount.Load())
+	fmt.Println("---------------------------------------")
+	fmt.Println()
+
+	fastReturnHit := p.stats.FastReturnHit.Load()
+	fastReturnMiss := p.stats.FastReturnMiss.Load()
+	totalReturns := fastReturnHit + fastReturnMiss
+
+	var l2SpillRate float64
+	if totalReturns > 0 {
+		l2SpillRate = float64(fastReturnMiss) / float64(totalReturns)
+	}
+
+	fmt.Println("---------- Fast Return Stats ----------")
+	fmt.Printf("Fast Return Hit   : %d\n", fastReturnHit)
+	fmt.Printf("Fast Return Miss  : %d\n", fastReturnMiss)
+	fmt.Printf("L2 Spill Rate     : %.2f%%\n", l2SpillRate*100)
+	fmt.Println("---------------------------------------")
+	fmt.Println()
+
+	p.updateDerivedStats()
+	p.stats.mu.RLock()
+	fmt.Println("---------- Usage Stats ----------")
+	fmt.Println()
+	fmt.Printf("Request Per Object   : %.2f\n", p.stats.reqPerObj)
+	fmt.Printf("Utilization %%       : %.2f%%\n", p.stats.utilization)
+	fmt.Println("---------------------------------------")
+	p.stats.mu.RUnlock()
+
+	fmt.Println("---------- Time Stats ----------")
+	fmt.Printf("Last Get Time        : %s\n", p.stats.lastTimeCalledGet.Format(time.RFC3339))
+	fmt.Printf("Last Shrink Time     : %s\n", p.stats.lastShrinkTime.Format(time.RFC3339))
+	fmt.Printf("Last Grow Time       : %s\n", p.stats.lastGrowTime.Format(time.RFC3339))
+	fmt.Println("=================================")
 }
 
 func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
@@ -572,4 +615,154 @@ func (p *pool[T]) updateDerivedStats() {
 	}
 
 	p.stats.mu.Unlock()
+}
+
+func createDefaultConfig() *poolConfig {
+	return &poolConfig{
+		initialCapacity:     defaultPoolCapacity,
+		hardLimit:           defaultHardLimit,
+		hardLimitBufferSize: defaultHardLimitBufferSize,
+		shrink:              defaultShrinkParameters,
+		growth:              defaultGrowthParameters,
+		fastPath:            defaultFastPath,
+		ringBufferConfig:    defaultRingBufferConfig,
+	}
+}
+
+func initializePoolStats(config *poolConfig) *poolStats {
+	stats := &poolStats{mu: sync.RWMutex{}}
+	stats.initialCapacity += config.initialCapacity
+	stats.currentCapacity.Store(uint64(config.initialCapacity))
+	stats.availableObjects.Store(uint64(config.initialCapacity))
+	stats.currentL1Capacity.Store(uint64(config.fastPath.bufferSize))
+	return stats
+}
+
+func validateAllocator[T any](allocator func() T) error {
+	obj := allocator()
+	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
+		return fmt.Errorf("allocator must return a pointer, got %T", obj)
+	}
+	return nil
+}
+
+func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T]) (*pool[T], error) {
+	poolObj := &pool[T]{
+		cacheL1:   make(chan T, config.fastPath.bufferSize),
+		allocator: allocator,
+		cleaner:   cleaner,
+		mu:        sync.RWMutex{},
+		config:    config,
+		stats:     stats,
+		pool:      ringBuffer,
+	}
+
+	poolObj.cond = sync.NewCond(&poolObj.mu)
+	return poolObj, nil
+}
+
+func populateL1OrBuffer[T any](poolObj *pool[T], config *poolConfig) error {
+	fillTarget := int(float64(poolObj.config.fastPath.bufferSize) * poolObj.config.fastPath.fillAggressiveness)
+	fastPathRemaining := fillTarget
+
+	obj := poolObj.allocator()
+	fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
+
+	for i := 1; i < config.initialCapacity; i++ {
+		obj = poolObj.allocator()
+		fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
+	}
+	return nil
+}
+
+func (p *pool[T]) handleShrinkBlocked() {
+	if p.isShrinkBlocked {
+		if p.config.verbose {
+			log.Println("[GET] Shrink is blocked — broadcasting to cond")
+		}
+		p.cond.Broadcast()
+	}
+}
+
+func (p *pool[T]) handleRefillFailure(refillReason string) (T, bool) {
+	if p.config.verbose {
+		log.Printf("[GET] Unable to refill — reason: %s", refillReason)
+	}
+
+	// everything outside GrowthBlocked is an error, return nil (since T is always a pointer, its zero value is nil)
+	if refillReason != GrowthBlocked {
+		var zero T
+		return zero, false
+	}
+
+	var zero T
+	return zero, true
+}
+
+func (p *pool[T]) tryGetFromL1() (T, bool) {
+	select {
+	case obj := <-p.cacheL1:
+		if p.config.verbose {
+			log.Println("[GET] L1 hit")
+		}
+		p.stats.l1HitCount.Add(1)
+		p.updateUsageStats()
+		return obj, true
+	default:
+		if p.config.verbose {
+			log.Println("[GET] L1 miss — falling back to slow path")
+		}
+		var zero T
+		return zero, false
+	}
+}
+
+func (p *pool[T]) tryFastPathPut(obj T) bool {
+	select {
+	case p.cacheL1 <- obj:
+		p.stats.FastReturnHit.Add(1)
+		p.logPut("Fast return hit")
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *pool[T]) slowPathPut(obj T) {
+	if err := p.pool.Write(obj); err != nil { // WARNING - writing to a full ring buffer will block.
+		p.logPut(fmt.Sprintf("Error writing to ring buffer: %v", err))
+	}
+	p.stats.FastReturnMiss.Add(1)
+	p.logPut("Fast return miss")
+}
+
+func (p *pool[T]) logPut(message string) {
+	if p.config.verbose {
+		log.Printf("[PUT] %s", message)
+	}
+}
+
+func (p *pool[T]) calculateL1Usage() (int, int, float64) {
+	bufferSize := p.config.fastPath.bufferSize
+	currentLength := len(p.cacheL1)
+	currentPercent := float64(currentLength) / float64(bufferSize)
+	return currentLength, bufferSize, currentPercent
+}
+
+func (p *pool[T]) logL1Usage(currentLength, bufferSize int, currentPercent float64) {
+	if p.config.verbose {
+		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%",
+			currentLength, bufferSize, currentPercent*100, p.config.fastPath.refillPercent*100)
+	}
+}
+
+func (p *pool[T]) calculateFillTarget(bufferSize int) int {
+	return int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
+}
+
+func (p *pool[T]) logRefillResult(result RefillResult) {
+	if p.config.verbose {
+		log.Printf("[REFILL] Refill succeeded: %s | Moved: %d | Failed: %d | Growth needed: %v | Growth blocked: %v",
+			result.Reason, result.ItemsMoved, result.ItemsFailed, result.GrowthNeeded, result.GrowthBlocked)
+	}
 }

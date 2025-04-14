@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -11,7 +12,6 @@ type poolConfigBuilder struct {
 }
 
 func NewPoolConfigBuilder() *poolConfigBuilder {
-
 	return &poolConfigBuilder{
 		config: &poolConfig{
 			initialCapacity:     defaultPoolCapacity,
@@ -20,6 +20,7 @@ func NewPoolConfigBuilder() *poolConfigBuilder {
 			shrink:              defaultShrinkParameters,
 			growth:              defaultGrowthParameters,
 			fastPath:            defaultFastPath,
+			ringBufferConfig:    defaultRingBufferConfig,
 		},
 	}
 }
@@ -228,6 +229,39 @@ func (b *poolConfigBuilder) SetVerbose(verbose bool) *poolConfigBuilder {
 	return b
 }
 
+func (b *poolConfigBuilder) SetRingBufferBlocking(block bool) *poolConfigBuilder {
+	b.config.ringBufferConfig.block = block
+	return b
+}
+
+func (b *poolConfigBuilder) WithTimeOut(d time.Duration) *poolConfigBuilder {
+	if d > 0 {
+		b.config.ringBufferConfig.rTimeout = d
+		b.config.ringBufferConfig.wTimeout = d
+	}
+	return b
+}
+
+func (b *poolConfigBuilder) SetRingBufferReadTimeout(d time.Duration) *poolConfigBuilder {
+	if d > 0 {
+		b.config.ringBufferConfig.rTimeout = d
+	}
+	return b
+}
+
+func (b *poolConfigBuilder) SetRingBufferWriteTimeout(d time.Duration) *poolConfigBuilder {
+	if d > 0 {
+		b.config.ringBufferConfig.wTimeout = d
+	}
+	return b
+}
+
+func (b *poolConfigBuilder) SetRingBufferCancel(ctx context.Context) *poolConfigBuilder {
+	if ctx != nil {
+		b.config.ringBufferConfig.cancel = ctx
+	}
+	return b
+}
 
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	if b.config.initialCapacity <= 0 {

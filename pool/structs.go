@@ -107,6 +107,8 @@ type poolConfig struct {
 	// Determines how fast path is utilized.
 	fastPath *fastPathParameters
 
+	ringBufferConfig *RingBufferConfig
+
 	verbose bool
 }
 

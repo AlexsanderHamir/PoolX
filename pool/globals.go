@@ -43,3 +43,10 @@ var defaultFastPath = &fastPathParameters{
 	growth:              defaultGrowthParameters,
 	shrink:              defaultShrinkParameters,
 }
+
+var defaultRingBufferConfig = &RingBufferConfig{
+	block:    false,
+	rTimeout: 0,
+	wTimeout: 0,
+	cancel:   nil,
+}

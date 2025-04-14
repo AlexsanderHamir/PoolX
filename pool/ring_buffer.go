@@ -60,12 +60,12 @@ func New[T any](size int) *RingBuffer[T] {
 	}
 }
 
-// SetBlocking sets the blocking mode of the ring buffer.
+// QithBlocking sets the blocking mode of the ring buffer.
 // If block is true, Read and Write will block when there is no data to read or no space to write.
 // If block is false, Read and Write will return ErrIsEmpty or ErrIsFull immediately.
 // By default, the ring buffer is not blocking.
 // This setting should be called before any Read or Write operation or after a Reset.
-func (r *RingBuffer[T]) SetBlocking(block bool) *RingBuffer[T] {
+func (r *RingBuffer[T]) WithBlocking(block bool) *RingBuffer[T] {
 	r.block = block
 	if block {
 		r.readCond = sync.NewCond(&r.mu)
@@ -89,6 +89,7 @@ func (r *RingBuffer[T]) WithCancel(ctx context.Context) *RingBuffer[T] {
 		r.closed = true
 		r.setErr(ctx.Err(), true)
 	}()
+
 	return r
 }
 
@@ -529,7 +530,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 // This includes blocking mode, timeouts, and cancellation context.
 func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 	if source.block {
-		r.SetBlocking(true)
+		r.WithBlocking(true)
 	}
 
 	if source.rTimeout > 0 {
@@ -574,4 +575,32 @@ func (r *RingBuffer[T]) ClearRemaining() {
 	r.r = 0
 	r.w = 0
 	r.isFull = false
+}
+
+// NewWithConfig creates a new RingBuffer with the given size and configuration.
+// It returns an error if the size is less than or equal to 0.
+func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], error) {
+	if size <= 0 {
+		return nil, errors.New("size must be greater than 0")
+	}
+
+	rb := New[T](size)
+
+	if config.block {
+		rb.WithBlocking(true)
+	}
+
+	if config.rTimeout > 0 {
+		rb.WithReadTimeout(config.rTimeout)
+	}
+
+	if config.wTimeout > 0 {
+		rb.WithWriteTimeout(config.wTimeout)
+	}
+
+	if config.cancel != nil {
+		rb.WithCancel(config.cancel)
+	}
+
+	return rb, nil
 }

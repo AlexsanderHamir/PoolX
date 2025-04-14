@@ -1,10 +1,7 @@
 package pool
 
 import (
-	"fmt"
 	"log"
-	"reflect"
-	"sync"
 	"time"
 )
 
@@ -45,168 +42,87 @@ const (
 
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
 	if config == nil {
-		config = &poolConfig{
-			initialCapacity:     defaultPoolCapacity,
-			hardLimit:           defaultHardLimit,
-			hardLimitBufferSize: defaultHardLimitBufferSize,
-			shrink:              defaultShrinkParameters,
-			growth:              defaultGrowthParameters,
-			fastPath:            defaultFastPath,
-		}
+		config = createDefaultConfig()
 	}
 
-	stats := &poolStats{mu: sync.RWMutex{}}
-	stats.initialCapacity += config.initialCapacity
-	stats.currentCapacity.Store(uint64(config.initialCapacity))
-	stats.availableObjects.Store(uint64(config.initialCapacity))
-	stats.currentL1Capacity.Store(uint64(config.fastPath.bufferSize))
+	stats := initializePoolStats(config)
 
-	// WARNING - be smart about the L1 size, and the hardLimitBufferSize,
-	// you will serve more requests faster, but you will also use more memory.
-	poolObj := pool[T]{
-		cacheL1:         make(chan T, config.fastPath.bufferSize),        // WARNING - careful with how much memory you allocate here.
-		hardLimitResume: make(chan struct{}, config.hardLimitBufferSize), // WARNING - careful with how much memory you allocate here.
-		allocator:       allocator,
-		cleaner:         cleaner,
-		mu:              sync.RWMutex{},
-		config:          config,
-		stats:           stats,
-		pool:            New[T](config.initialCapacity),
+	ringBuffer, err := NewWithConfig[T](config.initialCapacity, config.ringBufferConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	// removed the mem allocation caused my pool.mu = &sync.RWMutex{}, but since cond needs a pointer,
-	// it causes an allocation.
-	poolObj.cond = sync.NewCond(&poolObj.mu)
-	obj := poolObj.allocator()
-	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
-		return nil, fmt.Errorf("allocator must return a pointer, got %T", obj)
+	if err := validateAllocator(allocator); err != nil {
+		return nil, err
 	}
 
-	fillTarget := int(float64(poolObj.config.fastPath.bufferSize) * poolObj.config.fastPath.fillAggressiveness)
-	fastPathRemaining := fillTarget
-
-	fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
-	for i := 1; i < config.initialCapacity; i++ {
-		obj = poolObj.allocator()
-		fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
+	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer)
+	if err != nil {
+		return nil, err
 	}
 
-	// Initialize the ring buffer with the initial objects
-	poolObj.pool.SetBlocking(true)
-	for range config.initialCapacity {
-		if err := poolObj.pool.Write(poolObj.allocator()); err != nil {
-			return nil, fmt.Errorf("failed to initialize ring buffer: %v", err)
-		}
+	if err := populateL1OrBuffer(poolObj, config); err != nil {
+		return nil, err
 	}
 
-	// go poolObj.shrink() // WARNING - it will mess up the benchmark
+	// go poolObj.shrink() // WARNING - remove if you want to benchmark
 
-	return &poolObj, nil
+	return poolObj, nil
 }
 
 func (p *pool[T]) Get() T {
-	if p.isShrinkBlocked {
-		if p.config.verbose {
-			log.Println("[GET] Shrink is blocked — broadcasting to cond")
-		}
-		p.cond.Broadcast()
-	}
+	p.handleShrinkBlocked()
 
 	ableToRefill, refillReason := p.tryRefillIfNeeded()
 	if !ableToRefill {
-		if p.config.verbose {
-			log.Printf("[GET] Unable to refill — reason: %s", refillReason)
-		}
-
-		// everything outside GrowthBlocked is an error, return nil (since T is always a pointer, its zero value is nil)
-		if refillReason != GrowthBlocked {
-			var zero T
-			return zero
+		if obj, shouldContinue := p.handleRefillFailure(refillReason); !shouldContinue {
+			return obj
 		}
 	}
 
-	if p.config.verbose {
-		log.Println("[GET] Attempting to get object from L1 cache")
-	}
-
-	select {
-	case obj := <-p.cacheL1:
-		if p.config.verbose {
-			log.Println("[GET] L1 hit")
-		}
-
-		p.stats.l1HitCount.Add(1)
-		p.updateUsageStats()
-		return obj
-	default:
-		if p.config.verbose {
-			log.Println("[GET] L1 miss — falling back to slow path")
-		}
-
-		obj := p.slowPath()
-
-		p.stats.l2HitCount.Add(1)
-		p.updateUsageStats()
+	if obj, found := p.tryGetFromL1(); found {
 		return obj
 	}
+
+	obj := p.slowPath()
+	p.stats.l2HitCount.Add(1)
+	p.updateUsageStats()
+	return obj
 }
 
 func (p *pool[T]) Put(obj T) {
 	p.releaseObj(obj)
 
-	select {
-	case p.cacheL1 <- obj:
-		p.stats.FastReturnHit.Add(1)
-		if p.config.verbose {
-			log.Println("[PUT] Fast return hit")
-		}
-	default:
-		if err := p.pool.Write(obj); err != nil { // WARNING - writing to a full ring buffer will block.
-			if p.config.verbose {
-				log.Printf("[PUT] Error writing to ring buffer: %v", err)
-			}
-		}
-		p.stats.FastReturnMiss.Add(1)
-
-		if p.config.verbose {
-			log.Println("[PUT] Fast return miss")
-		}
+	if p.tryFastPathPut(obj) {
+		return
 	}
+
+	p.slowPathPut(obj)
 }
 
 func (p *pool[T]) tryRefillIfNeeded() (bool, string) {
-	bufferSize := p.config.fastPath.bufferSize
-	currentLength := len(p.cacheL1)
-	currentPercent := float64(currentLength) / float64(bufferSize)
+	currentLength, bufferSize, currentPercent := p.calculateL1Usage()
+	p.logL1Usage(currentLength, bufferSize, currentPercent)
 
+	if currentPercent > p.config.fastPath.refillPercent {
+		return true, NoRefillNeeded
+	}
+
+	fillTarget := p.calculateFillTarget(bufferSize)
 	if p.config.verbose {
-		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%", currentLength, bufferSize, currentPercent*100, p.config.fastPath.refillPercent*100)
+		log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 	}
 
-	if currentPercent <= p.config.fastPath.refillPercent {
-		fillTarget := int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
-
+	result := p.refill(fillTarget)
+	if !result.Success {
 		if p.config.verbose {
-			log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
+			log.Printf("[REFILL] Refill failed: %s", result.Reason)
 		}
-
-		result := p.refill(fillTarget)
-		if !result.Success {
-			if p.config.verbose {
-				log.Printf("[REFILL] Refill failed: %s", result.Reason)
-			}
-			return false, result.Reason
-		}
-
-		if p.config.verbose {
-			log.Printf("[REFILL] Refill succeeded: %s | Moved: %d | Failed: %d | Growth needed: %v | Growth blocked: %v",
-				result.Reason, result.ItemsMoved, result.ItemsFailed, result.GrowthNeeded, result.GrowthBlocked)
-		}
-
-		return true, RefillSucceeded
+		return false, result.Reason
 	}
 
-	return true, NoRefillNeeded
+	p.logRefillResult(result)
+	return true, RefillSucceeded
 }
 
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
@@ -371,6 +287,7 @@ func (p *pool[T]) grow(now time.Time) bool {
 	p.stats.lastGrowTime = now
 	p.stats.l3MissCount.Add(1)
 	p.stats.totalGrowthEvents.Add(1)
+	p.reduceL1Hit()
 
 	p.tryL1ResizeIfTriggered() // WARNING - heavy operation, avoid resizing too often.
 
