@@ -188,6 +188,11 @@ func (p *pool[T]) IsShrunk() bool {
 	return p.stats.currentCapacity.Load() < uint64(p.config.initialCapacity)
 }
 
+// isGrowth, return true if the pool has grown.
+func (p *pool[T]) IsGrowth() bool {
+	return p.stats.currentCapacity.Load() > uint64(p.config.initialCapacity)
+}
+
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and populates it
 // with existing items from the old buffer and new items from the allocator.
 func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {

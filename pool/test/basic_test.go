@@ -77,12 +77,7 @@ func TestPoolGrowth(t *testing.T) {
 		assert.NotNil(t, objects[i])
 	}
 
-	// Return objects
-	for _, obj := range objects {
-		p.Put(obj)
-	}
-
-	p.PrintPoolStats()
+	assert.True(t, p.IsGrowth())
 }
 
 func TestPoolShrink(t *testing.T) {
@@ -127,6 +122,7 @@ func TestPoolShrink(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
+		SetRingBufferBlocking(true). // Blocking ring buffer so it doesn't return nil.
 		SetInitialCapacity(64).
 		SetMinShrinkCapacity(32).                             // Allow shrinking down to half of initial capacity
 		SetHardLimit(1000).                                   // Reasonable hard limit
@@ -171,7 +167,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	iterations := 10
-	workers := 10
+	workers := 50
 
 	for range workers {
 		wg.Add(1)

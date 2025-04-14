@@ -730,7 +730,7 @@ func (p *pool[T]) tryFastPathPut(obj T) bool {
 		return true
 	default:
 		if p.config.verbose {
-			log.Println("[PUT] L1 miss — falling back to slow path")
+			log.Println("[PUT] L1 return miss — falling back to slow path")
 		}
 		return false
 	}
@@ -742,7 +742,7 @@ func (p *pool[T]) slowPathPut(obj T) {
 	}
 
 	p.stats.FastReturnMiss.Add(1)
-	p.logPut("Fast return miss")
+	p.logPut("slow path put unblocked")
 }
 
 func (p *pool[T]) logPut(message string) {
@@ -821,7 +821,7 @@ func (p *pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 		log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 	}
 
-	p.ShrinkExecution() // WARNING - contains heavy operations.
+	p.ShrinkExecution()
 	*idleCount, *underutilCount = 0, 0
 	*idleOK, *utilOK = false, false
 }
