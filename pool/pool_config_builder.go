@@ -161,17 +161,17 @@ func (b *poolConfigBuilder) SetMaxConsecutiveShrinks(count int) *poolConfigBuild
 	return b
 }
 
-func (b *poolConfigBuilder) SetInitialSize(count int) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathInitialSize(count int) *poolConfigBuilder {
 	b.config.fastPath.initialSize = count
 	return b
 }
 
-func (b *poolConfigBuilder) SetFillAggressiveness(percent float64) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathFillAggressiveness(percent float64) *poolConfigBuilder {
 	b.config.fastPath.fillAggressiveness = percent
 	return b
 }
 
-func (b *poolConfigBuilder) SetRefillPercent(percent float64) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathRefillPercent(percent float64) *poolConfigBuilder {
 	b.config.fastPath.refillPercent = percent
 	return b
 }
@@ -181,12 +181,12 @@ func (b *poolConfigBuilder) SetHardLimit(count int) *poolConfigBuilder {
 	return b
 }
 
-func (b *poolConfigBuilder) SetEnableChannelGrowth(enable bool) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathEnableChannelGrowth(enable bool) *poolConfigBuilder {
 	b.config.fastPath.enableChannelGrowth = enable
 	return b
 }
 
-func (b *poolConfigBuilder) SetGrowthEventsTrigger(count int) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathGrowthEventsTrigger(count int) *poolConfigBuilder {
 	b.config.fastPath.growthEventsTrigger = count
 	return b
 }
@@ -212,7 +212,7 @@ func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(percent float64) *poolC
 	return b
 }
 
-func (b *poolConfigBuilder) SetShrinkEventsTrigger(count int) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathShrinkEventsTrigger(count int) *poolConfigBuilder {
 	b.config.fastPath.shrinkEventsTrigger = count
 	return b
 }
@@ -293,6 +293,7 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 		return nil, fmt.Errorf("HardLimit must be >= InitialCapacity")
 	}
 	if b.config.hardLimit < b.config.shrink.minCapacity {
+		fmt.Printf("HardLimit: %d, MinCapacity: %d\n", b.config.hardLimit, b.config.shrink.minCapacity)
 		return nil, fmt.Errorf("HardLimit must be >= MinCapacity")
 	}
 
@@ -338,7 +339,7 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	}
 
 	fp := b.config.fastPath
-		if fp.initialSize <= 0 {
+	if fp.initialSize <= 0 {
 		return nil, fmt.Errorf("initialSize must be > 0")
 	}
 

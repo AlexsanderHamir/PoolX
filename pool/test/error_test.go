@@ -71,13 +71,13 @@ func TestNilConfig(t *testing.T) {
 func TestInvalidFastPathConfig(t *testing.T) {
 	// Test zero buffer size
 	_, err := pool.NewPoolConfigBuilder().
-		SetInitialSize(0).
+		SetFastPathInitialSize(0).
 		Build()
 	assert.Error(t, err)
 
 	// Test negative fill aggressiveness
 	_, err = pool.NewPoolConfigBuilder().
-		SetFillAggressiveness(-1).
+		SetFastPathFillAggressiveness(-1).
 		Build()
 	assert.Error(t, err)
 }

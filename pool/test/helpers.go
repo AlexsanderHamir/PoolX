@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"memctx/pool"
 	"testing"
 	"time"
@@ -9,6 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testObject is a simple test object used in pool tests
+type testObject struct {
+	value int
+}
 
 // DefaultConfigValues stores all default configuration values
 type DefaultConfigValues struct {
@@ -63,7 +69,7 @@ func storeDefaultConfigValues(config pool.PoolConfig) DefaultConfigValues {
 		ShrinkPercent:                      config.GetShrink().GetShrinkPercent(),
 		MinShrinkCapacity:                  config.GetShrink().GetMinCapacity(),
 		MaxConsecutiveShrinks:              config.GetShrink().GetMaxConsecutiveShrinks(),
-		InitialSize:                         config.GetFastPath().GetInitialSize(),
+		InitialSize:                        config.GetFastPath().GetInitialSize(),
 		FillAggressiveness:                 config.GetFastPath().GetFillAggressiveness(),
 		RefillPercent:                      config.GetFastPath().GetRefillPercent(),
 		EnableChannelGrowth:                config.GetFastPath().IsEnableChannelGrowth(),
@@ -102,21 +108,23 @@ func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
 		SetShrinkPercent(0.25121).
 		SetMinShrinkCapacity(10121).
 		SetMaxConsecutiveShrinks(3121).
-		SetInitialSize(50121).
-		SetFillAggressiveness(0.8121).
-		SetRefillPercent(0.2121).
-		SetEnableChannelGrowth(false).
-		SetGrowthEventsTrigger(5121).
+		SetFastPathInitialSize(50121).
+		SetFastPathFillAggressiveness(0.8121).
+		SetFastPathRefillPercent(0.2121).
+		SetFastPathEnableChannelGrowth(false).
+		SetFastPathGrowthEventsTrigger(5121).
 		SetFastPathGrowthPercent(0.6121).
 		SetFastPathExponentialThresholdFactor(3.0121).
 		SetFastPathFixedGrowthFactor(0.8121).
-		SetShrinkEventsTrigger(4121).
+		SetFastPathShrinkEventsTrigger(4121).
 		SetFastPathShrinkAggressiveness(pool.AggressivenessAggressive).
 		SetFastPathShrinkPercent(0.3121).
 		SetFastPathShrinkMinCapacity(20121).
 		SetVerbose(true).
 		SetRingBufferBlocking(true).
 		WithTimeOut(5 * time.Second).
+		SetRingBufferReadTimeout(5 * time.Second).
+		SetRingBufferWriteTimeout(5 * time.Second).
 		SetRingBufferCancel(ctx).
 		Build()
 	require.NoError(t, err)
@@ -157,4 +165,116 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 	assert.NotEqual(t, original.RingBufferBlocking, custom.GetRingBufferConfig().IsBlocking())
 	assert.NotEqual(t, original.ReadTimeout, custom.GetRingBufferConfig().GetReadTimeout())
 	assert.NotEqual(t, original.WriteTimeout, custom.GetRingBufferConfig().GetWriteTimeout())
+}
+
+// createHardLimitTestConfig creates a configuration for hard limit testing
+func createHardLimitTestConfig(t *testing.T, blocking bool) pool.PoolConfig {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(10).
+		SetHardLimit(20).
+		SetMinShrinkCapacity(10).
+		SetRingBufferBlocking(blocking).
+		SetVerbose(blocking). // Only verbose for blocking test
+		Build()
+	require.NoError(t, err)
+	return config
+}
+
+// createTestPool creates a pool with the given configuration
+func createTestPool(t *testing.T, config pool.PoolConfig) *pool.Pool[*testObject] {
+	allocator := func() *testObject {
+		return &testObject{value: 42}
+	}
+
+	cleaner := func(obj *testObject) {
+		obj.value = 0
+	}
+
+	internalConfig := pool.ToInternalConfig(config)
+	p, err := pool.NewPool(internalConfig, allocator, cleaner)
+	require.NoError(t, err)
+	return p
+}
+
+func runNilReturnTest(t *testing.T, p *pool.Pool[*testObject]) {
+	objects := make([]*testObject, 100)
+	var nilCount int
+	for i := range 100 {
+		objects[i] = p.Get()
+		if objects[i] == nil {
+			nilCount++
+		}
+	}
+
+	fmt.Println("nilCount", nilCount)
+	assert.Equal(t, 80, nilCount)
+}
+
+func runBlockingTest(t *testing.T, p *pool.Pool[*testObject]) {
+	objects := make([]*testObject, 20)
+	for i := range 20 {
+		objects[i] = p.Get()
+		require.NotNil(t, objects[i])
+	}
+
+	done := make(chan bool)
+	go func() {
+		obj := p.Get()
+		require.NotNil(t, obj)
+		done <- true
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	p.Put(objects[0])
+
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("goroutine did not unblock after returning an object")
+	}
+}
+
+func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*testObject], numGoroutines int) {
+	// First fill up the pool to its hard limit
+	objects := make([]*testObject, 20)
+	for i := range 20 {
+		objects[i] = p.Get()
+		require.NotNil(t, objects[i])
+	}
+
+	// Create a channel to track completion of all goroutines
+	done := make(chan bool, numGoroutines)
+	start := make(chan struct{}) // Used to synchronize goroutine start
+
+	// Launch multiple goroutines that will try to get objects
+	for i := range numGoroutines {
+		go func(id int) {
+			<-start        // Wait for the start signal
+			obj := p.Get() // should remain blocked
+			require.NotNil(t, obj)
+			done <- true
+		}(i)
+	}
+
+	// Give some time for goroutines to start and block
+	time.Sleep(100 * time.Millisecond)
+	close(start) // Signal all goroutines to start trying to get objects
+	time.Sleep(100 * time.Millisecond)
+
+	// Start returning objects one by one
+	for i := range numGoroutines {
+		p.Put(objects[i])
+		select {
+		case <-done:
+			// Successfully unblocked a goroutine
+		case <-time.After(1 * time.Second):
+			t.Fatalf("goroutine %d did not unblock after returning an object", i)
+		}
+	}
+
+	// Return remaining objects
+	for i := numGoroutines; i < len(objects); i++ {
+		p.Put(objects[i])
+	}
 }
