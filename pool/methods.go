@@ -45,7 +45,7 @@ const (
 	NoItemsToMove   = "no items to move"
 )
 
-func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
+func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*Pool[T], error) {
 	if config == nil {
 		config = createDefaultConfig()
 	}
@@ -70,12 +70,12 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		return nil, err
 	}
 
-	// go poolObj.shrink()
+	go poolObj.shrink()
 
 	return poolObj, nil
 }
 
-func (p *pool[T]) Get() T {
+func (p *Pool[T]) Get() T {
 	p.handleShrinkBlocked()
 
 	ableToRefill, refillReason := p.tryRefillIfNeeded()
@@ -108,11 +108,16 @@ func (p *pool[T]) Get() T {
 	return obj
 }
 
-func (p *pool[T]) Put(obj T) {
+func (p *Pool[T]) Put(obj T) {
 	p.releaseObj(obj)
 
 	if p.config.verbose {
 		log.Printf("[PUT] Releasing object")
+	}
+
+	if p.stats.blockedGets.Load() > 0 {
+		p.slowPathPut(obj)
+		return
 	}
 
 	if p.tryFastPathPut(obj) {
@@ -122,7 +127,7 @@ func (p *pool[T]) Put(obj T) {
 	p.slowPathPut(obj)
 }
 
-func (p *pool[T]) tryRefillIfNeeded() (bool, string) {
+func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
 	currentLength, currentCap, currentPercent := p.calculateL1Usage()
 	p.logL1Usage(currentLength, currentCap, currentPercent)
 
@@ -149,8 +154,10 @@ func (p *pool[T]) tryRefillIfNeeded() (bool, string) {
 
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the pool before calling the slow path.
-func (p *pool[T]) slowPath() T {
+func (p *Pool[T]) slowPath() T {
 	var zero T
+
+	p.stats.blockedGets.Add(1)
 	obj, err := p.pool.GetOne()
 	if err != nil {
 		if p.config.verbose {
@@ -158,16 +165,20 @@ func (p *pool[T]) slowPath() T {
 		}
 		return zero
 	}
+	p.stats.blockedGets.Add(^uint64(0))
 
 	if p.config.verbose {
 		log.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
 	}
 
+	p.stats.mu.Lock()
 	p.stats.lastTimeCalledGet = time.Now()
+	p.stats.mu.Unlock()
+
 	return obj
 }
 
-func (p *pool[T]) shrink() {
+func (p *Pool[T]) shrink() {
 	params := p.config.shrink
 	ticker := time.NewTicker(params.checkInterval)
 	defer ticker.Stop()
@@ -201,18 +212,18 @@ func (p *pool[T]) shrink() {
 }
 
 // isShrunk returns true if the pool is shrunk.
-func (p *pool[T]) IsShrunk() bool {
+func (p *Pool[T]) IsShrunk() bool {
 	return p.stats.currentCapacity.Load() < uint64(p.config.initialCapacity)
 }
 
 // isGrowth, return true if the pool has grown.
-func (p *pool[T]) IsGrowth() bool {
+func (p *Pool[T]) IsGrowth() bool {
 	return p.stats.currentCapacity.Load() > uint64(p.config.initialCapacity)
 }
 
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and populates it
 // with existing items from the old buffer and new items from the allocator.
-func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {
+func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {
 	newRingBuffer := p.createNewBuffer(newCapacity)
 	if newRingBuffer == nil {
 		return nil, fmt.Errorf("failed to create ring buffer")
@@ -234,7 +245,7 @@ func (p *pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 	return newRingBuffer, nil
 }
 
-func (p *pool[T]) grow(now time.Time) bool {
+func (p *Pool[T]) grow(now time.Time) bool {
 	cfg := p.config.growth
 	initialCap := uint64(p.config.initialCapacity)
 	currentCap := p.stats.currentCapacity.Load()
@@ -244,20 +255,13 @@ func (p *pool[T]) grow(now time.Time) bool {
 
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
 
-	if p.growthWouldExceedHardLimit(newCapacity) {
-		if p.config.verbose {
-			log.Printf("[GROW] New capacity (%d) exceeds hard limit (%d)", newCapacity, p.config.hardLimit)
-		}
-
-		p.isGrowthBlocked = true
-		return false
-	}
-
-	if p.needsToShrinkToHardLimit(currentCap, newCapacity) {
+	if p.needsToShrinkToHardLimit(newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
 		if p.config.verbose {
 			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
 		}
+
+		p.isGrowthBlocked = true
 	}
 
 	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)

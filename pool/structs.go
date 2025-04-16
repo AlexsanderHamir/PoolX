@@ -8,7 +8,7 @@ import (
 
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
-type pool[T any] struct {
+type Pool[T any] struct {
 	cacheL1 chan T
 	pool    *RingBuffer[T]
 
@@ -103,6 +103,18 @@ type poolConfig struct {
 	ringBufferConfig *RingBufferConfig
 
 	verbose bool
+}
+
+func ToInternalConfig(config PoolConfig) *poolConfig {
+	return &poolConfig{
+		initialCapacity:  config.GetInitialCapacity(),
+		hardLimit:        config.GetHardLimit(),
+		growth:           config.GetGrowth(),
+		shrink:           config.GetShrink(),
+		fastPath:         config.GetFastPath(),
+		ringBufferConfig: config.GetRingBufferConfig(),
+		verbose:          config.IsVerbose(),
+	}
 }
 
 // Getter methods for poolConfig

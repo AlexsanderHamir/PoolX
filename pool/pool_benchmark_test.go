@@ -15,7 +15,7 @@ var cleaner = func(e *Example) {
 	e.Age = 0
 }
 
-func setupPool(b *testing.B) *pool[*Example] {
+func setupPool(b *testing.B) *Pool[*Example] {
 	config, err := NewPoolConfigBuilder().
 		SetShrinkAggressiveness(AggressivenessExtreme).
 		SetVerbose(true).
