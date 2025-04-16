@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,10 @@ type Pool[T any] struct {
 	config    *poolConfig
 	cleaner   func(T)
 	allocator func() T
+
+	// Context and cancel function for graceful shutdown
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type shrinkDefaults struct {

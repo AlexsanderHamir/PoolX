@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"reflect"
@@ -66,6 +67,8 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*P
 		return nil, err
 	}
 
+	poolObj.ctx, poolObj.cancel = context.WithCancel(context.Background())
+
 	if err := populateL1OrBuffer(poolObj, config); err != nil {
 		return nil, err
 	}
@@ -75,7 +78,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*P
 	return poolObj, nil
 }
 
-func (p *Pool[T]) Get() T {
+func (p *Pool[T]) Get() (zero T) {
 	p.handleShrinkBlocked()
 
 	ableToRefill, refillReason := p.tryRefillIfNeeded()
@@ -188,26 +191,31 @@ func (p *Pool[T]) shrink() {
 		idleOK, utilOK            bool
 	)
 
-	for range ticker.C {
-		p.mu.Lock()
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			p.mu.Lock()
 
-		if p.handleMaxConsecutiveShrinks(params) {
+			if p.handleMaxConsecutiveShrinks(params) {
+				p.mu.Unlock()
+				continue
+			}
+
+			if p.handleShrinkCooldown(params) {
+				p.mu.Unlock()
+				continue
+			}
+
+			p.performShrinkChecks(params, &idleCount, &underutilCount, &idleOK, &utilOK)
+
+			if idleOK || utilOK {
+				p.executeShrink(&idleCount, &underutilCount, &idleOK, &utilOK)
+			}
+
 			p.mu.Unlock()
-			continue
 		}
-
-		if p.handleShrinkCooldown(params) {
-			p.mu.Unlock()
-			continue
-		}
-
-		p.performShrinkChecks(params, &idleCount, &underutilCount, &idleOK, &utilOK)
-
-		if idleOK || utilOK {
-			p.executeShrink(&idleCount, &underutilCount, &idleOK, &utilOK)
-		}
-
-		p.mu.Unlock()
 	}
 }
 
@@ -286,4 +294,61 @@ func (p *Pool[T]) grow(now time.Time) bool {
 			newCapacity, p.pool.Length(), len(p.cacheL1), objectsInUse)
 	}
 	return true
+}
+
+// Close closes the pool and cleans up all resources.
+// It is safe to call Close multiple times - subsequent calls will return nil.
+// After closing, all subsequent operations will return an error.
+// Any pending items in the buffer will be cleaned up using the cleaner function.
+func (p *Pool[T]) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.pool == nil && p.cacheL1 == nil {
+		return nil
+	}
+
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
+	}
+
+	if p.cond != nil {
+		p.cond.Broadcast()
+	}
+
+	if p.pool != nil {
+		if err := p.pool.Close(); err != nil {
+			return fmt.Errorf("failed to close main pool: %w", err)
+		}
+		p.pool = nil
+	}
+
+	if p.cacheL1 != nil {
+		for {
+			select {
+			case obj, ok := <-p.cacheL1:
+				if !ok {
+					goto cleanup
+				}
+				if p.cleaner != nil {
+					p.cleaner(obj)
+				}
+			default:
+				close(p.cacheL1)
+				p.cacheL1 = nil
+				goto cleanup
+			}
+		}
+	}
+cleanup:
+
+	p.stats = nil
+	p.isGrowthBlocked = false
+	p.isShrinkBlocked = false
+	p.allocator = nil
+	p.cleaner = nil
+	p.ctx = nil
+
+	return nil
 }

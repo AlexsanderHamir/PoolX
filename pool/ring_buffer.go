@@ -567,9 +567,9 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 	return r
 }
 
-// ClearRemaining clears all remaining items in the buffer and sets them to nil.
+// ClearBuffer clears all remaining items in the buffer and sets them to nil.
 // This is useful when shrinking the buffer and we need to clean up items that won't fit.
-func (r *RingBuffer[T]) ClearRemaining() {
+func (r *RingBuffer[T]) ClearBuffer() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -622,4 +622,28 @@ func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], e
 	}
 
 	return rb, nil
+}
+
+// Close closes the ring buffer and cleans up resources.
+// After closing, all subsequent operations will return io.EOF.
+// Any pending items in the buffer will be cleared.
+func (r *RingBuffer[T]) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
+	}
+
+	r.closed = true
+	r.setErr(io.EOF, true)
+
+	r.ClearBuffer()
+
+	if r.block {
+		r.readCond.Broadcast()
+		r.writeCond.Broadcast()
+	}
+
+	return nil
 }
