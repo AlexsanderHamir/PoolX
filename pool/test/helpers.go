@@ -208,6 +208,13 @@ func runNilReturnTest(t *testing.T, p *pool.Pool[*testObject]) {
 
 	fmt.Println("nilCount", nilCount)
 	assert.Equal(t, 80, nilCount)
+
+	// Clean up non-nil objects
+	for _, obj := range objects {
+		if obj != nil {
+			p.Put(obj)
+		}
+	}
 }
 
 func runBlockingTest(t *testing.T, p *pool.Pool[*testObject]) {
@@ -232,6 +239,11 @@ func runBlockingTest(t *testing.T, p *pool.Pool[*testObject]) {
 	case <-done:
 	case <-time.After(1 * time.Second):
 		t.Fatal("goroutine did not unblock after returning an object")
+	}
+
+	// Clean up remaining objects
+	for i := 1; i < len(objects); i++ {
+		p.Put(objects[i])
 	}
 }
 
@@ -276,5 +288,96 @@ func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*testObject], numGorou
 	// Return remaining objects
 	for i := numGoroutines; i < len(objects); i++ {
 		p.Put(objects[i])
+	}
+}
+
+// createComprehensiveTestConfig creates a configuration for comprehensive testing
+func createComprehensiveTestConfig(t *testing.T) pool.PoolConfig {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(2).
+		SetGrowthPercent(0.5).
+		SetFixedGrowthFactor(1.0).
+		SetMinShrinkCapacity(1).
+		SetShrinkCheckInterval(10 * time.Millisecond).
+		SetIdleThreshold(20 * time.Millisecond).
+		SetMinIdleBeforeShrink(1).
+		SetShrinkCooldown(10 * time.Millisecond).
+		SetMinUtilizationBeforeShrink(0.1).
+		SetStableUnderutilizationRounds(1).
+		SetShrinkPercent(0.5).
+		SetMaxConsecutiveShrinks(5).
+		SetHardLimit(10).
+		SetRingBufferBlocking(true).
+		Build()
+	require.NoError(t, err)
+	return config
+}
+
+// testInitialGrowth tests the initial growth behavior of the pool
+func testInitialGrowth(t *testing.T, p *pool.Pool[*testObject], numObjects int) []*testObject {
+	objects := make([]*testObject, numObjects)
+	for i := range numObjects {
+		objects[i] = p.Get()
+		assert.NotNil(t, objects[i])
+		assert.Equal(t, 42, objects[i].value)
+	}
+	assert.True(t, p.IsGrowth())
+	return objects
+}
+
+// testShrinkBehavior tests the shrink behavior of the pool
+func testShrinkBehavior(t *testing.T, p *pool.Pool[*testObject], objects []*testObject) {
+	for _, obj := range objects {
+		p.Put(obj)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	assert.True(t, p.IsShrunk())
+}
+
+// testHardLimitBlocking tests the hard limit and blocking behavior of the pool
+func testHardLimitBlocking(t *testing.T, p *pool.Pool[*testObject], numObjects int) []*testObject {
+	// First get all objects up to hard limit
+	objects := make([]*testObject, numObjects)
+	for i := range numObjects {
+		objects[i] = p.Get()
+		assert.NotNil(t, objects[i])
+	}
+
+	// Try to get one more object - should block
+	done := make(chan bool)
+	go func() {
+		obj := p.Get()
+		assert.NotNil(t, obj)
+		done <- true
+	}()
+
+	// Wait a bit to ensure the goroutine is blocked
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("Get should have blocked (100ms)")
+	default:
+		// Expected - goroutine is blocked
+	}
+
+	// Release one object to unblock the waiting goroutine
+	p.Put(objects[0])
+	select {
+	case <-done:
+		// Success - goroutine was unblocked
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Get should have unblocked (100ms)")
+	}
+
+	return objects
+}
+
+// cleanupPoolObjects returns all objects to the pool and ensures they are properly cleaned up
+func cleanupPoolObjects(p *pool.Pool[*testObject], objects []*testObject) {
+	for _, obj := range objects {
+		if obj != nil {
+			p.Put(obj)
+		}
 	}
 }

@@ -30,6 +30,9 @@ func TestBasicPoolOperations(t *testing.T) {
 	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 	require.NotNil(t, p)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
 
 	obj := p.Get()
 	assert.NotNil(t, obj)
@@ -64,6 +67,9 @@ func TestPoolGrowth(t *testing.T) {
 
 	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
 
 	objects := make([]*testObject, 10)
 	for i := range 10 {
@@ -72,6 +78,11 @@ func TestPoolGrowth(t *testing.T) {
 	}
 
 	assert.True(t, p.IsGrowth())
+
+	// Clean up objects before closing
+	for _, obj := range objects {
+		p.Put(obj)
+	}
 }
 
 func TestPoolShrink(t *testing.T) {
@@ -102,6 +113,9 @@ func TestPoolShrink(t *testing.T) {
 
 	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
 
 	// Get and return objects to trigger shrink
 	objects := make([]*testObject, 10)
@@ -120,22 +134,31 @@ func TestPoolShrink(t *testing.T) {
 }
 
 func TestHardLimit(t *testing.T) {
-	t.Run("nil return", func(t *testing.T) {
+	t.Run("non-blocking", func(t *testing.T) {
 		config := createHardLimitTestConfig(t, false)
 		p := createTestPool(t, config)
+		defer func() {
+			require.NoError(t, p.Close())
+		}()
 		runNilReturnTest(t, p)
 	})
 
 	t.Run("blocking", func(t *testing.T) {
 		config := createHardLimitTestConfig(t, true)
 		p := createTestPool(t, config)
+		defer func() {
+			require.NoError(t, p.Close())
+		}()
 		runBlockingTest(t, p)
 	})
 
 	t.Run("blocking (concurrent)", func(t *testing.T) {
 		config := createHardLimitTestConfig(t, true)
 		p := createTestPool(t, config)
-		runConcurrentBlockingTest(t, p, 10)
+		defer func() {
+			require.NoError(t, p.Close())
+		}()
+		runConcurrentBlockingTest(t, p, 20)
 	})
 }
 
@@ -149,4 +172,39 @@ func TestConfigValues(t *testing.T) {
 	defer cancel()
 
 	verifyCustomValuesDifferent(t, originalValues, customConfig)
+}
+
+func TestPoolComprehensive(t *testing.T) {
+	config := createComprehensiveTestConfig(t)
+	internalConfig := pool.ToInternalConfig(config)
+
+	allocator := func() *testObject {
+		return &testObject{value: 42}
+	}
+
+	cleaner := func(obj *testObject) {
+		obj.value = 0
+	}
+
+	p, err := pool.NewPool(internalConfig, allocator, cleaner)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
+
+	t.Run("InitialGrowth", func(t *testing.T) {
+		objects := testInitialGrowth(t, p, 5)
+		cleanupPoolObjects(p, objects)
+	})
+
+	t.Run("ShrinkBehavior", func(t *testing.T) {
+		objects := testInitialGrowth(t, p, 5)
+		testShrinkBehavior(t, p, objects)
+		cleanupPoolObjects(p, objects)
+	})
+
+	t.Run("HardLimitBlocking", func(t *testing.T) {
+		objects := testHardLimitBlocking(t, p, 24)
+		cleanupPoolObjects(p, objects[1:])
+	})
 }
