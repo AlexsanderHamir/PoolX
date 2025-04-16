@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testObject struct {
-	value int
-}
-
 func TestBasicPoolOperations(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(10).
@@ -123,29 +119,21 @@ func TestConcurrentAccess(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetRingBufferBlocking(true). // Blocking ring buffer so it doesn't return nil.
 		SetInitialCapacity(64).
-		SetMinShrinkCapacity(32).                             // Allow shrinking down to half of initial capacity
-		SetHardLimit(1000).                                   // Reasonable hard limit
-		SetGrowthPercent(0.5).                                // Grow by 50% when below threshold
-		SetFixedGrowthFactor(1.0).                            // Grow by initial capacity when above threshold
-		SetGrowthExponentialThresholdFactor(4.0).             // Switch to fixed growth at 4x initial capacity
-		SetShrinkAggressiveness(pool.AggressivenessBalanced). // Balanced shrink behavior
-		SetShrinkCheckInterval(2 * time.Second).
-		SetIdleThreshold(5 * time.Second).
-		SetMinIdleBeforeShrink(2).
-		SetShrinkCooldown(5 * time.Second).
-		SetMinUtilizationBeforeShrink(0.3). // Shrink if utilization below 30%
-		SetStableUnderutilizationRounds(3).
-		SetShrinkPercent(0.25). // Shrink by 25% when conditions met
+		SetHardLimit(90).                         // Reasonable hard limit
+		SetGrowthPercent(0.5).                    // Grow by 50% when below threshold
+		SetFixedGrowthFactor(1.0).                // Grow by initial capacity when above threshold
+		SetGrowthExponentialThresholdFactor(4.0). // Switch to fixed growth at 4x initial capacity
+		SetMinShrinkCapacity(32).                 // Allow shrinking down to half of initial capacity
 		// L1 Cache settings
-		SetInitialSize(32).            // L1 cache size
-		SetFillAggressiveness(0.8).    // Fill L1 aggressively
-		SetRefillPercent(0.2).         // Refill L1 when below 20%
-		SetEnableChannelGrowth(true).  // Allow L1 to grow
-		SetGrowthEventsTrigger(3).     // Grow L1 after 3 growth events
-		SetFastPathGrowthPercent(0.5). // L1 growth rate
+		SetFastPathInitialSize(32).           // L1 cache size
+		SetFastPathFillAggressiveness(0.8).   // Fill L1 aggressively
+		SetFastPathRefillPercent(0.2).        // Refill L1 when below 20%
+		SetFastPathEnableChannelGrowth(true). // Allow L1 to grow
+		SetFastPathGrowthEventsTrigger(3).    // Grow L1 after 3 growth events
+		SetFastPathGrowthPercent(0.5).        // L1 growth rate
 		SetFastPathExponentialThresholdFactor(4.0).
 		SetFastPathFixedGrowthFactor(1.0).
-		SetShrinkEventsTrigger(3). // Shrink L1 after 3 shrink events
+		SetFastPathShrinkEventsTrigger(3). // Shrink L1 after 3 shrink events
 		SetFastPathShrinkAggressiveness(pool.AggressivenessBalanced).
 		SetFastPathShrinkPercent(0.25).
 		SetFastPathShrinkMinCapacity(16). // L1 minimum size
@@ -164,7 +152,7 @@ func TestConcurrentAccess(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
-	iterations := 101
+	iterations := 1000
 	workers := 100
 
 	for range workers {
@@ -173,7 +161,7 @@ func TestConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for range iterations {
 				obj := p.Get()
-				time.Sleep(1 * time.Millisecond)
+				time.Sleep(3 * time.Millisecond)
 				assert.NotNil(t, obj)
 				p.Put(obj)
 			}
@@ -184,39 +172,24 @@ func TestConcurrentAccess(t *testing.T) {
 	p.PrintPoolStats()
 }
 
-// The default configuration is non blocking, so if we can't grow and there are no more available elements
-// the ring buffer will return nil.
 func TestHardLimit(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
-		SetInitialCapacity(2).
-		SetHardLimit(5).
-		SetMinShrinkCapacity(1).
-		SetShrinkCheckInterval(1 * time.Second).
-		SetVerbose(true).
-		Build()
-	require.NoError(t, err)
+	t.Run("nil return", func(t *testing.T) {
+		config := createHardLimitTestConfig(t, false)
+		p := createTestPool(t, config)
+		runNilReturnTest(t, p)
+	})
 
-	allocator := func() *testObject {
-		return &testObject{value: 42}
-	}
+	t.Run("blocking", func(t *testing.T) {
+		config := createHardLimitTestConfig(t, true)
+		p := createTestPool(t, config)
+		runBlockingTest(t, p)
+	})
 
-	cleaner := func(obj *testObject) {
-		obj.value = 0
-	}
-
-	p, err := pool.NewPool(config, allocator, cleaner)
-	require.NoError(t, err)
-
-	objects := make([]*testObject, 6)
-	var nilCount int
-	for i := range 6 {
-		objects[i] = p.Get()
-		if objects[i] == nil {
-			nilCount++
-		}
-	}
-
-	assert.Equal(t, 1, nilCount)
+	t.Run("blocking (concurrent)", func(t *testing.T) {
+		config := createHardLimitTestConfig(t, true)
+		p := createTestPool(t, config)
+		runConcurrentBlockingTest(t, p, 10)
+	})
 }
 
 func TestConfigValues(t *testing.T) {
