@@ -461,6 +461,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		if !r.block {
 			return item, ErrIsEmpty
 		}
+
 		if !r.waitWrite() {
 			return item, context.DeadlineExceeded
 		}

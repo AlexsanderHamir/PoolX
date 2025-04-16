@@ -402,7 +402,6 @@ func (p *Pool[T]) ShrinkExecution() {
 	}
 
 	newCapacity = p.adjustMainShrinkTarget(newCapacity, inUse)
-
 	p.performShrink(newCapacity, inUse, currentCap)
 	if p.config.verbose {
 		log.Printf("[SHRINK] Shrink complete — Final capacity: %d", newCapacity)

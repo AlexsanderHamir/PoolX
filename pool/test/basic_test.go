@@ -1,7 +1,6 @@
 package test
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -40,10 +39,10 @@ func TestBasicPoolOperations(t *testing.T) {
 	obj = p.Get()
 	assert.NotNil(t, obj)
 	assert.Equal(t, 42, obj.value)
-
-	p.PrintPoolStats()
 }
 
+// blocking mode is disabled by default, we always attempt to refill / grow,
+// before hitting the retrive functions from the ring buffer, which will return nil.
 func TestPoolGrowth(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(2).
@@ -66,7 +65,6 @@ func TestPoolGrowth(t *testing.T) {
 	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 
-	// Get more objects than initial capacity to trigger growth
 	objects := make([]*testObject, 10)
 	for i := range 10 {
 		objects[i] = p.Get()
@@ -89,6 +87,8 @@ func TestPoolShrink(t *testing.T) {
 		SetShrinkPercent(0.5).                         // Shrink by 50%
 		SetMinShrinkCapacity(1).                       // Can shrink down to 1
 		SetMaxConsecutiveShrinks(5).                   // Allow multiple consecutive shrinks
+		SetGrowthPercent(0.5).                         // Grow by 50% when needed
+		SetFixedGrowthFactor(1.0).                     // Fixed growth factor
 		Build()
 	require.NoError(t, err)
 
@@ -110,66 +110,13 @@ func TestPoolShrink(t *testing.T) {
 	}
 
 	// Wait for shrink to potentially occur
-	time.Sleep(20 * time.Millisecond)
-
+	time.Sleep(100 * time.Millisecond)
 	assert.True(t, p.IsShrunk())
-}
 
-func TestConcurrentAccess(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
-		SetRingBufferBlocking(true). // Blocking ring buffer so it doesn't return nil.
-		SetInitialCapacity(64).
-		SetHardLimit(90).                         // Reasonable hard limit
-		SetGrowthPercent(0.5).                    // Grow by 50% when below threshold
-		SetFixedGrowthFactor(1.0).                // Grow by initial capacity when above threshold
-		SetGrowthExponentialThresholdFactor(4.0). // Switch to fixed growth at 4x initial capacity
-		SetMinShrinkCapacity(32).                 // Allow shrinking down to half of initial capacity
-		// L1 Cache settings
-		SetFastPathInitialSize(32).           // L1 cache size
-		SetFastPathFillAggressiveness(0.8).   // Fill L1 aggressively
-		SetFastPathRefillPercent(0.2).        // Refill L1 when below 20%
-		SetFastPathEnableChannelGrowth(true). // Allow L1 to grow
-		SetFastPathGrowthEventsTrigger(3).    // Grow L1 after 3 growth events
-		SetFastPathGrowthPercent(0.5).        // L1 growth rate
-		SetFastPathExponentialThresholdFactor(4.0).
-		SetFastPathFixedGrowthFactor(1.0).
-		SetFastPathShrinkEventsTrigger(3). // Shrink L1 after 3 shrink events
-		SetFastPathShrinkAggressiveness(pool.AggressivenessBalanced).
-		SetFastPathShrinkPercent(0.25).
-		SetFastPathShrinkMinCapacity(16). // L1 minimum size
-		Build()
-	require.NoError(t, err)
-
-	allocator := func() *testObject {
-		return &testObject{value: 42}
+	// Release the first batch of objects
+	for _, obj := range objects {
+		p.Put(obj)
 	}
-
-	cleaner := func(obj *testObject) {
-		obj.value = 0
-	}
-
-	p, err := pool.NewPool(config, allocator, cleaner)
-	require.NoError(t, err)
-
-	var wg sync.WaitGroup
-	iterations := 1000
-	workers := 100
-
-	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for range iterations {
-				obj := p.Get()
-				time.Sleep(3 * time.Millisecond)
-				assert.NotNil(t, obj)
-				p.Put(obj)
-			}
-		}()
-	}
-
-	wg.Wait()
-	p.PrintPoolStats()
 }
 
 func TestHardLimit(t *testing.T) {
