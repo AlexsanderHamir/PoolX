@@ -32,6 +32,9 @@ var (
 
 	// ErrInvalidLength is returned when the length of the buffer is invalid.
 	ErrInvalidLength = errors.New("invalid length")
+
+	// ErrNilValue is returned when a nil value is written to the ring buffer.
+	ErrNilValue = errors.New("cannot write nil value to ring buffer")
 )
 
 // RingBuffer is a circular buffer that implements io.ReaderWriter interface.
@@ -165,6 +168,7 @@ func (r *RingBuffer[T]) readErr(locked bool) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 	}
+
 	if r.err != nil {
 		if r.err == io.EOF {
 			if r.w == r.r && !r.isFull {
@@ -232,6 +236,10 @@ func (r *RingBuffer[T]) Write(item T) error {
 		return r.err
 	}
 
+	if any(item) == nil {
+		return ErrNilValue
+	}
+
 	if r.isFull {
 		if r.block {
 			if !r.waitRead() {
@@ -271,6 +279,10 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 	}
 
 	for i := range items {
+		if any(items[i]) == nil {
+			return 0, ErrNilValue
+		}
+
 		if r.isFull {
 			if r.block {
 				if !r.waitRead() {

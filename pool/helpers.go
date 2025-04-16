@@ -16,6 +16,11 @@ func (p *pool[T]) updateAvailableObjs() {
 
 // better name this function
 func (p *pool[T]) releaseObj(obj T) {
+	if reflect.ValueOf(obj).IsNil() {
+		log.Println("[RELEASEOBJ] Object is nil")
+		return
+	}
+
 	p.cleaner(obj)
 
 	for {
@@ -114,6 +119,7 @@ func (p *pool[T]) PrintPoolStats() {
 	fmt.Printf("Objects In Use       : %d\n", p.stats.objectsInUse.Load())
 	fmt.Printf("Available Objects    : %d\n", p.stats.availableObjects.Load())
 	fmt.Printf("Current Capacity     : %d\n", p.stats.currentCapacity.Load())
+	fmt.Printf("Ring Buffer Length   : %d\n", p.pool.Length())
 	fmt.Printf("Peak In Use          : %d\n", p.stats.peakInUse.Load())
 	fmt.Printf("Total Gets           : %d\n", p.stats.totalGets.Load())
 	fmt.Printf("Total Growth Events  : %d\n", p.stats.totalGrowthEvents.Load())
@@ -125,6 +131,7 @@ func (p *pool[T]) PrintPoolStats() {
 	fmt.Println("---------- Fast Path Resize Stats ----------")
 	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastResizeAtGrowthNum.Load())
 	fmt.Printf("Current L1 Capacity     : %d\n", p.stats.currentL1Capacity.Load())
+	fmt.Printf("L1 Length              : %d\n", len(p.cacheL1))
 	fmt.Println("---------------------------------------")
 	fmt.Println()
 
@@ -179,6 +186,7 @@ func maxUint64(a, b uint64) uint64 {
 	return b
 }
 
+// this is blocking
 func (p *pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) int {
 	if fastPathRemaining > 0 {
 		p.cacheL1 <- obj
@@ -639,7 +647,7 @@ func initializePoolStats(config *poolConfig) *poolStats {
 	stats.initialCapacity += config.initialCapacity
 	stats.currentCapacity.Store(uint64(config.initialCapacity))
 	stats.availableObjects.Store(uint64(config.initialCapacity))
-	stats.currentL1Capacity.Store(uint64(config.fastPath.bufferSize))
+	stats.currentL1Capacity.Store(uint64(config.fastPath.initialSize))
 	return stats
 }
 
@@ -653,7 +661,7 @@ func validateAllocator[T any](allocator func() T) error {
 
 func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T]) (*pool[T], error) {
 	poolObj := &pool[T]{
-		cacheL1:   make(chan T, config.fastPath.bufferSize),
+		cacheL1:   make(chan T, config.fastPath.initialSize),
 		allocator: allocator,
 		cleaner:   cleaner,
 		mu:        sync.RWMutex{},
@@ -667,7 +675,7 @@ func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner
 }
 
 func populateL1OrBuffer[T any](poolObj *pool[T], config *poolConfig) error {
-	fillTarget := int(float64(poolObj.config.fastPath.bufferSize) * poolObj.config.fastPath.fillAggressiveness)
+	fillTarget := int(float64(poolObj.config.fastPath.initialSize) * poolObj.config.fastPath.fillAggressiveness)
 	fastPathRemaining := fillTarget
 
 	obj := poolObj.allocator()
@@ -694,13 +702,14 @@ func (p *pool[T]) handleRefillFailure(refillReason string) (T, bool) {
 		log.Printf("[GET] Unable to refill — reason: %s", refillReason)
 	}
 
-	// everything outside GrowthBlocked is an error, return nil (since T is always a pointer, its zero value is nil)
-	if refillReason != GrowthBlocked {
-		var zero T
+	var zero T
+	if refillReason == GrowthFailed || refillReason == RingBufferError {
+		if p.config.verbose {
+			log.Printf("[GET] Warning: unable to refill — reason: %s, returning nil", refillReason)
+		}
 		return zero, false
 	}
 
-	var zero T
 	return zero, true
 }
 
@@ -752,21 +761,38 @@ func (p *pool[T]) logPut(message string) {
 }
 
 func (p *pool[T]) calculateL1Usage() (int, int, float64) {
-	bufferSize := p.config.fastPath.bufferSize
+	currentCap := p.stats.currentL1Capacity.Load()
 	currentLength := len(p.cacheL1)
-	currentPercent := float64(currentLength) / float64(bufferSize)
-	return currentLength, bufferSize, currentPercent
+	var currentPercent float64
+	if currentCap > 0 {
+		currentPercent = float64(currentLength) / float64(currentCap)
+	}
+	return currentLength, int(currentCap), currentPercent
 }
 
-func (p *pool[T]) logL1Usage(currentLength, bufferSize int, currentPercent float64) {
+func (p *pool[T]) logL1Usage(currentLength, currentCap int, currentPercent float64) {
 	if p.config.verbose {
-		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%",
-			currentLength, bufferSize, currentPercent*100, p.config.fastPath.refillPercent*100)
+		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%", currentLength, currentCap, currentPercent*100, p.config.fastPath.refillPercent*100)
 	}
 }
 
-func (p *pool[T]) calculateFillTarget(bufferSize int) int {
-	return int(float64(bufferSize)*p.config.fastPath.fillAggressiveness) - len(p.cacheL1)
+func (p *pool[T]) calculateFillTarget(currentCap int) int {
+	if currentCap <= 0 {
+		return 0
+	}
+
+	targetFill := int(float64(currentCap) * p.config.fastPath.fillAggressiveness)
+	currentLength := len(p.cacheL1)
+
+	// Calculate how many more items we need to reach target fill
+	itemsNeeded := targetFill - currentLength
+
+	// Ensure we don't return negative values
+	if itemsNeeded < 0 {
+		return 0
+	}
+
+	return itemsNeeded
 }
 
 func (p *pool[T]) logRefillResult(result RefillResult) {
@@ -864,10 +890,11 @@ func (p *pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], items []T,
 }
 
 func (p *pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacity uint64) error {
-	toAdd := int(newCapacity) - newRingBuffer.Length()
+	currentCapacity := p.stats.currentCapacity.Load()
+	toAdd := newCapacity - currentCapacity
 	if toAdd <= 0 {
 		if p.config.verbose {
-			log.Printf("[GROW] No new items to add | New capacity: %d | Ring buffer length: %d", newCapacity, newRingBuffer.Length())
+			log.Printf("[GROW] No new items to add | New capacity: %d | Current capacity: %d", newCapacity, currentCapacity)
 		}
 		return nil
 	}

@@ -3,6 +3,7 @@ package pool
 import (
 	"fmt"
 	"log"
+	"reflect"
 	"time"
 )
 
@@ -33,12 +34,15 @@ const (
 )
 
 const (
-	NoRefillNeeded  = "no refill needed"
-	RefillSucceeded = "refill succeeded"
-	GrowthBlocked   = "growth is blocked"
+	// if any of the three happens, we likely can't get from L1.
 	GrowthFailed    = "growth failed"
-	NoItemsToMove   = "no items to move"
 	RingBufferError = "error getting items from ring buffer"
+
+	// if any of the three happens, we can try to get from L1.
+	GrowthBlocked   = "growth is blocked"
+	RefillSucceeded = "refill succeeded"
+	NoRefillNeeded  = "no refill needed"
+	NoItemsToMove   = "no items to move"
 )
 
 func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*pool[T], error) {
@@ -66,7 +70,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*p
 		return nil, err
 	}
 
-	go poolObj.shrink()
+	// go poolObj.shrink()
 
 	return poolObj, nil
 }
@@ -82,10 +86,23 @@ func (p *pool[T]) Get() T {
 	}
 
 	if obj, found := p.tryGetFromL1(); found {
+		if p.config.verbose {
+			var zero T
+			if reflect.DeepEqual(obj, zero) {
+				log.Printf("[GET] Warning: L1 hit returned zero value")
+			}
+		}
 		return obj
 	}
 
 	obj := p.slowPath()
+	if p.config.verbose {
+		var zero T
+		if reflect.DeepEqual(obj, zero) {
+			log.Printf("[GET] Warning: slowPath returned zero value")
+		}
+	}
+
 	p.stats.l2HitCount.Add(1)
 	p.updateUsageStats()
 	return obj
@@ -106,14 +123,14 @@ func (p *pool[T]) Put(obj T) {
 }
 
 func (p *pool[T]) tryRefillIfNeeded() (bool, string) {
-	currentLength, bufferSize, currentPercent := p.calculateL1Usage()
-	p.logL1Usage(currentLength, bufferSize, currentPercent)
+	currentLength, currentCap, currentPercent := p.calculateL1Usage()
+	p.logL1Usage(currentLength, currentCap, currentPercent)
 
 	if currentPercent > p.config.fastPath.refillPercent {
 		return true, NoRefillNeeded
 	}
 
-	fillTarget := p.calculateFillTarget(bufferSize)
+	fillTarget := p.calculateFillTarget(currentCap)
 	if p.config.verbose {
 		log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 	}
@@ -221,6 +238,7 @@ func (p *pool[T]) grow(now time.Time) bool {
 	cfg := p.config.growth
 	initialCap := uint64(p.config.initialCapacity)
 	currentCap := p.stats.currentCapacity.Load()
+	objectsInUse := p.stats.objectsInUse.Load()
 	exponentialThreshold := uint64(float64(initialCap) * cfg.exponentialThresholdFactor)
 	fixedStep := uint64(float64(initialCap) * cfg.fixedGrowthFactor)
 
@@ -260,7 +278,8 @@ func (p *pool[T]) grow(now time.Time) bool {
 	p.tryL1ResizeIfTriggered() // WARNING - heavy operation, avoid resizing too often.
 
 	if p.config.verbose {
-		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d", newCapacity, p.pool.Length())
+		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
+			newCapacity, p.pool.Length(), len(p.cacheL1), objectsInUse)
 	}
 	return true
 }

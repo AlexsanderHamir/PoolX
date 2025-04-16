@@ -63,8 +63,10 @@ type poolStats struct {
 
 	initialCapacity int
 
-	mu           sync.RWMutex
-	reqPerObj    float64 // derived
+	mu        sync.RWMutex
+	reqPerObj float64 // derived
+
+	// depending when you collect the utilization, it may be low, be selective.
 	utilization  float64 // derived
 	L2SplillRate float64 // calculated
 
@@ -286,7 +288,7 @@ type fastPathParameters struct {
 	// bufferSize defines the capacity of the fast path channel.
 	// This determines how many objects can be held in the fast path before falling back
 	// to the slower, lock-protected main pool. (length <= currentCapacity)
-	bufferSize int
+	initialSize int
 
 	// growthEventsTrigger defines how many pool growth events must occur
 	// before triggering a capacity increase for the L1 channel.
@@ -330,8 +332,8 @@ type fastPathParameters struct {
 }
 
 // Getter methods for fastPathParameters
-func (f *fastPathParameters) GetBufferSize() int {
-	return f.bufferSize
+func (f *fastPathParameters) GetInitialSize() int {
+	return f.initialSize
 }
 
 func (f *fastPathParameters) GetGrowthEventsTrigger() int {
