@@ -456,16 +456,17 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		return item, err
 	}
 
-	if r.w == r.r && !r.isFull {
-		if r.block {
-			if !r.waitWrite() {
-				return item, context.DeadlineExceeded
-			}
-			if r.w == r.r && !r.isFull {
-				return item, ErrIsEmpty
-			}
-		} else {
+	// Keep waiting while the buffer is empty
+	for r.w == r.r && !r.isFull {
+		if !r.block {
 			return item, ErrIsEmpty
+		}
+		if !r.waitWrite() {
+			return item, context.DeadlineExceeded
+		}
+		// After being woken up, check if we still have an error
+		if err := r.readErr(true); err != nil {
+			return item, err
 		}
 	}
 
@@ -495,16 +496,17 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		return nil, err
 	}
 
-	if r.w == r.r && !r.isFull {
-		if r.block {
-			if !r.waitWrite() {
-				return nil, context.DeadlineExceeded
-			}
-			if r.w == r.r && !r.isFull {
-				return nil, ErrIsEmpty
-			}
-		} else {
+	// Keep waiting while the buffer is empty
+	for r.w == r.r && !r.isFull {
+		if !r.block {
 			return nil, ErrIsEmpty
+		}
+		if !r.waitWrite() {
+			return nil, context.DeadlineExceeded
+		}
+		// After being woken up, check if we still have an error
+		if err := r.readErr(true); err != nil {
+			return nil, err
 		}
 	}
 
@@ -538,6 +540,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 	if r.block {
 		r.readCond.Broadcast()
 	}
+
 	return items, r.readErr(true)
 }
 
