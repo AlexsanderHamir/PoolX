@@ -7,19 +7,19 @@ var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
 		0, 0, 0, 0, 0, 0, 0, 0,
 	},
 	AggressivenessConservative: {
-		5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.20, 3, 0.10, 1,
+		15 * time.Minute, 30 * time.Minute, 5, 30 * time.Minute, 0.15, 5, 0.05, 1,
 	},
 	AggressivenessBalanced: {
-		2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.30, 3, 0.25, 2,
+		10 * time.Minute, 20 * time.Minute, 4, 20 * time.Minute, 0.25, 4, 0.15, 2,
 	},
 	AggressivenessAggressive: {
-		1 * time.Minute, 2 * time.Minute, 2, 2 * time.Minute, 0.40, 2, 0.50, 3,
+		5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.35, 3, 0.30, 3,
 	},
 	AggressivenessVeryAggressive: {
-		30 * time.Second, 1 * time.Minute, 1, 1 * time.Minute, 0.50, 1, 0.65, 4,
+		2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.45, 2, 0.50, 4,
 	},
 	AggressivenessExtreme: {
-		10 * time.Second, 20 * time.Second, 1, 30 * time.Second, 0.60, 1, 0.80, 5,
+		1 * time.Minute, 2 * time.Minute, 1, 2 * time.Minute, 0.55, 1, 0.70, 5,
 	},
 }
 
@@ -34,7 +34,7 @@ var defaultShrinkParameters = &shrinkParameters{
 }
 
 var defaultFastPath = &fastPathParameters{
-	bufferSize:          defaultPoolCapacity,
+	initialSize:         defaultPoolCapacity,
 	fillAggressiveness:  defaultfillAggressiveness,
 	refillPercent:       defaultRefillPercent,
 	enableChannelGrowth: defaultEnableChannelGrowth,

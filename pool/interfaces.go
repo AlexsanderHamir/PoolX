@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// PoolConfig defines the interface for pool configuration
 type PoolConfig interface {
 	GetInitialCapacity() int
 	GetHardLimit() int
@@ -16,14 +15,12 @@ type PoolConfig interface {
 	IsVerbose() bool
 }
 
-// GrowthParameters defines the interface for growth configuration
 type GrowthParameters interface {
 	GetExponentialThresholdFactor() float64
 	GetGrowthPercent() float64
 	GetFixedGrowthFactor() float64
 }
 
-// ShrinkParameters defines the interface for shrink configuration
 type ShrinkParameters interface {
 	GetEnforceCustomConfig() bool
 	GetAggressivenessLevel() AggressivenessLevel
@@ -38,7 +35,6 @@ type ShrinkParameters interface {
 	GetMinCapacity() int
 }
 
-// FastPathParameters defines the interface for fast path configuration
 type FastPathParameters interface {
 	GetBufferSize() int
 	GetGrowthEventsTrigger() int
@@ -50,7 +46,6 @@ type FastPathParameters interface {
 	IsEnableChannelGrowth() bool
 }
 
-// RingBufferConfigInterface defines the interface for ring buffer configuration
 type RingBufferConfigInterface interface {
 	IsBlocking() bool
 	GetReadTimeout() time.Duration

@@ -93,7 +93,6 @@ func TestPoolShrink(t *testing.T) {
 		SetShrinkPercent(0.5).                         // Shrink by 50%
 		SetMinShrinkCapacity(1).                       // Can shrink down to 1
 		SetMaxConsecutiveShrinks(5).                   // Allow multiple consecutive shrinks
-		SetVerbose(true).
 		Build()
 	require.NoError(t, err)
 
@@ -138,7 +137,7 @@ func TestConcurrentAccess(t *testing.T) {
 		SetStableUnderutilizationRounds(3).
 		SetShrinkPercent(0.25). // Shrink by 25% when conditions met
 		// L1 Cache settings
-		SetBufferSize(32).             // L1 cache size
+		SetInitialSize(32).            // L1 cache size
 		SetFillAggressiveness(0.8).    // Fill L1 aggressively
 		SetRefillPercent(0.2).         // Refill L1 when below 20%
 		SetEnableChannelGrowth(true).  // Allow L1 to grow
@@ -150,7 +149,6 @@ func TestConcurrentAccess(t *testing.T) {
 		SetFastPathShrinkAggressiveness(pool.AggressivenessBalanced).
 		SetFastPathShrinkPercent(0.25).
 		SetFastPathShrinkMinCapacity(16). // L1 minimum size
-		SetVerbose(true).
 		Build()
 	require.NoError(t, err)
 
@@ -166,8 +164,8 @@ func TestConcurrentAccess(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
-	iterations := 10
-	workers := 50
+	iterations := 101
+	workers := 100
 
 	for range workers {
 		wg.Add(1)
@@ -175,14 +173,15 @@ func TestConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for range iterations {
 				obj := p.Get()
+				time.Sleep(1 * time.Millisecond)
 				assert.NotNil(t, obj)
-				time.Sleep(time.Millisecond)
 				p.Put(obj)
 			}
 		}()
 	}
 
 	wg.Wait()
+	p.PrintPoolStats()
 }
 
 // The default configuration is non blocking, so if we can't grow and there are no more available elements

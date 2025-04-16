@@ -161,8 +161,8 @@ func (b *poolConfigBuilder) SetMaxConsecutiveShrinks(count int) *poolConfigBuild
 	return b
 }
 
-func (b *poolConfigBuilder) SetBufferSize(count int) *poolConfigBuilder {
-	b.config.fastPath.bufferSize = count
+func (b *poolConfigBuilder) SetInitialSize(count int) *poolConfigBuilder {
+	b.config.fastPath.initialSize = count
 	return b
 }
 
@@ -338,8 +338,8 @@ func (b *poolConfigBuilder) Build() (*poolConfig, error) {
 	}
 
 	fp := b.config.fastPath
-	if fp.bufferSize <= 0 {
-		return nil, fmt.Errorf("buffer must be > 0")
+		if fp.initialSize <= 0 {
+		return nil, fmt.Errorf("initialSize must be > 0")
 	}
 
 	if fp.fillAggressiveness <= 0 || fp.fillAggressiveness > 1.0 {

@@ -27,7 +27,7 @@ type DefaultConfigValues struct {
 	ShrinkPercent                      float64
 	MinShrinkCapacity                  int
 	MaxConsecutiveShrinks              int
-	BufferSize                         int
+	InitialSize                        int
 	FillAggressiveness                 float64
 	RefillPercent                      float64
 	EnableChannelGrowth                bool
@@ -63,7 +63,7 @@ func storeDefaultConfigValues(config pool.PoolConfig) DefaultConfigValues {
 		ShrinkPercent:                      config.GetShrink().GetShrinkPercent(),
 		MinShrinkCapacity:                  config.GetShrink().GetMinCapacity(),
 		MaxConsecutiveShrinks:              config.GetShrink().GetMaxConsecutiveShrinks(),
-		BufferSize:                         config.GetFastPath().GetBufferSize(),
+		InitialSize:                         config.GetFastPath().GetInitialSize(),
 		FillAggressiveness:                 config.GetFastPath().GetFillAggressiveness(),
 		RefillPercent:                      config.GetFastPath().GetRefillPercent(),
 		EnableChannelGrowth:                config.GetFastPath().IsEnableChannelGrowth(),
@@ -102,7 +102,7 @@ func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
 		SetShrinkPercent(0.25121).
 		SetMinShrinkCapacity(10121).
 		SetMaxConsecutiveShrinks(3121).
-		SetBufferSize(50121).
+		SetInitialSize(50121).
 		SetFillAggressiveness(0.8121).
 		SetRefillPercent(0.2121).
 		SetEnableChannelGrowth(false).
@@ -141,7 +141,7 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 	assert.NotEqual(t, original.ShrinkPercent, custom.GetShrink().GetShrinkPercent())
 	assert.NotEqual(t, original.MinShrinkCapacity, custom.GetShrink().GetMinCapacity())
 	assert.NotEqual(t, original.MaxConsecutiveShrinks, custom.GetShrink().GetMaxConsecutiveShrinks())
-	assert.NotEqual(t, original.BufferSize, custom.GetFastPath().GetBufferSize())
+	assert.NotEqual(t, original.InitialSize, custom.GetFastPath().GetInitialSize())
 	assert.NotEqual(t, original.FillAggressiveness, custom.GetFastPath().GetFillAggressiveness())
 	assert.NotEqual(t, original.RefillPercent, custom.GetFastPath().GetRefillPercent())
 	assert.NotEqual(t, original.EnableChannelGrowth, custom.GetFastPath().IsEnableChannelGrowth())
