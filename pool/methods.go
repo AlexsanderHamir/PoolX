@@ -18,17 +18,16 @@ const (
 	AggressivenessAggressive          AggressivenessLevel = 3
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
-	defaultExponentialThresholdFactor                     = 10000000000000.0
-	defaultGrowthPercent                                  = 0.00028
-	defaultFixedGrowthFactor                              = 10.0
+	defaultExponentialThresholdFactor                     = 100.0
+	defaultGrowthPercent                                  = 0.25
+	defaultFixedGrowthFactor                              = 2.0
 	defaultfillAggressiveness                             = fillAggressivenessExtreme
 	fillAggressivenessExtreme                             = 1.0
-	defaultRefillPercent                                  = 0.10
+	defaultRefillPercent                                  = 0.20
 	defaultMinCapacity                                    = 128
 	defaultPoolCapacity                                   = 128
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
-	defaultHardLimit                                      = 1_000_000_000
-	defaultHardLimitBufferSize                            = 2
+	defaultHardLimit                                      = 1_000_000
 	defaultGrowthEventsTrigger                            = 3
 	defaultShrinkEventsTrigger                            = 3
 	defaultEnableChannelGrowth                            = true
@@ -69,7 +68,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*P
 
 	poolObj.ctx, poolObj.cancel = context.WithCancel(context.Background())
 
-	if err := populateL1OrBuffer(poolObj, config); err != nil {
+	if err := populateL1OrBuffer(poolObj); err != nil {
 		return nil, err
 	}
 
@@ -157,17 +156,16 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
 
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the pool before calling the slow path.
-func (p *Pool[T]) slowPath() T {
-	var zero T
-
+func (p *Pool[T]) slowPath() (obj T) {
 	p.stats.blockedGets.Add(1)
 	obj, err := p.pool.GetOne()
 	if err != nil {
 		if p.config.verbose {
 			log.Printf("[SLOWPATH] Error getting object from ring buffer: %v", err)
 		}
-		return zero
+		return obj
 	}
+
 	p.stats.blockedGets.Add(^uint64(0))
 
 	if p.config.verbose {
@@ -296,10 +294,6 @@ func (p *Pool[T]) grow(now time.Time) bool {
 	return true
 }
 
-// Close closes the pool and cleans up all resources.
-// It is safe to call Close multiple times - subsequent calls will return nil.
-// After closing, all subsequent operations will return an error.
-// Any pending items in the buffer will be cleaned up using the cleaner function.
 func (p *Pool[T]) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -317,38 +311,13 @@ func (p *Pool[T]) Close() error {
 		p.cond.Broadcast()
 	}
 
-	if p.pool != nil {
-		if err := p.pool.Close(); err != nil {
-			return fmt.Errorf("failed to close main pool: %w", err)
-		}
-		p.pool = nil
+	if err := p.closeMainPool(); err != nil {
+		return err
 	}
 
-	if p.cacheL1 != nil {
-		for {
-			select {
-			case obj, ok := <-p.cacheL1:
-				if !ok {
-					goto cleanup
-				}
-				if p.cleaner != nil {
-					p.cleaner(obj)
-				}
-			default:
-				close(p.cacheL1)
-				p.cacheL1 = nil
-				goto cleanup
-			}
-		}
-	}
-cleanup:
+	p.cleanupCacheL1()
 
-	p.stats = nil
-	p.isGrowthBlocked = false
-	p.isShrinkBlocked = false
-	p.allocator = nil
-	p.cleaner = nil
-	p.ctx = nil
+	p.resetPoolState()
 
 	return nil
 }

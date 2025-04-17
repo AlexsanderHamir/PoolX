@@ -66,6 +66,34 @@ func New[T any](size int) *RingBuffer[T] {
 	}
 }
 
+// NewWithConfig creates a new RingBuffer with the given size and configuration.
+// It returns an error if the size is less than or equal to 0.
+func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], error) {
+	if size <= 0 {
+		return nil, errors.New("size must be greater than 0")
+	}
+
+	rb := New[T](size)
+
+	if config.block {
+		rb.WithBlocking(true)
+	}
+
+	if config.rTimeout > 0 {
+		rb.WithReadTimeout(config.rTimeout)
+	}
+
+	if config.wTimeout > 0 {
+		rb.WithWriteTimeout(config.wTimeout)
+	}
+
+	if config.cancel != nil {
+		rb.WithCancel(config.cancel)
+	}
+
+	return rb, nil
+}
+
 // QithBlocking sets the blocking mode of the ring buffer.
 // If block is true, Read and Write will block when there is no data to read or no space to write.
 // If block is false, Read and Write will return ErrIsEmpty or ErrIsFull immediately.
@@ -189,6 +217,7 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 		r.readCond.Wait()
 		return true
 	}
+	
 	start := time.Now()
 	defer time.AfterFunc(r.rTimeout, r.readCond.Broadcast).Stop()
 
@@ -569,7 +598,7 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 
 // ClearBuffer clears all remaining items in the buffer and sets them to nil.
 // This is useful when shrinking the buffer and we need to clean up items that won't fit.
-func (r *RingBuffer[T]) ClearBuffer() {
+func (r *RingBuffer[T]) clearBuffer() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -596,40 +625,11 @@ func (r *RingBuffer[T]) ClearBuffer() {
 	r.isFull = false
 }
 
-// NewWithConfig creates a new RingBuffer with the given size and configuration.
-// It returns an error if the size is less than or equal to 0.
-func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], error) {
-	if size <= 0 {
-		return nil, errors.New("size must be greater than 0")
-	}
-
-	rb := New[T](size)
-
-	if config.block {
-		rb.WithBlocking(true)
-	}
-
-	if config.rTimeout > 0 {
-		rb.WithReadTimeout(config.rTimeout)
-	}
-
-	if config.wTimeout > 0 {
-		rb.WithWriteTimeout(config.wTimeout)
-	}
-
-	if config.cancel != nil {
-		rb.WithCancel(config.cancel)
-	}
-
-	return rb, nil
-}
-
 // Close closes the ring buffer and cleans up resources.
 // After closing, all subsequent operations will return io.EOF.
 // Any pending items in the buffer will be cleared.
 func (r *RingBuffer[T]) Close() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if r.closed {
 		return nil
@@ -638,7 +638,9 @@ func (r *RingBuffer[T]) Close() error {
 	r.closed = true
 	r.setErr(io.EOF, true)
 
-	r.ClearBuffer()
+	r.mu.Unlock()
+	r.clearBuffer()
+	r.mu.Lock()
 
 	if r.block {
 		r.readCond.Broadcast()

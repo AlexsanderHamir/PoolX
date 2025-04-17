@@ -51,10 +51,13 @@ func TestRaceConditions(t *testing.T) {
 }
 
 func TestConcurrentGrowthAndShrink(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	builder, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(2).
 		SetGrowthPercent(0.5).
-		SetShrinkAggressiveness(pool.AggressivenessExtreme).
+		SetShrinkAggressiveness(pool.AggressivenessExtreme)
+	require.NoError(t, err)
+
+	config, err := builder.
 		SetVerbose(true).
 		Build()
 	require.NoError(t, err)
