@@ -45,7 +45,7 @@ const (
 	NoItemsToMove   = "no items to move"
 )
 
-func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*Pool[T], error) {
+func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T), poolType reflect.Type) (*Pool[T], error) {
 	if config == nil {
 		config = createDefaultConfig()
 	}
@@ -61,7 +61,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*P
 		return nil, err
 	}
 
-	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer)
+	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer, poolType)
 	if err != nil {
 		return nil, err
 	}

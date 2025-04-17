@@ -90,19 +90,22 @@ func (cm *ContextManager) startCleanupRoutine() {
 
 // cleanupIdleContexts removes contexts that have been idle for too long
 func (cm *ContextManager) cleanupIdleContexts() {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	now := time.Now()
+	cm.mu.RLock()
+	// First collect all contexts that need to be closed
+	var contextsToClose []MemoryContextType
 	for ctxType, ctx := range cm.ctxCache {
 		ctx.mu.RLock()
-		if !ctx.active && now.Sub(ctx.lastUsed) > cm.config.MaxIdleTime {
-			ctx.mu.RUnlock()
-			if err := cm.CloseContext(ctxType); err != nil {
-				fmt.Printf("Error closing idle context %s: %v\n", ctxType, err)
-			}
-		} else {
-			ctx.mu.RUnlock()
+		if !ctx.active && time.Since(ctx.lastUsed) > cm.config.MaxIdleTime {
+			contextsToClose = append(contextsToClose, ctxType)
+		}
+		ctx.mu.RUnlock()
+	}
+	cm.mu.RUnlock()
+
+	// Then close them one by one
+	for _, ctxType := range contextsToClose {
+		if err := cm.CloseContext(ctxType); err != nil {
+			fmt.Printf("Error closing idle context %s: %v\n", ctxType, err)
 		}
 	}
 }
@@ -112,16 +115,8 @@ func (cm *ContextManager) StopCleanup() {
 	close(cm.stopChan)
 }
 
-func GetOrCreateTypedPool[T any](cm *ContextManager, ctxType MemoryContextType, config MemoryContextConfig) (*TypedPool[T], bool, error) {
-	ctx, exists, err := cm.getOrCreateContext(ctxType, config)
-	if err != nil {
-		return nil, false, err
-	}
-	return NewTypedPool[T](ctx), exists, nil
-}
-
 // getOrCreateContext is the internal version of GetOrCreateContext
-func (cm *ContextManager) getOrCreateContext(ctxType MemoryContextType, config MemoryContextConfig) (*MemoryContext, bool, error) {
+func (cm *ContextManager) GetOrCreateContext(ctxType MemoryContextType, config MemoryContextConfig) (*MemoryContext, bool, error) {
 	if ctxType == "" {
 		return nil, false, ErrInvalidContextType
 	}
@@ -172,15 +167,17 @@ func (cm *ContextManager) ReturnContext(ctx *MemoryContext) error {
 
 // CloseContext closes a context and removes it from the manager
 func (cm *ContextManager) CloseContext(ctxType MemoryContextType) error {
-	cm.mu.RLock()
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
 	ctx, ok := cm.ctxCache[ctxType]
 	if !ok {
 		return ErrContextNotFound
 	}
-	cm.mu.RUnlock()
 
 	ctx.mu.RLock()
 	if ctx.referenceCount > 0 {
+		ctx.mu.RUnlock()
 		return ErrContextInUse
 	}
 	ctx.mu.RUnlock()
@@ -189,9 +186,7 @@ func (cm *ContextManager) CloseContext(ctxType MemoryContextType) error {
 		return fmt.Errorf("error closing context %s: %v", ctxType, err)
 	}
 
-	cm.mu.Lock()
 	delete(cm.ctxCache, ctxType)
-	cm.mu.Unlock()
 
 	return nil
 }
@@ -211,17 +206,20 @@ func (cm *ContextManager) ValidateContext(ctx *MemoryContext) bool {
 // Close stops the cleanup routine and closes all managed contexts
 func (cm *ContextManager) Close() error {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
 
 	if cm.config.AutoCleanup {
 		cm.StopCleanup()
 	}
 
+	cm.mu.Unlock()
 	for ctxType := range cm.ctxCache {
 		if err := cm.CloseContext(ctxType); err != nil {
 			return fmt.Errorf("error closing context %s: %v", ctxType, err)
 		}
 	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	if cm.stopChan != nil {
 		close(cm.stopChan)

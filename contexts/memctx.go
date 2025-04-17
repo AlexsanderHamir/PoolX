@@ -79,7 +79,7 @@ func (mc *MemoryContext) CreatePool(objectType reflect.Type, config pool.PoolCon
 	defer mc.mu.Unlock()
 
 	poolConfig := pool.ToInternalConfig(config)
-	poolObj, err := pool.NewPool(poolConfig, allocator, cleaner)
+	poolObj, err := pool.NewPool(poolConfig, allocator, cleaner, objectType)
 	if err != nil {
 		return fmt.Errorf("NewPool failed: %w", err)
 	}
@@ -98,8 +98,6 @@ func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
 	}
 
 	obj := poolObj.Get()
-	mm.pools[objectType] = poolObj
-
 	return obj
 }
 
@@ -112,8 +110,11 @@ func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
 		return false
 	}
 
+	if reflect.TypeOf(obj) != objectType {
+		return false
+	}
+
 	poolObj.Put(obj)
-	mm.pools[objectType] = poolObj
 	return true
 }
 

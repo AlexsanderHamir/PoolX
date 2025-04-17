@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ type Pool[T any] struct {
 	stats           *poolStats
 	isShrinkBlocked bool
 	isGrowthBlocked bool
+	poolType        reflect.Type
 
 	config    *poolConfig
 	cleaner   func(T)

@@ -2,7 +2,10 @@ package test
 
 import (
 	"fmt"
+	"memctx/contexts"
 	"memctx/pool"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,9 +13,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testObject is a simple test object used in pool tests
-type testObject struct {
-	value int
+type Job struct {
+	ID        int
+	Processor *TestObject
+	Buffer    *TestBuffer
+	Metadata  *TestMetadata
+}
+
+type TestObject struct {
+	Value int
+}
+
+type TestBuffer struct {
+	Data []byte
+	Size int
+}
+
+type TestMetadata struct {
+	Priority  int
+	Tags      []string
+	Timestamp time.Time
+}
+
+type TestJob struct {
+	ID        int
+	Buffer    TestBuffer
+	Metadata  TestMetadata
+	CreatedAt time.Time
 }
 
 // DefaultConfigValues stores all default configuration values
@@ -176,23 +203,23 @@ func createHardLimitTestConfig(t *testing.T, blocking bool) pool.PoolConfig {
 }
 
 // createTestPool creates a pool with the given configuration
-func createTestPool(t *testing.T, config pool.PoolConfig) *pool.Pool[*testObject] {
-	allocator := func() *testObject {
-		return &testObject{value: 42}
+func createTestPool(t *testing.T, config pool.PoolConfig) *pool.Pool[*TestObject] {
+	allocator := func() *TestObject {
+		return &TestObject{Value: 42}
 	}
 
-	cleaner := func(obj *testObject) {
-		obj.value = 0
+	cleaner := func(obj *TestObject) {
+		obj.Value = 0
 	}
 
 	internalConfig := pool.ToInternalConfig(config)
-	p, err := pool.NewPool(internalConfig, allocator, cleaner)
+	p, err := pool.NewPool(internalConfig, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	return p
 }
 
-func runNilReturnTest(t *testing.T, p *pool.Pool[*testObject]) {
-	objects := make([]*testObject, 100)
+func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
+	objects := make([]*TestObject, 100)
 	var nilCount int
 	for i := range 100 {
 		objects[i] = p.Get()
@@ -212,8 +239,8 @@ func runNilReturnTest(t *testing.T, p *pool.Pool[*testObject]) {
 	}
 }
 
-func runBlockingTest(t *testing.T, p *pool.Pool[*testObject]) {
-	objects := make([]*testObject, 20)
+func runBlockingTest(t *testing.T, p *pool.Pool[*TestObject]) {
+	objects := make([]*TestObject, 20)
 	for i := range 20 {
 		objects[i] = p.Get()
 		require.NotNil(t, objects[i])
@@ -242,9 +269,9 @@ func runBlockingTest(t *testing.T, p *pool.Pool[*testObject]) {
 	}
 }
 
-func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*testObject], numGoroutines int) {
+func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGoroutines int) {
 	// First fill up the pool to its hard limit
-	objects := make([]*testObject, 20)
+	objects := make([]*TestObject, 20)
 	for i := range 20 {
 		objects[i] = p.Get()
 		require.NotNil(t, objects[i])
@@ -309,19 +336,19 @@ func createComprehensiveTestConfig(t *testing.T) pool.PoolConfig {
 }
 
 // testInitialGrowth tests the initial growth behavior of the pool
-func testInitialGrowth(t *testing.T, p *pool.Pool[*testObject], numObjects int) []*testObject {
-	objects := make([]*testObject, numObjects)
+func testInitialGrowth(t *testing.T, p *pool.Pool[*TestObject], numObjects int) []*TestObject {
+	objects := make([]*TestObject, numObjects)
 	for i := range numObjects {
 		objects[i] = p.Get()
 		assert.NotNil(t, objects[i])
-		assert.Equal(t, 42, objects[i].value)
+		assert.Equal(t, 42, objects[i].Value)
 	}
 	assert.True(t, p.IsGrowth())
 	return objects
 }
 
 // testShrinkBehavior tests the shrink behavior of the pool
-func testShrinkBehavior(t *testing.T, p *pool.Pool[*testObject], objects []*testObject) {
+func testShrinkBehavior(t *testing.T, p *pool.Pool[*TestObject], objects []*TestObject) {
 	for _, obj := range objects {
 		p.Put(obj)
 	}
@@ -331,9 +358,9 @@ func testShrinkBehavior(t *testing.T, p *pool.Pool[*testObject], objects []*test
 }
 
 // testHardLimitBlocking tests the hard limit and blocking behavior of the pool
-func testHardLimitBlocking(t *testing.T, p *pool.Pool[*testObject], numObjects int) []*testObject {
+func testHardLimitBlocking(t *testing.T, p *pool.Pool[*TestObject], numObjects int) []*TestObject {
 	// First get all objects up to hard limit
-	objects := make([]*testObject, numObjects)
+	objects := make([]*TestObject, numObjects)
 	for i := range numObjects {
 		objects[i] = p.Get()
 		assert.NotNil(t, objects[i])
@@ -368,7 +395,7 @@ func testHardLimitBlocking(t *testing.T, p *pool.Pool[*testObject], numObjects i
 	return objects
 }
 
-func cleanupPoolObjects(p *pool.Pool[*testObject], objects []*testObject) {
+func cleanupPoolObjects(p *pool.Pool[*TestObject], objects []*TestObject) {
 	for _, obj := range objects {
 		if obj != nil {
 			p.Put(obj)
@@ -390,4 +417,205 @@ func testValidConfig(t *testing.T, name string, configFunc func() (pool.PoolConf
 		assert.NoError(t, err)
 		assert.NotNil(t, config)
 	})
+}
+
+type testSetup struct {
+	cm      *contexts.ContextManager
+	ctx     *contexts.MemoryContext
+	ctxType contexts.MemoryContextType
+}
+
+func setupTest(t *testing.T) *testSetup {
+	cm := contexts.NewContextManager(nil)
+	t.Cleanup(func() { cm.Close() })
+
+	ctxType := contexts.MemoryContextType("test")
+	config := contexts.MemoryContextConfig{
+		ContextType: ctxType,
+	}
+
+	ctx, exists, err := cm.GetOrCreateContext(ctxType, config)
+	if err != nil {
+		t.Fatalf("Failed to create context: %v", err)
+	}
+	if exists {
+		t.Error("Expected context to be created")
+	}
+
+	return &testSetup{
+		cm:      cm,
+		ctx:     ctx,
+		ctxType: ctxType,
+	}
+}
+
+func createTestPoolConfig(t *testing.T, initialCapacity, hardLimit int) pool.PoolConfig {
+	poolConfig, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(initialCapacity).
+		SetHardLimit(hardLimit).
+		SetMinShrinkCapacity(initialCapacity).
+		Build()
+	require.NoError(t, err)
+
+	return poolConfig
+}
+
+func TestMemoryContextCreation(t *testing.T) {
+	setup := setupTest(t)
+
+	// Verify context exists
+	if setup.ctx == nil {
+		t.Error("Expected context to be created")
+	}
+}
+
+func TestInvalidPoolCreation(t *testing.T) {
+	setup := setupTest(t)
+
+	// Test with nil allocator
+	err := setup.ctx.CreatePool(reflect.TypeOf(&TestObject{}), nil, nil, nil)
+	if err == nil {
+		t.Error("Expected error when creating pool with nil allocator")
+	}
+
+	// Test with non-pointer type
+	poolConfig, err := pool.NewPoolConfigBuilder().Build()
+	if err != nil {
+		t.Fatalf("Failed to create pool config: %v", err)
+	}
+	err = setup.ctx.CreatePool(reflect.TypeOf(TestObject{}), poolConfig, func() any { return TestObject{} }, nil)
+	if err == nil {
+		t.Error("Expected error when creating pool with non-pointer type")
+	}
+}
+
+func TestValidPoolCreation(t *testing.T) {
+	setup := setupTest(t)
+	poolConfig := createTestPoolConfig(t, 10, 100)
+
+	allocator := func() any {
+		return &TestObject{Value: 42}
+	}
+
+	cleaner := func(obj any) {
+		if to, ok := obj.(*TestObject); ok {
+			to.Value = 0
+		}
+	}
+
+	err := setup.ctx.CreatePool(reflect.TypeOf(&TestObject{}), poolConfig, allocator, cleaner)
+	if err != nil {
+		t.Fatalf("Failed to create valid pool: %v", err)
+	}
+
+	// Verify pool exists
+	poolObj := setup.ctx.GetPool(reflect.TypeOf(&TestObject{}))
+	if poolObj == nil {
+		t.Error("Expected pool to exist after creation")
+	}
+}
+
+// createTestPools creates and configures all the test pools in the given context
+func createTestPools(t *testing.T, ctx *contexts.MemoryContext) {
+	// Create processor pool
+	processorPoolConfig := createTestPoolConfig(t, 5, 20)
+	processorAllocator := func() any {
+		return &TestObject{Value: 42}
+	}
+	processorCleaner := func(obj any) {
+		if to, ok := obj.(*TestObject); ok {
+			to.Value = 0
+		}
+	}
+
+	// Create buffer pool
+	bufferPoolConfig := createTestPoolConfig(t, 10, 30)
+	bufferAllocator := func() any {
+		return &TestBuffer{
+			Data: make([]byte, 1024),
+			Size: 1024,
+		}
+	}
+	bufferCleaner := func(obj any) {
+		if tb, ok := obj.(*TestBuffer); ok {
+			tb.Data = nil
+			tb.Size = 0
+		}
+	}
+
+	// Create metadata pool
+	metadataPoolConfig := createTestPoolConfig(t, 8, 25)
+	metadataAllocator := func() any {
+		return &TestMetadata{
+			Timestamp: time.Now(),
+			Priority:  0,
+			Tags:      make([]string, 0),
+		}
+	}
+	metadataCleaner := func(obj any) {
+		if tm, ok := obj.(*TestMetadata); ok {
+			tm.Timestamp = time.Time{}
+			tm.Priority = 0
+			tm.Tags = nil
+		}
+	}
+
+	// Create all pools
+	err := ctx.CreatePool(reflect.TypeOf(&TestObject{}), processorPoolConfig, processorAllocator, processorCleaner)
+	require.NoError(t, err)
+
+	err = ctx.CreatePool(reflect.TypeOf(&TestBuffer{}), bufferPoolConfig, bufferAllocator, bufferCleaner)
+	require.NoError(t, err)
+
+	err = ctx.CreatePool(reflect.TypeOf(&TestMetadata{}), metadataPoolConfig, metadataAllocator, metadataCleaner)
+	require.NoError(t, err)
+}
+
+// processJob handles a single job using resources from the pools
+func processJob(t *testing.T, ctx *contexts.MemoryContext, jobID int) *Job {
+	// Acquire all resources needed for a job
+	processor := ctx.Acquire(reflect.TypeOf(&TestObject{}))
+	buffer := ctx.Acquire(reflect.TypeOf(&TestBuffer{}))
+	metadata := ctx.Acquire(reflect.TypeOf(&TestMetadata{}))
+
+	// Verify resources were acquired
+	assert.NotNil(t, processor, "Expected to acquire processor")
+	assert.NotNil(t, buffer, "Expected to acquire buffer")
+	assert.NotNil(t, metadata, "Expected to acquire metadata")
+
+	// Create a complete job with all resources
+	job := &Job{
+		ID:        jobID,
+		Processor: processor.(*TestObject),
+		Buffer:    buffer.(*TestBuffer),
+		Metadata:  metadata.(*TestMetadata),
+	}
+
+	// Simulate work using all resources
+	job.Metadata.Timestamp = time.Now()
+	job.Metadata.Priority = jobID % 3
+	job.Metadata.Tags = append(job.Metadata.Tags, "test")
+	job.Processor.Value = jobID
+	copy(job.Buffer.Data, []byte("test data"))
+
+	// Release all resources back to their pools
+	processorSuccess := ctx.Release(reflect.TypeOf(&TestObject{}), processor)
+	bufferSuccess := ctx.Release(reflect.TypeOf(&TestBuffer{}), buffer)
+	metadataSuccess := ctx.Release(reflect.TypeOf(&TestMetadata{}), metadata)
+
+	// Verify successful release
+	assert.True(t, processorSuccess, "Expected successful processor release")
+	assert.True(t, bufferSuccess, "Expected successful buffer release")
+	assert.True(t, metadataSuccess, "Expected successful metadata release")
+
+	return job
+}
+
+// worker processes jobs from the jobs channel and sends results to the results channel
+func worker(t *testing.T, ctx *contexts.MemoryContext, jobs <-chan int, results chan<- *Job, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for jobID := range jobs {
+		job := processJob(t, ctx, jobID)
+		results <- job
+	}
 }

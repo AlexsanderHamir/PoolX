@@ -22,7 +22,6 @@ func (p *Pool[T]) releaseObj(obj T) {
 	}
 
 	p.cleaner(obj)
-
 	for {
 		old := p.stats.objectsInUse.Load()
 		if old == 0 {
@@ -682,8 +681,7 @@ func validateAllocator[T any](allocator func() T) error {
 	return nil
 }
 
-
-func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T]) (*Pool[T], error) {
+func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T], poolType reflect.Type) (*Pool[T], error) {
 	poolObj := &Pool[T]{
 		cacheL1:   make(chan T, config.fastPath.initialSize),
 		allocator: allocator,
@@ -692,6 +690,7 @@ func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner
 		config:    config,
 		stats:     stats,
 		pool:      ringBuffer,
+		poolType:  poolType,
 	}
 
 	poolObj.cond = sync.NewCond(&poolObj.mu)

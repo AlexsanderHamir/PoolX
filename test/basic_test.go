@@ -1,6 +1,7 @@
 package test
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -19,15 +20,15 @@ func TestBasicPoolOperations(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	allocator := func() *testObject {
-		return &testObject{value: 42}
+	allocator := func() *TestObject {
+		return &TestObject{Value: 42}
 	}
 
-	cleaner := func(obj *testObject) {
-		obj.value = 0
+	cleaner := func(obj *TestObject) {
+		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner)
+	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	defer func() {
@@ -36,12 +37,12 @@ func TestBasicPoolOperations(t *testing.T) {
 
 	obj := p.Get()
 	assert.NotNil(t, obj)
-	assert.Equal(t, 42, obj.value)
+	assert.Equal(t, 42, obj.Value)
 
 	p.Put(obj)
 	obj = p.Get()
 	assert.NotNil(t, obj)
-	assert.Equal(t, 42, obj.value)
+	assert.Equal(t, 42, obj.Value)
 }
 
 // blocking mode is disabled by default, we always attempt to refill / grow,
@@ -57,21 +58,21 @@ func TestPoolGrowth(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	allocator := func() *testObject {
-		return &testObject{value: 42}
+	allocator := func() *TestObject {
+		return &TestObject{Value: 42}
 	}
 
-	cleaner := func(obj *testObject) {
-		obj.value = 0
+	cleaner := func(obj *TestObject) {
+		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner)
+	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, p.Close())
 	}()
 
-	objects := make([]*testObject, 10)
+	objects := make([]*TestObject, 10)
 	for i := range 10 {
 		objects[i] = p.Get()
 		assert.NotNil(t, objects[i])
@@ -103,22 +104,22 @@ func TestPoolShrink(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	allocator := func() *testObject {
-		return &testObject{value: 42}
+	allocator := func() *TestObject {
+		return &TestObject{Value: 42}
 	}
 
-	cleaner := func(obj *testObject) {
-		obj.value = 0
+	cleaner := func(obj *TestObject) {
+		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner)
+	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, p.Close())
 	}()
 
 	// Get and return objects to trigger shrink
-	objects := make([]*testObject, 10)
+	objects := make([]*TestObject, 10)
 	for i := range 10 {
 		objects[i] = p.Get()
 	}
@@ -177,15 +178,15 @@ func TestPoolComprehensive(t *testing.T) {
 	config := createComprehensiveTestConfig(t)
 	internalConfig := pool.ToInternalConfig(config)
 
-	allocator := func() *testObject {
-		return &testObject{value: 42}
+	allocator := func() *TestObject {
+		return &TestObject{Value: 42}
 	}
 
-	cleaner := func(obj *testObject) {
-		obj.value = 0
+	cleaner := func(obj *TestObject) {
+		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(internalConfig, allocator, cleaner)
+	p, err := pool.NewPool(internalConfig, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, p.Close())

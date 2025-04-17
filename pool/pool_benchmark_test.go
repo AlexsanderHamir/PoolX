@@ -2,6 +2,7 @@ package pool
 
 import (
 	"fmt"
+	"reflect"
 	"runtime/debug"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func setupPool(b *testing.B, config PoolConfig) *Pool[*Example] {
 		}
 	}
 
-	p, err := NewPool(ToInternalConfig(config), allocator, cleaner)
+	p, err := NewPool(ToInternalConfig(config), allocator, cleaner, reflect.TypeOf(&Example{}))
 	if err != nil {
 		b.Fatalf("Failed to create pool: %v", err)
 	}
