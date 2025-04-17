@@ -16,8 +16,12 @@ var cleaner = func(e *Example) {
 }
 
 func setupPool(b *testing.B) *Pool[*Example] {
-	config, err := NewPoolConfigBuilder().
-		SetShrinkAggressiveness(AggressivenessExtreme).
+	builder, err := NewPoolConfigBuilder().
+		SetShrinkAggressiveness(AggressivenessExtreme)
+	if err != nil {
+		b.Fatalf("Failed to set shrink aggressiveness: %v", err)
+	}
+	config, err := builder.
 		SetVerbose(true).
 		Build()
 	if err != nil {
