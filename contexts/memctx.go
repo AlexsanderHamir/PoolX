@@ -78,6 +78,10 @@ func (mc *MemoryContext) CreatePool(objectType reflect.Type, config pool.PoolCon
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
+	if mc.closed {
+		return ErrContextClosed
+	}
+
 	poolConfig := pool.ToInternalConfig(config)
 	poolObj, err := pool.NewPool(poolConfig, allocator, cleaner, objectType)
 	if err != nil {
@@ -89,8 +93,12 @@ func (mc *MemoryContext) CreatePool(objectType reflect.Type, config pool.PoolCon
 }
 
 func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+
+	if mm.closed {
+		return nil
+	}
 
 	poolObj, exists := mm.pools[objectType]
 	if !exists {
@@ -102,8 +110,12 @@ func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
 }
 
 func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+
+	if mm.closed {
+		return false
+	}
 
 	poolObj, exists := mm.pools[objectType]
 	if !exists {
