@@ -13,7 +13,7 @@ import (
 
 func TestPoolOperations(t *testing.T) {
 	setup := setupTest(t)
-	poolConfig := createTestPoolConfig(t, 2, 10)
+	poolConfig := createTestPoolConfig(t, 2, 10, false)
 
 	allocator := func() any {
 		return &TestObject{Value: 42}
@@ -108,3 +108,4 @@ func TestMemoryContextWithCorrelatedPools(t *testing.T) {
 		assert.Equal(t, numJobs, completedJobs, "Expected all jobs to complete")
 	})
 }
+

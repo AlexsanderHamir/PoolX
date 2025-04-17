@@ -449,11 +449,12 @@ func setupTest(t *testing.T) *testSetup {
 	}
 }
 
-func createTestPoolConfig(t *testing.T, initialCapacity, hardLimit int) pool.PoolConfig {
+func createTestPoolConfig(t *testing.T, initialCapacity, hardLimit int, blocking bool) pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(initialCapacity).
 		SetHardLimit(hardLimit).
 		SetMinShrinkCapacity(initialCapacity).
+		SetRingBufferBlocking(blocking).
 		Build()
 	require.NoError(t, err)
 
@@ -491,7 +492,7 @@ func TestInvalidPoolCreation(t *testing.T) {
 
 func TestValidPoolCreation(t *testing.T) {
 	setup := setupTest(t)
-	poolConfig := createTestPoolConfig(t, 10, 100)
+	poolConfig := createTestPoolConfig(t, 10, 100, false)
 
 	allocator := func() any {
 		return &TestObject{Value: 42}
@@ -518,7 +519,7 @@ func TestValidPoolCreation(t *testing.T) {
 // createTestPools creates and configures all the test pools in the given context
 func createTestPools(t *testing.T, ctx *contexts.MemoryContext) {
 	// Create processor pool
-	processorPoolConfig := createTestPoolConfig(t, 5, 20)
+	processorPoolConfig := createTestPoolConfig(t, 5, 20, false)
 	processorAllocator := func() any {
 		return &TestObject{Value: 42}
 	}
@@ -529,7 +530,7 @@ func createTestPools(t *testing.T, ctx *contexts.MemoryContext) {
 	}
 
 	// Create buffer pool
-	bufferPoolConfig := createTestPoolConfig(t, 10, 30)
+	bufferPoolConfig := createTestPoolConfig(t, 10, 30, false)
 	bufferAllocator := func() any {
 		return &TestBuffer{
 			Data: make([]byte, 1024),
@@ -544,7 +545,7 @@ func createTestPools(t *testing.T, ctx *contexts.MemoryContext) {
 	}
 
 	// Create metadata pool
-	metadataPoolConfig := createTestPoolConfig(t, 8, 25)
+	metadataPoolConfig := createTestPoolConfig(t, 8, 25, false	)
 	metadataAllocator := func() any {
 		return &TestMetadata{
 			Timestamp: time.Now(),
