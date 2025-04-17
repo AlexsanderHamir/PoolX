@@ -495,7 +495,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 // GetN returns up to n items from the buffer.
 // Returns ErrIsEmpty if the buffer is empty.
 // The returned slice will have length between 0 and n.
-func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
+func (r *RingBuffer[T]) GetN(n int) (items []T, err error) { // TODO: check why this is faster than GetAll
 	if n <= 0 {
 		return nil, nil
 	}
@@ -515,7 +515,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		if !r.waitWrite() {
 			return nil, context.DeadlineExceeded
 		}
-		// After being woken up, check if we still have an error
+
 		if err := r.readErr(true); err != nil {
 			return nil, err
 		}
@@ -625,4 +625,46 @@ func (r *RingBuffer[T]) Close() error {
 	}
 
 	return nil
+}
+
+// GetAll returns all items from the buffer and marks it as closed.
+// This is optimized for performance when you need to drain the buffer
+// and won't use it anymore. The returned slice directly references the
+// buffer's underlying array when possible to avoid copying.
+func (r *RingBuffer[T]) GetAll() (items []T, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.readErr(true); err != nil {
+		return nil, err
+	}
+
+	if r.w == r.r && !r.isFull {
+		return nil, nil
+	}
+
+	var count int
+	if r.w > r.r {
+		count = r.w - r.r
+	} else {
+		count = r.size - r.r + r.w
+	}
+
+	items = make([]T, count)
+	if r.w > r.r {
+		copy(items, r.buf[r.r:r.r+count])
+	} else {
+		c1 := r.size - r.r
+		copy(items, r.buf[r.r:r.size])
+		copy(items[c1:], r.buf[0:count-c1])
+	}
+
+	r.r = (r.r + count) % r.size
+	r.isFull = false
+
+	if r.block {
+		r.readCond.Broadcast()
+	}
+
+	return items, r.readErr(true)
 }
