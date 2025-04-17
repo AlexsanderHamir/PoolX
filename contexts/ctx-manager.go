@@ -1,69 +1,235 @@
 package contexts
 
-// import (
-// 	"sync"
-// )
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+)
 
-// type MemoryContextType int
+var (
+	ErrContextNotFound    = errors.New("context not found")
+	ErrContextInUse       = errors.New("context is currently in use")
+	ErrInvalidContextType = errors.New("invalid context type")
+	ErrContextClosed      = errors.New("context is closed")
+)
 
-// const (
-// 	TupleLevel MemoryContextType = iota + 1
-// 	AccountingLevel
-// )
+const (
+	DefaultMaxReferences   = 10
+	DefaultMaxIdleTime     = 5 * time.Minute
+	DefaultCleanupInterval = 1 * time.Minute
+)
 
-// type AllocationStrategy int
+type MemoryContextType string
 
-// const (
-// 	DefaultAllocation AllocationStrategy = iota + 1
-// 	SmallObjectAllocation
-// 	MediumObjectAllocation
-// 	LargeObjectAllocation
-// )
+type ContextManager struct {
+	mu       *sync.RWMutex
+	ctxCache map[MemoryContextType]*MemoryContext
+	config   *ContextConfig
+	stopChan chan struct{}
+}
 
-// type ContextManager struct {
-// 	mu       *sync.RWMutex
-// 	ctxCache map[MemoryContextType][]*MemoryContext // x
-// }
+type ContextConfig struct {
+	// how many goroutines can use the context at the same time.
+	MaxReferences int32
 
-// func NewContextManager() *ContextManager {
-// 	return &ContextManager{
-// 		mu:       &sync.RWMutex{},
-// 		ctxCache: map[MemoryContextType][]*MemoryContext{}, // x
-// 	}
-// }
+	// if true, the context will be automatically cleaned up when it is not in use.
+	AutoCleanup bool
 
-// // if cache type isn't cached, the method will return create a new context.
-// func (cm *ContextManager) GetOrCreateContext(ctxType MemoryContextType, config MemoryContextConfig) (*MemoryContext, bool) {
-// 	cm.mu.Lock()
-// 	defer cm.mu.Unlock()
+	// how long the context can be idle before it is automatically cleaned up.
+	MaxIdleTime time.Duration
 
-// 	var ctx *MemoryContext
-// 	var wasCached bool
+	// the interval at which the context will be cleaned up when it is not in use.
+	CleanupInterval time.Duration
+}
 
-// 	ctxs, ok := cm.ctxCache[ctxType]
-// 	if len(ctxs) == 0 || !ok {
-// 		ctx = NewMemoryContext(config)
-// 		ctx.active = true
+// NewDefaultConfig creates a new ContextConfig with default values
+func newDefaultConfig() *ContextConfig {
+	return &ContextConfig{
+		MaxReferences:   DefaultMaxReferences,
+		AutoCleanup:     true,
+		MaxIdleTime:     DefaultMaxIdleTime,
+		CleanupInterval: DefaultCleanupInterval,
+	}
+}
 
-// 		return ctx, wasCached
-// 	}
+// NewContextManager creates a new context manager with default configuration
+func NewContextManager(config *ContextConfig) *ContextManager {
+	if config == nil {
+		config = newDefaultConfig()
+	}
 
-// 	ctx = ctxs[0]
-// 	ctx.active = true
+	cm := &ContextManager{
+		mu:       &sync.RWMutex{},
+		ctxCache: make(map[MemoryContextType]*MemoryContext),
+		config:   config,
+		stopChan: make(chan struct{}),
+	}
 
-// 	cm.ctxCache[ctxType] = ctxs[1:]
-// 	wasCached = true
+	if config.AutoCleanup {
+		go cm.startCleanupRoutine()
+	}
 
-// 	return ctx, wasCached
-// }
+	return cm
+}
 
-// // caches the memory context structure for similar queries
-// func (cm *ContextManager) ReturnContext(rootCtx *MemoryContext) {
-// 	rootCtx.mu.Lock()
-// 	rootCtx.active = false
-// 	rootCtx.mu.Unlock()
+// startCleanupRoutine runs a background goroutine to clean up idle contexts
+func (cm *ContextManager) startCleanupRoutine() {
+	ticker := time.NewTicker(cm.config.CleanupInterval)
+	defer ticker.Stop()
 
-// 	cm.mu.Lock()
-// 	cm.ctxCache[rootCtx.contextType] = append(cm.ctxCache[rootCtx.contextType], rootCtx)
-// 	cm.mu.Unlock()
-// }
+	for {
+		select {
+		case <-ticker.C:
+			cm.cleanupIdleContexts()
+		case <-cm.stopChan:
+			return
+		}
+	}
+}
+
+// cleanupIdleContexts removes contexts that have been idle for too long
+func (cm *ContextManager) cleanupIdleContexts() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	now := time.Now()
+	for ctxType, ctx := range cm.ctxCache {
+		ctx.mu.RLock()
+		if !ctx.active && now.Sub(ctx.lastUsed) > cm.config.MaxIdleTime {
+			ctx.mu.RUnlock()
+			if err := cm.CloseContext(ctxType); err != nil {
+				fmt.Printf("Error closing idle context %s: %v\n", ctxType, err)
+			}
+		} else {
+			ctx.mu.RUnlock()
+		}
+	}
+}
+
+// StopCleanup stops the auto-cleanup routine
+func (cm *ContextManager) StopCleanup() {
+	close(cm.stopChan)
+}
+
+func GetOrCreateTypedPool[T any](cm *ContextManager, ctxType MemoryContextType, config MemoryContextConfig) (*TypedPool[T], bool, error) {
+	ctx, exists, err := cm.getOrCreateContext(ctxType, config)
+	if err != nil {
+		return nil, false, err
+	}
+	return NewTypedPool[T](ctx), exists, nil
+}
+
+// getOrCreateContext is the internal version of GetOrCreateContext
+func (cm *ContextManager) getOrCreateContext(ctxType MemoryContextType, config MemoryContextConfig) (*MemoryContext, bool, error) {
+	if ctxType == "" {
+		return nil, false, ErrInvalidContextType
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	ctx, ok := cm.ctxCache[ctxType]
+	if !ok {
+		ctx = NewMemoryContext(config)
+		ctx.active = true
+		ctx.referenceCount = 1
+		cm.ctxCache[ctxType] = ctx
+		return ctx, false, nil
+	}
+
+	if ctx.closed {
+		return nil, false, ErrContextClosed
+	}
+
+	ctx.active = true
+	ctx.referenceCount++
+
+	return ctx, true, nil
+}
+
+// ReturnContext returns a context to the manager and updates its state
+func (cm *ContextManager) ReturnContext(ctx *MemoryContext) error {
+	if ctx == nil {
+		return errors.New("cannot return nil context")
+	}
+
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+
+	if ctx.closed {
+		return ErrContextClosed
+	}
+
+	if ctx.referenceCount > 0 {
+		ctx.referenceCount--
+	}
+
+	ctx.active = ctx.referenceCount > 0
+
+	return nil
+}
+
+// CloseContext closes a context and removes it from the manager
+func (cm *ContextManager) CloseContext(ctxType MemoryContextType) error {
+	cm.mu.RLock()
+	ctx, ok := cm.ctxCache[ctxType]
+	if !ok {
+		return ErrContextNotFound
+	}
+	cm.mu.RUnlock()
+
+	ctx.mu.RLock()
+	if ctx.referenceCount > 0 {
+		return ErrContextInUse
+	}
+	ctx.mu.RUnlock()
+
+	if err := ctx.Close(); err != nil {
+		return fmt.Errorf("error closing context %s: %v", ctxType, err)
+	}
+
+	cm.mu.Lock()
+	delete(cm.ctxCache, ctxType)
+	cm.mu.Unlock()
+
+	return nil
+}
+
+// ValidateContext checks if a context is valid and active
+func (cm *ContextManager) ValidateContext(ctx *MemoryContext) bool {
+	if ctx == nil {
+		return false
+	}
+
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
+
+	return !ctx.closed && ctx.active
+}
+
+// Close stops the cleanup routine and closes all managed contexts
+func (cm *ContextManager) Close() error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.config.AutoCleanup {
+		cm.StopCleanup()
+	}
+
+	for ctxType := range cm.ctxCache {
+		if err := cm.CloseContext(ctxType); err != nil {
+			return fmt.Errorf("error closing context %s: %v", ctxType, err)
+		}
+	}
+
+	if cm.stopChan != nil {
+		close(cm.stopChan)
+		cm.stopChan = nil
+	}
+
+	cm.ctxCache = nil
+	cm.config = nil
+
+	return nil
+}

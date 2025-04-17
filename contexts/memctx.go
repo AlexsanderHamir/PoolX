@@ -1,118 +1,159 @@
 package contexts
 
-// import (
-// 	"fmt"
-// 	"reflect"
-// 	"sync"
-// )
+import (
+	"fmt"
+	"reflect"
+	"sync"
+	"time"
 
-// type MemoryContext struct {
-// 	active bool
-// 	mu     sync.RWMutex
+	"memctx/pool"
+)
 
-// 	name     string
-// 	parent   *MemoryContext
-// 	children []*MemoryContext
-// 	pools    map[reflect.Type]*Pool
+type MemoryContext struct {
+	active         bool
+	closed         bool
+	referenceCount int32
+	mu             sync.RWMutex
 
-// 	contextType   MemoryContextType
-// 	allocStrategy AllocationStrategy
-// }
+	contextType MemoryContextType
+	parent      *MemoryContext
+	children    []*MemoryContext
+	pools       map[reflect.Type]*pool.Pool[any]
+	createdAt   time.Time
+	lastUsed    time.Time
+}
 
-// type MemoryContextConfig struct {
-// 	Name            string
-// 	Parent          *MemoryContext
-// 	ContextType     MemoryContextType
-// 	AllocationStrat AllocationStrategy
-// }
+type MemoryContextConfig struct {
+	Parent      *MemoryContext
+	ContextType MemoryContextType
+}
 
-// func NewMemoryContext(config MemoryContextConfig) *MemoryContext {
-// 	mc := &MemoryContext{
-// 		name:          config.Name,
-// 		parent:        config.Parent,
-// 		contextType:   config.ContextType,
-// 		allocStrategy: config.AllocationStrat,
-// 		pools:         make(map[reflect.Type]*Pool),
-// 	}
+func NewMemoryContext(config MemoryContextConfig) *MemoryContext {
+	now := time.Now()
+	mc := &MemoryContext{
+		parent:      config.Parent,
+		contextType: config.ContextType,
+		pools:       make(map[reflect.Type]*pool.Pool[any]),
+		createdAt:   now,
+		lastUsed:    now,
+	}
 
-// 	return mc
-// }
+	return mc
+}
 
-// // Creates and registers a child context with the same
-// // context type as the parent.
-// func (mc *MemoryContext) CreateChild(name string) {
-// 	memCtx := mc.allocate(name)
-// 	mc.RegisterChild(memCtx)
-// }
+// Creates and registers a child context with the same
+// context type as the parent.
+func (mc *MemoryContext) CreateChild() error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
 
-// func (mc *MemoryContext) allocate(name string) *MemoryContext {
-// 	return NewMemoryContext(MemoryContextConfig{
-// 		Name:        name,
-// 		Parent:      mc,
-// 		ContextType: mc.contextType,
-// 	})
-// }
+	if mc.closed {
+		return ErrContextClosed
+	}
 
-// // Register a child with custom contex type, not the same
-// // as its parent
-// func (mc *MemoryContext) RegisterChild(child *MemoryContext) {
-// 	mc.mu.Lock()
-// 	defer mc.mu.Unlock()
-// 	mc.children = append(mc.children, child)
-// }
+	memCtx := mc.allocate()
+	mc.RegisterChild(memCtx)
 
-// // Object Methods
-// // checking github username update
-// func (mc *MemoryContext) CreatePool(objectType reflect.Type, config *PoolConfig, allocator func() any, cleaner func(any)) error {
-// 	mc.mu.Lock()
-// 	defer mc.mu.Unlock()
+	return nil
+}
 
-// 	poolObj, err := NewPool(config, allocator, cleaner)
-// 	if err != nil {
-// 		return fmt.Errorf("NewPool failed: %w", err)
-// 	}
+func (mc *MemoryContext) allocate() *MemoryContext {
+	return NewMemoryContext(MemoryContextConfig{
+		Parent:      mc,
+		ContextType: mc.contextType,
+	})
+}
 
-// 	mc.pools[objectType] = poolObj
-// 	return nil
-// }
+// Register a child with custom contex type, not the same
+// as its parent
+func (mc *MemoryContext) RegisterChild(child *MemoryContext) {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	mc.children = append(mc.children, child)
+}
 
-// func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
-// 	mm.mu.Lock()
-// 	defer mm.mu.Unlock()
+// Object Methods
+// checking github username update
+func (mc *MemoryContext) CreatePool(objectType reflect.Type, config pool.PoolConfig, allocator func() any, cleaner func(any)) error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
 
-// 	poolObj, exists := mm.pools[objectType]
-// 	if !exists {
-// 		return nil
-// 	}
+	poolConfig := pool.ToInternalConfig(config)
+	poolObj, err := pool.NewPool(poolConfig, allocator, cleaner)
+	if err != nil {
+		return fmt.Errorf("NewPool failed: %w", err)
+	}
 
-// 	obj := poolObj.get()
-// 	mm.pools[objectType] = poolObj
+	mc.pools[objectType] = poolObj
+	return nil
+}
 
-// 	return obj
-// }
+func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 
-// func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
-// 	mm.mu.Lock()
-// 	defer mm.mu.Unlock()
+	poolObj, exists := mm.pools[objectType]
+	if !exists {
+		return nil
+	}
 
-// 	poolObj, exists := mm.pools[objectType]
-// 	if !exists {
-// 		return false
-// 	}
+	obj := poolObj.Get()
+	mm.pools[objectType] = poolObj
 
-// 	poolObj.put(obj)
-// 	mm.pools[objectType] = poolObj
-// 	return true
-// }
+	return obj
+}
 
-// func (mm *MemoryContext) GetPool(objectType reflect.Type) *Pool {
-// 	mm.mu.Lock()
-// 	defer mm.mu.Unlock()
+func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
 
-// 	poolObj, exists := mm.pools[objectType]
-// 	if !exists {
-// 		return nil
-// 	}
+	poolObj, exists := mm.pools[objectType]
+	if !exists {
+		return false
+	}
 
-// 	return poolObj
-// }
+	poolObj.Put(obj)
+	mm.pools[objectType] = poolObj
+	return true
+}
+
+func (mm *MemoryContext) GetPool(objectType reflect.Type) *pool.Pool[any] {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	poolObj, exists := mm.pools[objectType]
+	if !exists {
+		return nil
+	}
+
+	return poolObj
+}
+
+func (mc *MemoryContext) Close() error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	if mc.closed {
+		return nil
+	}
+
+	for _, pool := range mc.pools {
+		if err := pool.Close(); err != nil {
+			return fmt.Errorf("failed to close pool: %w", err)
+		}
+	}
+
+	for _, child := range mc.children {
+		if err := child.Close(); err != nil {
+			return fmt.Errorf("failed to close child context: %w", err)
+		}
+	}
+
+	mc.pools = nil
+	mc.children = nil
+	mc.closed = true
+	mc.active = false
+	mc.referenceCount = 0
+
+	return nil
+}
