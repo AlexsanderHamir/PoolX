@@ -72,7 +72,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*P
 		return nil, err
 	}
 
-	go poolObj.shrink()
+	// go poolObj.shrink()
 
 	return poolObj, nil
 }
@@ -253,11 +253,10 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 
 func (p *Pool[T]) grow(now time.Time) bool {
 	cfg := p.config.growth
-	initialCap := uint64(p.config.initialCapacity)
 	currentCap := p.stats.currentCapacity.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
-	exponentialThreshold := uint64(float64(initialCap) * cfg.exponentialThresholdFactor)
-	fixedStep := uint64(float64(initialCap) * cfg.fixedGrowthFactor)
+	exponentialThreshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
+	fixedStep := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
 
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
 

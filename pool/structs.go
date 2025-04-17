@@ -10,15 +10,8 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type Pool[T any] struct {
-	cacheL1 chan T
-	pool    *RingBuffer[T]
-
-	// hardLimitResume is used to signal goroutines waiting
-	// that new objects have been returned to the pool.
-	//
-	// When the pool reaches a "hard limit" and no objects are available,
-	// goroutines calling Get() will block on this channel until a Put()
-	// call signals that an object has been returned.
+	cacheL1         chan T
+	pool            *RingBuffer[T]
 	mu              sync.RWMutex
 	cond            *sync.Cond
 	stats           *poolStats
@@ -29,7 +22,6 @@ type Pool[T any] struct {
 	cleaner   func(T)
 	allocator func() T
 
-	// Context and cancel function for graceful shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -122,7 +114,6 @@ func ToInternalConfig(config PoolConfig) *poolConfig {
 	}
 }
 
-// Getter methods for poolConfig
 func (c *poolConfig) GetInitialCapacity() int {
 	return c.initialCapacity
 }
@@ -188,7 +179,6 @@ type growthParameters struct {
 	fixedGrowthFactor float64
 }
 
-// Getter methods for growthParameters
 func (g *growthParameters) GetExponentialThresholdFactor() float64 {
 	return g.exponentialThresholdFactor
 }
@@ -256,7 +246,6 @@ type shrinkParameters struct {
 	minCapacity int
 }
 
-// Getter methods for shrinkParameters
 func (s *shrinkParameters) GetEnforceCustomConfig() bool {
 	return s.enforceCustomConfig
 }
@@ -348,7 +337,6 @@ type fastPathParameters struct {
 	enableChannelGrowth bool
 }
 
-// Getter methods for fastPathParameters
 func (f *fastPathParameters) GetInitialSize() int {
 	return f.initialSize
 }

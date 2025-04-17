@@ -882,13 +882,14 @@ func (p *Pool[T]) createNewBuffer(newCapacity uint64) *RingBuffer[T] {
 }
 
 func (p *Pool[T]) getItemsFromOldBuffer() ([]T, error) {
-	items, err := p.pool.GetN(int(p.pool.Length()))
+	items, err := p.pool.GetAll()
 	if err != nil && err != ErrIsEmpty {
 		if p.config.verbose {
 			log.Printf("[GROW] Error getting items from old ring buffer: %v", err)
 		}
 		return nil, err
 	}
+
 	return items, nil
 }
 

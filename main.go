@@ -73,9 +73,13 @@ func runWorkload() {
 		e.Age = 0
 	}
 
-	config, err := pool.NewPoolConfigBuilder().
-		SetShrinkAggressiveness(pool.AggressivenessExtreme).
-		Build()
+	builder, err := pool.NewPoolConfigBuilder().
+		SetShrinkAggressiveness(pool.AggressivenessExtreme)
+	if err != nil {
+		log.Fatalf("Failed to set shrink aggressiveness: %v", err)
+	}
+
+	config, err := builder.Build()
 	if err != nil {
 		log.Fatalf("Failed to build pool config: %v", err)
 	}
