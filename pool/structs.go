@@ -103,6 +103,10 @@ type poolConfig struct {
 }
 
 func ToInternalConfig(config PoolConfig) *poolConfig {
+	if config == nil {
+		return nil
+	}
+
 	return &poolConfig{
 		initialCapacity:  config.GetInitialCapacity(),
 		hardLimit:        config.GetHardLimit(),

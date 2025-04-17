@@ -72,7 +72,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T)) (*P
 		return nil, err
 	}
 
-	// go poolObj.shrink()
+	go poolObj.shrink()
 
 	return poolObj, nil
 }

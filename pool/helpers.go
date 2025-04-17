@@ -682,6 +682,7 @@ func validateAllocator[T any](allocator func() T) error {
 	return nil
 }
 
+
 func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T]) (*Pool[T], error) {
 	poolObj := &Pool[T]{
 		cacheL1:   make(chan T, config.fastPath.initialSize),
