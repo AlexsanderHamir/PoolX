@@ -98,7 +98,6 @@ func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
 		SetGrowthPercent(0.5).
 		SetFixedGrowthFactor(1.0).
 		SetGrowthExponentialThresholdFactor(4.0).
-		SetShrinkAggressiveness(pool.AggressivenessAggressive).
 		SetShrinkCheckInterval(2 * time.Second).
 		SetIdleThreshold(5 * time.Second).
 		SetMinIdleBeforeShrink(29).
@@ -373,11 +372,26 @@ func testHardLimitBlocking(t *testing.T, p *pool.Pool[*testObject], numObjects i
 	return objects
 }
 
-// cleanupPoolObjects returns all objects to the pool and ensures they are properly cleaned up
 func cleanupPoolObjects(p *pool.Pool[*testObject], objects []*testObject) {
 	for _, obj := range objects {
 		if obj != nil {
 			p.Put(obj)
 		}
 	}
+}
+
+func testInvalidConfig(t *testing.T, name string, configFunc func() (pool.PoolConfig, error)) {
+	t.Run(name, func(t *testing.T) {
+		config, err := configFunc()
+		assert.Error(t, err)
+		assert.Nil(t, config)
+	})
+}
+
+func testValidConfig(t *testing.T, name string, configFunc func() (pool.PoolConfig, error)) {
+	t.Run(name, func(t *testing.T) {
+		config, err := configFunc()
+		assert.NoError(t, err)
+		assert.NotNil(t, config)
+	})
 }
