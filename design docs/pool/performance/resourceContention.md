@@ -1,6 +1,3 @@
-Here's your second experiment packaged as a polished **README** that highlights the code, metrics, analysis, and your observations:
-
----
 
 # 🔄 Resource Contention Test — Object Pool Behavior Under Pressure
 
