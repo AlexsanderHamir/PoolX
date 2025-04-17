@@ -52,14 +52,17 @@ type RingBuffer[T any] struct {
 	rTimeout  time.Duration // Applies to writes (waits for the read condition)
 	wTimeout  time.Duration // Applies to read (wait for the write condition)
 	mu        sync.Mutex
-	readCond  *sync.Cond      // Signaled when data has been read.
-	writeCond *sync.Cond      // Signaled when data has been written.
-	closed    bool            // Tracks if the writer is closed
-	cancel    context.Context // Context for cancellation
+	readCond  *sync.Cond // Signaled when data has been read.
+	writeCond *sync.Cond // Signaled when data has been written.
+	closed    bool       // Tracks if the writer is closed
 }
 
 // New returns a new RingBuffer whose buffer has the given size.
 func New[T any](size int) *RingBuffer[T] {
+	if size <= 0 {
+		return nil
+	}
+
 	return &RingBuffer[T]{
 		buf:  make([]T, size),
 		size: size,
@@ -87,10 +90,6 @@ func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], e
 		rb.WithWriteTimeout(config.wTimeout)
 	}
 
-	if config.cancel != nil {
-		rb.WithCancel(config.cancel)
-	}
-
 	return rb, nil
 }
 
@@ -105,25 +104,6 @@ func (r *RingBuffer[T]) WithBlocking(block bool) *RingBuffer[T] {
 		r.readCond = sync.NewCond(&r.mu)
 		r.writeCond = sync.NewCond(&r.mu)
 	}
-	return r
-}
-
-// WithCancel sets a context to cancel the ring buffer.
-// When the context is canceled, the ring buffer will be closed with the context error.
-// A goroutine will be started and run until the provided context is canceled.
-func (r *RingBuffer[T]) WithCancel(ctx context.Context) *RingBuffer[T] {
-	r.mu.Lock()
-	r.cancel = ctx
-	r.mu.Unlock()
-
-	go func() {
-		<-ctx.Done()
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		r.closed = true
-		r.setErr(ctx.Err(), true)
-	}()
-
 	return r
 }
 
@@ -178,8 +158,8 @@ func (r *RingBuffer[T]) setErr(err error, locked bool) error {
 	}
 
 	switch err {
-	// Internal errors are transient
-	case nil, ErrIsEmpty, ErrIsFull, ErrAcquireLock, ErrTooMuchDataToWrite, ErrIsNotEmpty:
+	// Internal errors are temporary
+	case nil, ErrIsEmpty, ErrIsFull, ErrAcquireLock, ErrTooMuchDataToWrite, ErrIsNotEmpty, context.DeadlineExceeded:
 		return err
 	default:
 		r.err = err
@@ -217,7 +197,7 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 		r.readCond.Wait()
 		return true
 	}
-	
+
 	start := time.Now()
 	defer time.AfterFunc(r.rTimeout, r.readCond.Broadcast).Stop()
 
@@ -274,6 +254,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 			if !r.waitRead() {
 				return context.DeadlineExceeded
 			}
+
 			if r.isFull {
 				return ErrIsFull
 			}
@@ -485,8 +466,8 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		return item, err
 	}
 
-	// Keep waiting while the buffer is empty
-	for r.w == r.r && !r.isFull {
+	emptyBuffer := r.w == r.r
+	for emptyBuffer && !r.isFull {
 		if !r.block {
 			return item, ErrIsEmpty
 		}
@@ -494,7 +475,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		if !r.waitWrite() {
 			return item, context.DeadlineExceeded
 		}
-		// After being woken up, check if we still have an error
+
 		if err := r.readErr(true); err != nil {
 			return item, err
 		}
@@ -587,10 +568,6 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 
 	if source.wTimeout > 0 {
 		r.WithWriteTimeout(source.wTimeout)
-	}
-
-	if source.cancel != nil {
-		r.WithCancel(source.cancel)
 	}
 
 	return r

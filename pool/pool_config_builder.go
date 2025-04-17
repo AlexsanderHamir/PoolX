@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"context"
 	"fmt"
 	"time"
 )
@@ -253,13 +252,6 @@ func (b *poolConfigBuilder) SetRingBufferReadTimeout(d time.Duration) *poolConfi
 func (b *poolConfigBuilder) SetRingBufferWriteTimeout(d time.Duration) *poolConfigBuilder {
 	if d > 0 {
 		b.config.ringBufferConfig.wTimeout = d
-	}
-	return b
-}
-
-func (b *poolConfigBuilder) SetRingBufferCancel(ctx context.Context) *poolConfigBuilder {
-	if ctx != nil {
-		b.config.ringBufferConfig.cancel = ctx
 	}
 	return b
 }

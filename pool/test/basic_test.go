@@ -168,8 +168,7 @@ func TestConfigValues(t *testing.T) {
 
 	originalValues := storeDefaultConfigValues(defaultConfig)
 
-	customConfig, cancel := createCustomConfig(t)
-	defer cancel()
+	customConfig := createCustomConfig(t)
 
 	verifyCustomValuesDifferent(t, originalValues, customConfig)
 }

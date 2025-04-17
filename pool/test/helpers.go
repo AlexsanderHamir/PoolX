@@ -1,7 +1,6 @@
 package test
 
 import (
-	"context"
 	"fmt"
 	"memctx/pool"
 	"testing"
@@ -89,9 +88,7 @@ func storeDefaultConfigValues(config pool.PoolConfig) DefaultConfigValues {
 }
 
 // createCustomConfig creates a custom configuration with different values
-func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
-
+func createCustomConfig(t *testing.T) pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(100).
 		SetHardLimit(10000000028182820).
@@ -124,11 +121,10 @@ func createCustomConfig(t *testing.T) (pool.PoolConfig, context.CancelFunc) {
 		WithTimeOut(5 * time.Second).
 		SetRingBufferReadTimeout(5 * time.Second).
 		SetRingBufferWriteTimeout(5 * time.Second).
-		SetRingBufferCancel(ctx).
 		Build()
 	require.NoError(t, err)
 
-	return config, cancel
+	return config
 }
 
 // verifyCustomValuesDifferent verifies that custom values are different from default values

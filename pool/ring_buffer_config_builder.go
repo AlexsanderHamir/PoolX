@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"context"
 	"errors"
 	"time"
 )
@@ -10,7 +9,6 @@ type RingBufferConfig struct {
 	block    bool
 	rTimeout time.Duration
 	wTimeout time.Duration
-	cancel   context.Context
 }
 
 // Getter methods for RingBufferConfig
@@ -24,10 +22,6 @@ func (c *RingBufferConfig) GetReadTimeout() time.Duration {
 
 func (c *RingBufferConfig) GetWriteTimeout() time.Duration {
 	return c.wTimeout
-}
-
-func (c *RingBufferConfig) GetCancelContext() context.Context {
-	return c.cancel
 }
 
 type RingBufferConfigBuilder struct {
@@ -64,13 +58,6 @@ func (b *RingBufferConfigBuilder) WithWriteTimeout(d time.Duration) *RingBufferC
 	return b
 }
 
-// WithCancel sets a context to cancel the RingBuffer.
-// When the context is canceled, the RingBuffer will be closed with the context error.
-func (b *RingBufferConfigBuilder) WithCancel(ctx context.Context) *RingBufferConfigBuilder {
-	b.config.cancel = ctx
-	return b
-}
-
 // Build creates a new RingBuffer with the configured settings.
 func (b *RingBufferConfigBuilder) Build(size int) (*RingBuffer[any], error) {
 	if size <= 0 {
@@ -89,10 +76,6 @@ func (b *RingBufferConfigBuilder) Build(size int) (*RingBuffer[any], error) {
 
 	if b.config.wTimeout > 0 {
 		rb.WithWriteTimeout(b.config.wTimeout)
-	}
-
-	if b.config.cancel != nil {
-		rb.WithCancel(b.config.cancel)
 	}
 
 	return rb, nil

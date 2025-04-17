@@ -48,5 +48,4 @@ var defaultRingBufferConfig = &RingBufferConfig{
 	block:    false,
 	rTimeout: 0,
 	wTimeout: 0,
-	cancel:   nil,
 }
