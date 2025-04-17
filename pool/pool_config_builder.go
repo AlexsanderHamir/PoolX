@@ -2,7 +2,6 @@ package pool
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -48,24 +47,17 @@ func (b *poolConfigBuilder) SetInitialCapacity(cap int) *poolConfigBuilder {
 }
 
 func (b *poolConfigBuilder) SetGrowthExponentialThresholdFactor(factor float64) *poolConfigBuilder {
-
-	if factor > 0 {
-		b.config.growth.exponentialThresholdFactor = factor
-	}
+	b.config.growth.exponentialThresholdFactor = factor
 	return b
 }
 
 func (b *poolConfigBuilder) SetGrowthPercent(percent float64) *poolConfigBuilder {
-	if percent > 0 {
-		b.config.growth.growthPercent = percent
-	}
+	b.config.growth.growthPercent = percent
 	return b
 }
 
 func (b *poolConfigBuilder) SetFixedGrowthFactor(factor float64) *poolConfigBuilder {
-	if factor > 0 {
-		b.config.growth.fixedGrowthFactor = factor
-	}
+	b.config.growth.fixedGrowthFactor = factor
 	return b
 }
 
@@ -88,32 +80,24 @@ func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
 // Calling this will override individual shrink settings by applying preset defaults.
 // Use levels between aggressivenessConservative (1) and AggressivenessExtreme (5).
 // (can't call this function if you enable EnforceCustomConfig)
-func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) (*poolConfigBuilder, error) {
 	if b.config.shrink.enforceCustomConfig {
-		panic("can't set AggressivenessLevel if EnforceCustomConfig is active")
+		return nil, fmt.Errorf("cannot set AggressivenessLevel when EnforceCustomConfig is active")
 	}
 
 	if level <= AggressivenessDisabled || level > AggressivenessExtreme {
-		panic("aggressive level is out of bounds")
+		return nil, fmt.Errorf("aggressiveness level %d is out of bounds, must be between %d and %d",
+			level, AggressivenessDisabled+1, AggressivenessExtreme)
 	}
 
-	newBuilder := *b
+	b.config.shrink.aggressivenessLevel = level
+	b.config.shrink.ApplyDefaults(getShrinkDefaultsMap())
 
-	// Create copies of all structures
-	copiedShrink := *b.config.shrink
-	copiedFastPathShrink := *b.config.fastPath.shrink
+	b.config.fastPath.shrink.aggressivenessLevel = level
+	b.config.fastPath.shrink.ApplyDefaults(getShrinkDefaultsMap())
+	b.config.fastPath.shrink.minCapacity = defaultL1MinCapacity
 
-	copiedShrink.aggressivenessLevel = level
-	copiedShrink.ApplyDefaults(getShrinkDefaultsMap())
-
-	copiedFastPathShrink.aggressivenessLevel = level
-	copiedFastPathShrink.ApplyDefaults(getShrinkDefaultsMap())
-	copiedFastPathShrink.minCapacity = defaultL1MinCapacity
-
-	newBuilder.config.shrink = &copiedShrink
-	newBuilder.config.fastPath.shrink = &copiedFastPathShrink
-
-	return &newBuilder
+	return b, nil
 }
 
 func (b *poolConfigBuilder) SetShrinkCheckInterval(interval time.Duration) *poolConfigBuilder {
@@ -280,103 +264,23 @@ func (b *poolConfigBuilder) SetRingBufferCancel(ctx context.Context) *poolConfig
 	return b
 }
 
+// Build creates a new pool configuration with the configured settings.
+// It validates all configuration parameters and returns an error if any validation fails.
 func (b *poolConfigBuilder) Build() (*poolConfig, error) {
-	if b.config.initialCapacity <= 0 {
-		return nil, fmt.Errorf("InitialCapacity must be greater than 0")
+	if err := b.validateBasicConfig(); err != nil {
+		return nil, fmt.Errorf("basic configuration validation failed: %w", err)
 	}
 
-	if b.config.hardLimit <= 0 {
-		return nil, fmt.Errorf("HardLimit must be greater than 0")
+	if err := b.validateShrinkConfig(); err != nil {
+		return nil, fmt.Errorf("shrink configuration validation failed: %w", err)
 	}
 
-	if b.config.hardLimit < b.config.initialCapacity {
-		return nil, fmt.Errorf("HardLimit must be >= InitialCapacity")
-	}
-	if b.config.hardLimit < b.config.shrink.minCapacity {
-		fmt.Printf("HardLimit: %d, MinCapacity: %d\n", b.config.hardLimit, b.config.shrink.minCapacity)
-		return nil, fmt.Errorf("HardLimit must be >= MinCapacity")
+	if err := b.validateGrowthConfig(); err != nil {
+		return nil, fmt.Errorf("growth configuration validation failed: %w", err)
 	}
 
-	sp := b.config.shrink
-	if sp.enforceCustomConfig {
-		switch {
-		case sp.maxConsecutiveShrinks <= 0:
-			return nil, errors.New("MaxConsecutiveShrinks must be greater than 0")
-		case sp.checkInterval <= 0:
-			return nil, errors.New("CheckInterval must be greater than 0")
-		case sp.idleThreshold <= 0:
-			return nil, errors.New("IdleThreshold must be greater than 0")
-		case sp.minIdleBeforeShrink <= 0:
-			return nil, errors.New("MinIdleBeforeShrink must be greater than 0")
-		case sp.idleThreshold < sp.checkInterval:
-			return nil, errors.New("IdleThreshold must be >= CheckInterval")
-		case sp.minCapacity > b.config.initialCapacity:
-			return nil, errors.New("MinCapacity must be <= InitialCapacity")
-		case sp.shrinkCooldown <= 0:
-			return nil, errors.New("ShrinkCooldown must be greater than 0")
-		case sp.minUtilizationBeforeShrink <= 0 || sp.minUtilizationBeforeShrink > 1.0:
-			return nil, errors.New("MinUtilizationBeforeShrink must be between 0 and 1.0")
-		case sp.stableUnderutilizationRounds <= 0:
-			return nil, errors.New("StableUnderutilizationRounds must be greater than 0")
-		case sp.shrinkPercent <= 0 || sp.shrinkPercent > 1.0:
-			return nil, errors.New("ShrinkPercent must be between 0 and 1.0")
-		case sp.minCapacity <= 0:
-			return nil, errors.New("MinCapacity must be greater than 0")
-		}
-	}
-
-	gp := b.config.growth
-	if gp.exponentialThresholdFactor <= 0 {
-		return nil, errors.New("ExponentialThresholdFactor must be greater than 0")
-	}
-
-	if gp.growthPercent <= 0 {
-		return nil, fmt.Errorf("GrowthPercent must be > 0 (you gave %.2f)", gp.growthPercent)
-	}
-
-	if gp.fixedGrowthFactor <= 0 {
-		return nil, fmt.Errorf("FixedGrowthFactor must be > 0 (you gave %.2f)", gp.fixedGrowthFactor)
-	}
-
-	fp := b.config.fastPath
-	if fp.initialSize <= 0 {
-		return nil, fmt.Errorf("initialSize must be > 0")
-	}
-
-	if fp.fillAggressiveness <= 0 || fp.fillAggressiveness > 1.0 {
-		return nil, fmt.Errorf("fillAggressiveness  must be between 0 and 1.0")
-	}
-
-	if fp.refillPercent <= 0 || fp.refillPercent >= 1.0 {
-		return nil, fmt.Errorf("refillPercent must be between 0 and 0.99")
-	}
-
-	if fp.growthEventsTrigger <= 0 {
-		return nil, fmt.Errorf("growthEventsTrigger must be greater than 0")
-	}
-
-	if fp.growth.exponentialThresholdFactor <= 0 {
-		return nil, fmt.Errorf("exponentialThresholdFactor must be greater than 0")
-	}
-
-	if fp.growth.growthPercent <= 0 {
-		return nil, fmt.Errorf("growthPercent must be greater than 0")
-	}
-
-	if fp.growth.fixedGrowthFactor <= 0 {
-		return nil, fmt.Errorf("fixedGrowthFactor must be greater than 0")
-	}
-
-	if fp.shrinkEventsTrigger <= 0 {
-		return nil, fmt.Errorf("shrinkEventsTrigger must be greater than 0")
-	}
-
-	if fp.shrink.minCapacity <= 0 {
-		return nil, fmt.Errorf("minCapacity must be greater than 0")
-	}
-
-	if fp.shrink.shrinkPercent <= 0 {
-		return nil, fmt.Errorf("shrinkPercent must be greater than 0")
+	if err := b.validateFastPathConfig(); err != nil {
+		return nil, fmt.Errorf("fast path configuration validation failed: %w", err)
 	}
 
 	return b.config, nil
