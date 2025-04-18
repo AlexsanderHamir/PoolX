@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"maps"
 	"memctx/pool"
 )
 
@@ -28,6 +29,13 @@ type MemoryContextConfig struct {
 	ContextType MemoryContextType
 }
 
+// getter for the children
+func (mc *MemoryContext) GetChildren() []*MemoryContext {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	return mc.children
+}
+
 func NewMemoryContext(config MemoryContextConfig) *MemoryContext {
 	now := time.Now()
 	mc := &MemoryContext{
@@ -43,32 +51,36 @@ func NewMemoryContext(config MemoryContextConfig) *MemoryContext {
 
 // Creates and registers a child context with the same
 // context type as the parent.
-func (mc *MemoryContext) CreateChild() error {
+func (mc *MemoryContext) CreateChild() (*MemoryContext, error) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	if mc.closed {
-		return ErrContextClosed
+		return nil, ErrContextClosed
 	}
 
 	memCtx := mc.allocate()
 	mc.RegisterChild(memCtx)
 
-	return nil
+	return memCtx, nil
 }
 
 func (mc *MemoryContext) allocate() *MemoryContext {
-	return NewMemoryContext(MemoryContextConfig{
+	child := NewMemoryContext(MemoryContextConfig{
 		Parent:      mc,
 		ContextType: mc.contextType,
 	})
+
+	if mc.pools != nil {
+		maps.Copy(child.pools, mc.pools)
+	}
+
+	return child
 }
 
 // Register a child with custom contex type, not the same
 // as its parent
 func (mc *MemoryContext) RegisterChild(child *MemoryContext) {
-	mc.mu.Lock()
-	defer mc.mu.Unlock()
 	mc.children = append(mc.children, child)
 }
 
@@ -147,7 +159,7 @@ func (mc *MemoryContext) Close() error {
 	defer mc.mu.Unlock()
 
 	if mc.closed {
-		return nil
+		return fmt.Errorf("context already closed")
 	}
 
 	for _, pool := range mc.pools {
@@ -162,9 +174,9 @@ func (mc *MemoryContext) Close() error {
 		}
 	}
 
+	mc.closed = true
 	mc.pools = nil
 	mc.children = nil
-	mc.closed = true
 	mc.active = false
 	mc.referenceCount = 0
 
