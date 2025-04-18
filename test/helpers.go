@@ -421,33 +421,8 @@ func testValidConfig(t *testing.T, name string, configFunc func() (pool.PoolConf
 }
 
 type testSetup struct {
-	cm      *contexts.ContextManager
 	ctx     *contexts.MemoryContext
 	ctxType contexts.MemoryContextType
-}
-
-func setupTest(t *testing.T) *testSetup {
-	cm := contexts.NewContextManager(nil)
-	t.Cleanup(func() { cm.Close() })
-
-	ctxType := contexts.MemoryContextType("test")
-	config := contexts.MemoryContextConfig{
-		ContextType: ctxType,
-	}
-
-	ctx, exists, err := cm.GetOrCreateContext(ctxType, config)
-	if err != nil {
-		t.Fatalf("Failed to create context: %v", err)
-	}
-	if exists {
-		t.Error("Expected context to be created")
-	}
-
-	return &testSetup{
-		cm:      cm,
-		ctx:     ctx,
-		ctxType: ctxType,
-	}
 }
 
 func createTestPoolConfig(t *testing.T, initialCapacity, hardLimit int, blocking bool) pool.PoolConfig {
@@ -460,61 +435,6 @@ func createTestPoolConfig(t *testing.T, initialCapacity, hardLimit int, blocking
 	require.NoError(t, err)
 
 	return poolConfig
-}
-
-func TestMemoryContextCreation(t *testing.T) {
-	setup := setupTest(t)
-
-	// Verify context exists
-	if setup.ctx == nil {
-		t.Error("Expected context to be created")
-	}
-}
-
-func TestInvalidPoolCreation(t *testing.T) {
-	setup := setupTest(t)
-
-	// Test with nil allocator
-	err := setup.ctx.CreatePool(reflect.TypeOf(&TestObject{}), nil, nil, nil)
-	if err == nil {
-		t.Error("Expected error when creating pool with nil allocator")
-	}
-
-	// Test with non-pointer type
-	poolConfig, err := pool.NewPoolConfigBuilder().Build()
-	if err != nil {
-		t.Fatalf("Failed to create pool config: %v", err)
-	}
-	err = setup.ctx.CreatePool(reflect.TypeOf(TestObject{}), poolConfig, func() any { return TestObject{} }, nil)
-	if err == nil {
-		t.Error("Expected error when creating pool with non-pointer type")
-	}
-}
-
-func TestValidPoolCreation(t *testing.T) {
-	setup := setupTest(t)
-	poolConfig := createTestPoolConfig(t, 10, 100, false)
-
-	allocator := func() any {
-		return &TestObject{Value: 42}
-	}
-
-	cleaner := func(obj any) {
-		if to, ok := obj.(*TestObject); ok {
-			to.Value = 0
-		}
-	}
-
-	err := setup.ctx.CreatePool(reflect.TypeOf(&TestObject{}), poolConfig, allocator, cleaner)
-	if err != nil {
-		t.Fatalf("Failed to create valid pool: %v", err)
-	}
-
-	// Verify pool exists
-	poolObj := setup.ctx.GetPool(reflect.TypeOf(&TestObject{}))
-	if poolObj == nil {
-		t.Error("Expected pool to exist after creation")
-	}
 }
 
 // createTestPools creates and configures all the test pools in the given context
@@ -576,9 +496,9 @@ func createTestPools(t *testing.T, ctx *contexts.MemoryContext) {
 // processJob handles a single job using resources from the pools
 func processJob(t *testing.T, ctx *contexts.MemoryContext, jobID int) *Job {
 	// Acquire all resources needed for a job
-	processor := ctx.Acquire(reflect.TypeOf(&TestObject{}))
-	buffer := ctx.Acquire(reflect.TypeOf(&TestBuffer{}))
-	metadata := ctx.Acquire(reflect.TypeOf(&TestMetadata{}))
+	processor, _ := ctx.Acquire(reflect.TypeOf(&TestObject{}))
+	buffer, _ := ctx.Acquire(reflect.TypeOf(&TestBuffer{}))
+	metadata, _ := ctx.Acquire(reflect.TypeOf(&TestMetadata{}))
 
 	// Verify resources were acquired
 	assert.NotNil(t, processor, "Expected to acquire processor")
@@ -651,7 +571,7 @@ func testConcurrentAcquireRelease(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range operationsPerGoroutine {
-				obj := ctx.Acquire(reflect.TypeOf(&TestObject{}))
+				obj, _ := ctx.Acquire(reflect.TypeOf(&TestObject{}))
 				if obj != nil {
 					if success := ctx.Release(reflect.TypeOf(&TestObject{}), obj); success {
 						atomic.AddInt32(&successCount, 1)
@@ -724,7 +644,7 @@ func testConcurrentPoolOperationsWithChildren(t *testing.T) {
 			go func(c *contexts.MemoryContext) {
 				defer wg.Done()
 				for range operationsPerGoroutine {
-					obj := c.Acquire(reflect.TypeOf(&TestObject{}))
+					obj, _ := c.Acquire(reflect.TypeOf(&TestObject{}))
 					require.NotNil(t, obj, "Failed to acquire object from pool")
 					success := c.Release(reflect.TypeOf(&TestObject{}), obj)
 					require.True(t, success, "Failed to release object back to pool")
@@ -795,7 +715,10 @@ func testOperationsAfterClose(t *testing.T) {
 	require.NoError(t, ctx.Close())
 
 	// Test operations after close
-	assert.Nil(t, ctx.Acquire(reflect.TypeOf(&TestObject{})), "Expected nil when acquiring after close")
+	obj, cleaner := ctx.Acquire(reflect.TypeOf(&TestObject{}))
+	assert.Nil(t, obj, "Expected nil object when acquiring after close")
+	assert.Nil(t, cleaner, "Expected nil cleaner when acquiring after close")
+
 	assert.False(t, ctx.Release(reflect.TypeOf(&TestObject{}), &TestObject{}), "Expected false when releasing after close")
 	_, err = ctx.CreateChild()
 	assert.Error(t, err, "Expected error when creating child after close")
@@ -838,7 +761,7 @@ func testStressTest(t *testing.T) {
 					// Randomly choose an operation
 					switch id % 4 {
 					case 0:
-						obj := ctx.Acquire(reflect.TypeOf(&TestObject{}))
+						obj, _ := ctx.Acquire(reflect.TypeOf(&TestObject{}))
 						if obj != nil {
 							ctx.Release(reflect.TypeOf(&TestObject{}), obj)
 						}

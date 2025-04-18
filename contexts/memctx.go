@@ -1,20 +1,28 @@
 package contexts
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 	"time"
 
 	"maps"
+
 	"github.com/AlexsanderHamir/memory_context/pool"
 )
 
+var (
+	ErrContextNotFound    = errors.New("context not found")
+	ErrInvalidContextType = errors.New("invalid context type")
+	ErrContextClosed      = errors.New("context is closed")
+)
+
+type MemoryContextType string
+
 type MemoryContext struct {
-	active         bool
-	closed         bool
-	referenceCount int32
-	mu             sync.RWMutex
+	closed bool
+	mu     sync.RWMutex
 
 	contextType MemoryContextType
 	parent      *MemoryContext
@@ -104,26 +112,33 @@ func (mc *MemoryContext) CreatePool(objectType reflect.Type, config pool.PoolCon
 	return nil
 }
 
-func (mm *MemoryContext) Acquire(objectType reflect.Type) any {
+func (mm *MemoryContext) Acquire(objectType reflect.Type) (any, func(any)) {
 	mm.mu.RLock()
-	defer mm.mu.RUnlock()
-
 	if mm.closed {
-		return nil
+		return nil, nil
 	}
 
 	poolObj, exists := mm.pools[objectType]
 	if !exists {
-		return nil
+		return nil, nil
 	}
+	mm.mu.RUnlock()
 
 	obj := poolObj.Get()
-	return obj
+
+	return obj, poolObj.Cleaner()
+}
+
+// get cleaner from pool
+func (mm *MemoryContext) GetCleaner(objectType reflect.Type) func(any) {
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+
+	return mm.pools[objectType].Cleaner()
 }
 
 func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
 	mm.mu.RLock()
-	defer mm.mu.RUnlock()
 
 	if mm.closed {
 		return false
@@ -133,6 +148,8 @@ func (mm *MemoryContext) Release(objectType reflect.Type, obj any) bool {
 	if !exists {
 		return false
 	}
+
+	mm.mu.RUnlock()
 
 	if reflect.TypeOf(obj) != objectType {
 		return false
@@ -177,8 +194,6 @@ func (mc *MemoryContext) Close() error {
 	mc.closed = true
 	mc.pools = nil
 	mc.children = nil
-	mc.active = false
-	mc.referenceCount = 0
 
 	return nil
 }
