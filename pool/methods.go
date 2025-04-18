@@ -77,6 +77,11 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T), poo
 	return poolObj, nil
 }
 
+// return the cleaner function
+func (p *Pool[T]) Cleaner() func(T) {
+	return p.cleaner
+}
+
 func (p *Pool[T]) Get() (zero T) {
 	p.handleShrinkBlocked()
 
@@ -97,7 +102,9 @@ func (p *Pool[T]) Get() (zero T) {
 		return obj
 	}
 
+	fmt.Println("DEBUGAI: slowpath")
 	obj := p.slowPath()
+	fmt.Println("DEBUGAI: slowpath done")
 	if p.config.verbose {
 		var zero T
 		if reflect.DeepEqual(obj, zero) {
@@ -117,12 +124,17 @@ func (p *Pool[T]) Put(obj T) {
 		log.Printf("[PUT] Releasing object")
 	}
 
-	if p.stats.blockedGets.Load() > 0 {
+	blockedGets := p.stats.blockedGets.Load()
+	if blockedGets > 0 {
+		fmt.Println("DEBUGAI: blocked on put, blockedGets", blockedGets)
 		p.slowPathPut(obj)
 		return
 	}
 
+	fmt.Println("DEBUGAI: try fast path put")
 	if p.tryFastPathPut(obj) {
+		fmt.Println("DEBUGAI: fast path put success")
+		fmt.Println("DEBUGAI: blockedGets", p.stats.blockedGets.Load())
 		return
 	}
 
