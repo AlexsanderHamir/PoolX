@@ -766,9 +766,11 @@ func (p *Pool[T]) tryFastPathPut(obj T) bool {
 }
 
 func (p *Pool[T]) slowPathPut(obj T) {
+	fmt.Println("DEBUGAI: slowpath put blocked")
 	if err := p.pool.Write(obj); err != nil { // WARNING - writing to a full ring buffer will block.
-		p.logPut(fmt.Sprintf("Error writing to ring buffer: %v", err))
+		panic(err)
 	}
+	fmt.Println("DEBUGAI: slowpath put unblocked")
 
 	p.stats.FastReturnMiss.Add(1)
 	p.logPut("slow path put unblocked")
