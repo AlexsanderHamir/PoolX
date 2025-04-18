@@ -1,4 +1,4 @@
-module github.com/AlexsanderHamir/memory_context/v1.0.2
+module github.com/AlexsanderHamir/memory_context
 
 go 1.23.4
 
