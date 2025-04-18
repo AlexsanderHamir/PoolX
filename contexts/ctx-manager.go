@@ -8,16 +8,22 @@ import (
 )
 
 var (
-	ErrContextNotFound    = errors.New("context not found")
-	ErrContextInUse       = errors.New("context is currently in use")
-	ErrInvalidContextType = errors.New("invalid context type")
-	ErrContextClosed      = errors.New("context is closed")
+	ErrContextNotFound      = errors.New("context not found")
+	ErrContextInUse         = errors.New("context is currently in use")
+	ErrInvalidContextType   = errors.New("invalid context type")
+	ErrContextClosed        = errors.New("context is closed")
+	ErrContextManagerClosed = errors.New("context manager is closed")
+	ErrMaxReferencesReached = errors.New("maximum references reached")
+	ErrInvalidConfig        = errors.New("invalid configuration")
 )
 
 const (
 	DefaultMaxReferences   = 10
 	DefaultMaxIdleTime     = 5 * time.Minute
 	DefaultCleanupInterval = 1 * time.Minute
+	MinMaxReferences       = 1
+	MinMaxIdleTime         = 1 * time.Second
+	MinCleanupInterval     = 1 * time.Second
 )
 
 type MemoryContextType string
@@ -27,14 +33,12 @@ type ContextManager struct {
 	ctxCache map[MemoryContextType]*MemoryContext
 	config   *ContextConfig
 	stopChan chan struct{}
+	closed   bool
 }
 
 type ContextConfig struct {
 	// how many goroutines can use the context at the same time.
 	MaxReferences int32
-
-	// if true, the context will be automatically cleaned up when it is not in use.
-	AutoCleanup bool
 
 	// how long the context can be idle before it is automatically cleaned up.
 	MaxIdleTime time.Duration
@@ -47,7 +51,6 @@ type ContextConfig struct {
 func newDefaultConfig() *ContextConfig {
 	return &ContextConfig{
 		MaxReferences:   DefaultMaxReferences,
-		AutoCleanup:     true,
 		MaxIdleTime:     DefaultMaxIdleTime,
 		CleanupInterval: DefaultCleanupInterval,
 	}
@@ -66,7 +69,7 @@ func NewContextManager(config *ContextConfig) *ContextManager {
 		stopChan: make(chan struct{}),
 	}
 
-	if config.AutoCleanup {
+	if config.CleanupInterval > 0 {
 		go cm.startCleanupRoutine()
 	}
 
@@ -90,22 +93,14 @@ func (cm *ContextManager) startCleanupRoutine() {
 
 // cleanupIdleContexts removes contexts that have been idle for too long
 func (cm *ContextManager) cleanupIdleContexts() {
-	cm.mu.RLock()
-	// First collect all contexts that need to be closed
-	var contextsToClose []MemoryContextType
-	for ctxType, ctx := range cm.ctxCache {
-		ctx.mu.RLock()
-		if !ctx.active && time.Since(ctx.lastUsed) > cm.config.MaxIdleTime {
-			contextsToClose = append(contextsToClose, ctxType)
-		}
-		ctx.mu.RUnlock()
-	}
-	cm.mu.RUnlock()
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
-	// Then close them one by one
-	for _, ctxType := range contextsToClose {
-		if err := cm.CloseContext(ctxType); err != nil {
-			fmt.Printf("Error closing idle context %s: %v\n", ctxType, err)
+	for ctxType, ctx := range cm.ctxCache {
+		if !ctx.active && time.Since(ctx.lastUsed) > cm.config.MaxIdleTime {
+			if err := cm.CloseContext(ctxType, true); err != nil {
+				fmt.Printf("Error closing idle context %s: %v\n", ctxType, err)
+			}
 		}
 	}
 }
@@ -137,7 +132,12 @@ func (cm *ContextManager) GetOrCreateContext(ctxType MemoryContextType, config M
 		return nil, false, ErrContextClosed
 	}
 
-	ctx.active = true
+	// Check if we've reached the maximum number of references
+	maxRefEnabled := cm.config.MaxReferences > 0
+	if maxRefEnabled && ctx.referenceCount >= cm.config.MaxReferences {
+		return nil, false, ErrMaxReferencesReached
+	}
+
 	ctx.referenceCount++
 
 	return ctx, true, nil
@@ -166,9 +166,11 @@ func (cm *ContextManager) ReturnContext(ctx *MemoryContext) error {
 }
 
 // CloseContext closes a context and removes it from the manager
-func (cm *ContextManager) CloseContext(ctxType MemoryContextType) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+func (cm *ContextManager) CloseContext(ctxType MemoryContextType, locked bool) error {
+	if !locked {
+		cm.mu.Lock()
+		defer cm.mu.Unlock()
+	}
 
 	ctx, ok := cm.ctxCache[ctxType]
 	if !ok {
@@ -205,15 +207,20 @@ func (cm *ContextManager) ValidateContext(ctx *MemoryContext) bool {
 
 // Close stops the cleanup routine and closes all managed contexts
 func (cm *ContextManager) Close() error {
-	cm.mu.Lock()
+	cm.mu.RLock()
 
-	if cm.config.AutoCleanup {
+	if cm.closed {
+		cm.mu.RUnlock()
+		return ErrContextManagerClosed
+	}
+
+	if cm.config.CleanupInterval > 0 {
 		cm.StopCleanup()
 	}
 
-	cm.mu.Unlock()
+	cm.mu.RUnlock()
 	for ctxType := range cm.ctxCache {
-		if err := cm.CloseContext(ctxType); err != nil {
+		if err := cm.CloseContext(ctxType, false); err != nil {
 			return fmt.Errorf("error closing context %s: %v", ctxType, err)
 		}
 	}
@@ -221,13 +228,10 @@ func (cm *ContextManager) Close() error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	if cm.stopChan != nil {
-		close(cm.stopChan)
-		cm.stopChan = nil
-	}
-
+	cm.stopChan = nil
 	cm.ctxCache = nil
 	cm.config = nil
+	cm.closed = true
 
 	return nil
 }
