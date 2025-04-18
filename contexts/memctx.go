@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"maps"
-	"github.com/AlexsanderHamir/memory_context/pool"
+	"github.com/AlexsanderHamir/memory_context/v1.0.2/pool"
 )
 
 type MemoryContext struct {
