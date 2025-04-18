@@ -1,4 +1,4 @@
-module memctx
+module github.com/AlexsanderHamir/memory_context
 
 go 1.23.4
 
