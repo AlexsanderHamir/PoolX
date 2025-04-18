@@ -972,7 +972,6 @@ func (p *Pool[T]) resetPoolState() {
 	p.isShrinkBlocked = false
 	p.allocator = nil
 	p.cleaner = nil
-	p.ctx = nil
 }
 
 func (b *poolConfigBuilder) validateBasicConfig() error {
