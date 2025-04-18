@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"memctx/pool"
+	"github.com/AlexsanderHamir/memory_context/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

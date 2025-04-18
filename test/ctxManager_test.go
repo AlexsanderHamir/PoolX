@@ -1,7 +1,7 @@
 package test
 
 import (
-	"memctx/contexts"
+	"github.com/AlexsanderHamir/memory_context/contexts"
 	"sync"
 	"sync/atomic"
 	"testing"

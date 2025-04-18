@@ -2,9 +2,10 @@ package test
 
 import (
 	"context"
-	"memctx/pool"
 	"testing"
 	"time"
+
+	"github.com/AlexsanderHamir/memory_context/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

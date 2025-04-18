@@ -2,8 +2,8 @@ package test
 
 import (
 	"fmt"
-	"memctx/contexts"
-	"memctx/pool"
+	"github.com/AlexsanderHamir/memory_context/contexts"
+	"github.com/AlexsanderHamir/memory_context/pool"
 	"reflect"
 	"sync"
 	"sync/atomic"
