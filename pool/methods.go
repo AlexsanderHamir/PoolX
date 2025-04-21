@@ -86,7 +86,7 @@ func (p *Pool[T]) Get() T {
 	p.handleShrinkBlocked()
 
 	if obj, found := p.tryGetFromL1(); found {
-		p.validateReturnedObject(obj, "L1")
+		p.warningIfZero(obj, "L1")
 		return obj
 	}
 
@@ -95,9 +95,29 @@ func (p *Pool[T]) Get() T {
 	}
 
 	obj := p.slowPath()
-	p.validateReturnedObject(obj, "slowPath")
+	p.warningIfZero(obj, "slowPath")
 	p.recordSlowPathStats()
 	return obj
+}
+
+func (p *Pool[T]) Put(obj T) {
+	p.releaseObj(obj)
+
+	if p.config.verbose {
+		log.Printf("[PUT] Releasing object")
+	}
+
+	blockedReaders := p.pool.GetBlockedReaders()
+	if blockedReaders > 0 {
+		p.slowPathPut(obj)
+		return
+	}
+
+	if p.tryFastPathPut(obj) {
+		return
+	}
+
+	p.slowPathPut(obj)
 }
 
 func (p *Pool[T]) tryRefillAndGetL1() T {
@@ -109,7 +129,7 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 	}
 
 	if obj, found := p.tryGetFromL1(); found {
-		p.validateReturnedObject(obj, "L1 after refill")
+		p.warningIfZero(obj, "L1 after refill")
 		return obj
 	}
 
@@ -117,12 +137,8 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 	return zero
 }
 
-func (p *Pool[T]) validateReturnedObject(obj T, source string) {
-	if !p.config.verbose {
-		return
-	}
-
-	if isZero(obj) {
+func (p *Pool[T]) warningIfZero(obj T, source string) {
+	if isZero(obj) && p.config.verbose {
 		log.Printf("[GET] Warning: %s returned zero value", source)
 	}
 }
@@ -136,30 +152,6 @@ func (p *Pool[T]) recordSlowPathStats() {
 func isZero[T any](obj T) bool {
 	var zero T
 	return reflect.DeepEqual(obj, zero)
-}
-
-func (p *Pool[T]) Put(obj T) {
-	p.releaseObj(obj)
-
-	if p.config.verbose {
-		log.Printf("[PUT] Releasing object")
-	}
-
-	blockedGets := p.stats.blockedGets.Load()
-	if blockedGets > 0 {
-		fmt.Println("DEBUGAI: blocked on put, blockedGets", blockedGets)
-		p.slowPathPut(obj)
-		return
-	}
-
-	fmt.Println("DEBUGAI: try fast path put")
-	if p.tryFastPathPut(obj) {
-		fmt.Println("DEBUGAI: fast path put success")
-		fmt.Println("DEBUGAI: blockedGets", p.stats.blockedGets.Load())
-		return
-	}
-
-	p.slowPathPut(obj)
 }
 
 func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
@@ -190,7 +182,6 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the pool before calling the slow path.
 func (p *Pool[T]) slowPath() (obj T) {
-	p.stats.blockedGets.Add(1)
 	obj, err := p.pool.GetOne()
 	if err != nil {
 		if p.config.verbose {
@@ -198,7 +189,6 @@ func (p *Pool[T]) slowPath() (obj T) {
 		}
 		return obj
 	}
-	p.stats.blockedGets.Add(^uint64(0))
 
 	if p.config.verbose {
 		log.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
@@ -239,7 +229,6 @@ func (p *Pool[T]) shrink() {
 			}
 
 			p.performShrinkChecks(params, &idleCount, &underutilCount, &idleOK, &utilOK)
-
 			if idleOK || utilOK {
 				p.executeShrink(&idleCount, &underutilCount, &idleOK, &utilOK)
 			}
@@ -284,6 +273,9 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 }
 
 func (p *Pool[T]) grow(now time.Time) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
@@ -291,7 +283,6 @@ func (p *Pool[T]) grow(now time.Time) bool {
 	fixedStep := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
 
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
-
 	if p.needsToShrinkToHardLimit(newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
 		if p.config.verbose {
@@ -311,17 +302,18 @@ func (p *Pool[T]) grow(now time.Time) bool {
 
 	p.pool = newRingBuffer
 	p.stats.currentCapacity.Store(newCapacity)
+
 	p.stats.lastGrowTime = now
 	p.stats.l3MissCount.Add(1)
 	p.stats.totalGrowthEvents.Add(1)
 	p.reduceL1Hit()
 
-	p.tryL1ResizeIfTriggered() // WARNING - heavy operation, avoid resizing too often.
-
+	p.tryL1ResizeIfTriggered()
 	if p.config.verbose {
 		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
 			newCapacity, p.pool.Length(), len(p.cacheL1), objectsInUse)
 	}
+
 	return true
 }
 

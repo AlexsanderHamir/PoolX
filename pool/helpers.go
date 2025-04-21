@@ -349,7 +349,7 @@ func (p *Pool[T]) refill(fillTarget int) RefillResult {
 	var result RefillResult
 
 	noObjsAvailable := p.pool.Length() == 0
-	biggerRequestThanAvailable := fillTarget > p.pool.Length() // WARNING - reading more than available objects will block.
+	biggerRequestThanAvailable := fillTarget > p.pool.Length()
 
 	if noObjsAvailable || biggerRequestThanAvailable {
 		if p.isGrowthBlocked {
@@ -527,7 +527,8 @@ func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int)
 		return false
 	}
 
-	totalAvailable := p.pool.Length() + len(p.cacheL1)
+	l1Available := len(p.cacheL1)
+	totalAvailable := p.pool.Length() + l1Available
 	if totalAvailable == 0 {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
@@ -547,6 +548,7 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 		}
 		newCap = minCap
 	}
+
 	if newCap < inUse {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Adjusting to match in-use objects: %d", inUse)
@@ -560,6 +562,7 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 		}
 		p.isGrowthBlocked = false
 	}
+
 	return newCap
 }
 
@@ -593,11 +596,10 @@ func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	}
 
 	copyCount := min(availableObjsToCopy, len(p.cacheL1))
-	newL1 := make(chan T, newCapacity) // WARNING - expensive operation.
+	newL1 := make(chan T, newCapacity) 
 
 	for range copyCount {
 		select {
-		// WARNING - if the cacheL1 is empty, this is fine, but if newL1 is full, this will block, and we're dropping objects.
 		case obj := <-p.cacheL1:
 			newL1 <- obj
 		default:
@@ -714,6 +716,9 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 }
 
 func (p *Pool[T]) handleShrinkBlocked() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.isShrinkBlocked {
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
@@ -764,18 +769,16 @@ func (p *Pool[T]) tryFastPathPut(obj T) bool {
 		return true
 	default:
 		if p.config.verbose {
-			log.Println("[PUT] L1 return miss — falling back to slow path")
+			p.logPut("L1 return miss — falling back to slow path")
 		}
 		return false
 	}
 }
 
 func (p *Pool[T]) slowPathPut(obj T) {
-	fmt.Println("DEBUGAI: slowpath put blocked")
-	if err := p.pool.Write(obj); err != nil { // WARNING - writing to a full ring buffer will block.
+	if err := p.pool.Write(obj); err != nil {
 		panic(err)
 	}
-	fmt.Println("DEBUGAI: slowpath put unblocked")
 
 	p.stats.FastReturnMiss.Add(1)
 	p.logPut("slow path put unblocked")
@@ -789,7 +792,11 @@ func (p *Pool[T]) logPut(message string) {
 
 func (p *Pool[T]) calculateL1Usage() (int, int, float64) {
 	currentCap := p.stats.currentL1Capacity.Load()
+
+	p.mu.RLock()
 	currentLength := len(p.cacheL1)
+	p.mu.RUnlock()
+
 	var currentPercent float64
 	if currentCap > 0 {
 		currentPercent = float64(currentLength) / float64(currentCap)
@@ -809,7 +816,10 @@ func (p *Pool[T]) calculateFillTarget(currentCap int) int {
 	}
 
 	targetFill := int(float64(currentCap) * p.config.fastPath.fillAggressiveness)
+
+	p.mu.RLock()
 	currentLength := len(p.cacheL1)
+	p.mu.RUnlock()
 
 	// Calculate how many more items we need to reach target fill
 	itemsNeeded := targetFill - currentLength
@@ -868,9 +878,7 @@ func (p *Pool[T]) performShrinkChecks(params *shrinkParameters, idleCount, under
 func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *bool) {
 	if p.config.verbose {
 		log.Println("[SHRINK] STATS (before shrink)")
-		p.mu.Unlock()
 		p.PrintPoolStats()
-		p.mu.Lock()
 		log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 	}
 
@@ -962,9 +970,7 @@ func (p *Pool[T]) cleanupCacheL1() {
 			if !ok {
 				return
 			}
-			if p.cleaner != nil {
-				p.cleaner(obj)
-			}
+			p.cleaner(obj)
 		default:
 			close(p.cacheL1)
 			p.cacheL1 = nil
