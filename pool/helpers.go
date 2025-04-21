@@ -456,7 +456,7 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 		return
 	}
 
-	newRingBuffer := New[T](newCapacity)
+	newRingBuffer := NewRingBuffer[T](int(newCapacity))
 	newRingBuffer.CopyConfig(p.pool)
 
 	itemsToKeep := min(availableToKeep, p.pool.Length())
@@ -596,7 +596,7 @@ func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	}
 
 	copyCount := min(availableObjsToCopy, len(p.cacheL1))
-	newL1 := make(chan T, newCapacity) 
+	newL1 := make(chan T, newCapacity)
 
 	for range copyCount {
 		select {
@@ -888,7 +888,7 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 }
 
 func (p *Pool[T]) createNewBuffer(newCapacity uint64) *RingBuffer[T] {
-	newRingBuffer := New[T](int(newCapacity))
+	newRingBuffer := NewRingBuffer[T](int(newCapacity))
 	if p.pool == nil {
 		return nil
 	}
@@ -896,32 +896,39 @@ func (p *Pool[T]) createNewBuffer(newCapacity uint64) *RingBuffer[T] {
 	return newRingBuffer
 }
 
-func (p *Pool[T]) getItemsFromOldBuffer() ([]T, error) {
-	items, err := p.pool.GetAll()
+func (p *Pool[T]) getItemsFromOldBuffer() (part1, part2 []T, err error) {
+	part1, part2, err = p.pool.getAll()
 	if err != nil && err != ErrIsEmpty {
 		if p.config.verbose {
 			log.Printf("[GROW] Error getting items from old ring buffer: %v", err)
 		}
-		return nil, err
+		return nil, nil, err
 	}
-
-	return items, nil
+	return part1, part2, nil
 }
 
-func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], items []T, newCapacity uint64) error {
-	if len(items) > int(newCapacity) {
+func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, part2 []T, newCapacity uint64) error {
+	if len(part1) > int(newCapacity) {
 		if p.config.verbose {
-			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(items))
+			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(part1))
 		}
 		return ErrInvalidLength
 	}
 
-	if _, err := newRingBuffer.WriteMany(items); err != nil {
+	if _, err := newRingBuffer.WriteMany(part1); err != nil {
 		if p.config.verbose {
 			log.Printf("[GROW] Error writing items to new ring buffer: %v", err)
 		}
 		return err
 	}
+
+	if _, err := newRingBuffer.WriteMany(part2); err != nil {
+		if p.config.verbose {
+			log.Printf("[GROW] Error writing items to new ring buffer: %v", err)
+		}
+		return err
+	}
+
 	return nil
 }
 

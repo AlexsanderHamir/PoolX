@@ -64,7 +64,7 @@ func (b *RingBufferConfigBuilder) Build(size int) (*RingBuffer[any], error) {
 		return nil, errors.New("size must be greater than 0")
 	}
 
-	rb := New[any](size)
+	rb := NewRingBuffer[any](size)
 
 	if b.config.block {
 		rb.WithBlocking(true)

@@ -52,7 +52,7 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T), poo
 
 	stats := initializePoolStats(config)
 
-	ringBuffer, err := NewWithConfig[T](config.initialCapacity, config.ringBufferConfig)
+	ringBuffer, err := newRingBufferWithConfig[T](config.initialCapacity, config.ringBufferConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -256,12 +256,12 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 		return nil, fmt.Errorf("failed to create ring buffer")
 	}
 
-	items, err := p.getItemsFromOldBuffer()
+	part1, part2, err := p.getItemsFromOldBuffer()
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve items from old buffer: %w", err)
 	}
 
-	if err := p.validateAndWriteItems(newRingBuffer, items, newCapacity); err != nil {
+	if err := p.validateAndWriteItems(newRingBuffer, part1, part2, newCapacity); err != nil {
 		return nil, fmt.Errorf("failed to write items to new buffer: %w", err)
 	}
 

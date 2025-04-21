@@ -61,7 +61,7 @@ type RingBuffer[T any] struct {
 }
 
 // New returns a new RingBuffer whose buffer has the given size.
-func New[T any](size int) *RingBuffer[T] {
+func NewRingBuffer[T any](size int) *RingBuffer[T] {
 	if size <= 0 {
 		return nil
 	}
@@ -74,12 +74,12 @@ func New[T any](size int) *RingBuffer[T] {
 
 // NewWithConfig creates a new RingBuffer with the given size and configuration.
 // It returns an error if the size is less than or equal to 0.
-func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], error) {
+func newRingBufferWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], error) {
 	if size <= 0 {
 		return nil, errors.New("size must be greater than 0")
 	}
 
-	rb := New[T](size)
+	rb := NewRingBuffer[T](size)
 
 	rb.WithBlocking(config.block)
 
@@ -638,46 +638,42 @@ func (r *RingBuffer[T]) Close() error {
 	return nil
 }
 
-// GetAll returns all items from the buffer and marks it as closed.
-// This is optimized for performance when you need to drain the buffer
-// and won't use it anymore. The returned slice directly references the
-// buffer's underlying array when possible to avoid copying.
-func (r *RingBuffer[T]) GetAll() (items []T, err error) {
+func (r *RingBuffer[T]) getAll() (part1, part2 []T, err error) {
+	part1, part2, err = r.GetAllView()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return part1, part2, nil
+}
+
+func (r *RingBuffer[T]) GetAllView() (part1, part2 []T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if err := r.readErr(true); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if r.w == r.r && !r.isFull {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	var count int
 	if r.w > r.r {
-		count = r.w - r.r
+		part1 = r.buf[r.r:r.w]
 	} else {
-		count = r.size - r.r + r.w
+		part1 = r.buf[r.r:r.size]
+		part2 = r.buf[0:r.w]
 	}
 
-	items = make([]T, count)
-	if r.w > r.r {
-		copy(items, r.buf[r.r:r.r+count])
-	} else {
-		c1 := r.size - r.r
-		copy(items, r.buf[r.r:r.size])
-		copy(items[c1:], r.buf[0:count-c1])
-	}
-
-	r.r = (r.r + count) % r.size
+	r.r = r.w
 	r.isFull = false
 
 	if r.block {
 		r.readCond.Broadcast()
 	}
 
-	return items, r.readErr(true)
+	return part1, part2, r.readErr(true)
 }
 
 func (r *RingBuffer[T]) GetBlockedReaders() int {

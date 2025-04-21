@@ -12,7 +12,7 @@ import (
 )
 
 func TestRingBufferBasicOperations(t *testing.T) {
-	rb := pool.New[int](10)
+	rb := pool.NewRingBuffer[int](10)
 	require.NotNil(t, rb)
 
 	err := rb.Write(42)
@@ -30,7 +30,7 @@ func TestRingBufferBasicOperations(t *testing.T) {
 }
 
 func TestRingBufferBlocking(t *testing.T) {
-	rb := pool.New[int](2).WithBlocking(true)
+	rb := pool.NewRingBuffer[int](2).WithBlocking(true)
 	require.NotNil(t, rb)
 
 	n, err := rb.WriteMany([]int{1, 2})
@@ -53,7 +53,7 @@ func TestRingBufferBlocking(t *testing.T) {
 }
 
 func TestRingBufferTimeout(t *testing.T) {
-	rb := pool.New[int](2).
+	rb := pool.NewRingBuffer[int](2).
 		WithBlocking(true).
 		WithTimeout(100 * time.Millisecond)
 	require.NotNil(t, rb)
@@ -78,7 +78,7 @@ func TestRingBufferTimeout(t *testing.T) {
 }
 
 func TestRingBufferWriteMany(t *testing.T) {
-	rb := pool.New[int](10)
+	rb := pool.NewRingBuffer[int](10)
 	require.NotNil(t, rb)
 
 	items := []int{1, 2, 3, 4, 5}
@@ -94,7 +94,7 @@ func TestRingBufferWriteMany(t *testing.T) {
 }
 
 func TestRingBufferReset(t *testing.T) {
-	rb := pool.New[int](10)
+	rb := pool.NewRingBuffer[int](10)
 	require.NotNil(t, rb)
 
 	err := rb.Write(1)
@@ -108,9 +108,9 @@ func TestRingBufferReset(t *testing.T) {
 }
 
 func TestRingBufferEdgeCases(t *testing.T) {
-	rb := pool.New[int](0)
+	rb := pool.NewRingBuffer[int](0)
 	assert.Nil(t, rb)
 
-	rb = pool.New[int](-1)
+	rb = pool.NewRingBuffer[int](-1)
 	assert.Nil(t, rb)
 }

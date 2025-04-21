@@ -1,7 +1,6 @@
 package pool
 
 import (
-	"fmt"
 	"reflect"
 	"runtime/debug"
 	"testing"
@@ -67,8 +66,6 @@ func Benchmark_Get(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	b.SetParallelism(10)
-
 	config, err := NewPoolConfigBuilder().
 		SetInitialCapacity(128).   // defaultPoolCapacity
 		SetHardLimit(10_000_000).  // defaultHardLimit
@@ -92,6 +89,7 @@ func Benchmark_Get(b *testing.B) {
 			_ = obj
 		}
 	})
+
 }
 
 // POOL CONFIG
@@ -144,49 +142,32 @@ func Benchmark_SlowPath(b *testing.B) {
 	})
 }
 
-// func Benchmark_RepeatedShrink(b *testing.B) {
-// 	debug.SetGCPercent(-1)
-// 	b.ReportAllocs()
-//
-// 	poolObj := setupPool(b)
+func Benchmark_RepeatedShrink(b *testing.B) {
+	debug.SetGCPercent(-1)
+	b.ReportAllocs()
 
-// 	for range 2_000_000 {
-// 		poolObj.Put(poolObj.allocator())
-// 	}
+	poolObj := setupPool(b, nil)
 
-// 	prevCap := len(poolObj.pool)
-// 	minCap := int(poolObj.config.shrink.minCapacity)
-
-// 	for {
-// 		inUse := 0
-// 		newCap := prevCap - 10000
-// 		if newCap < minCap {
-// 			break
-// 		}
-
-// 		poolObj.performShrink(newCap, inUse, uint64(prevCap))
-
-// 		newLen := len(poolObj.pool)
-// 		if newLen >= prevCap {
-// 			break
-// 		}
-// 		prevCap = newLen
-// 	}
-// }
-
-func createCustomBenchmarkConfig() PoolConfig {
-	config, err := NewPoolConfigBuilder().
-		SetInitialCapacity(defaultPoolCapacity).
-		SetHardLimit(defaultHardLimit).
-		SetMinShrinkCapacity(defaultMinCapacity).
-		SetFastPathFillAggressiveness(fillAggressivenessExtreme).
-		SetFastPathRefillPercent(defaultRefillPercent).
-		SetFastPathEnableChannelGrowth(defaultEnableChannelGrowth).
-		SetFastPathGrowthEventsTrigger(defaultGrowthEventsTrigger).
-		SetVerbose(true).
-		Build()
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create custom benchmark config: %v", err))
+	for range 2_000_000 {
+		poolObj.Put(poolObj.allocator())
 	}
-	return config
+
+	prevCap := poolObj.pool.Capacity()
+	minCap := int(poolObj.config.shrink.minCapacity)
+
+	for {
+		inUse := 0
+		newCap := prevCap - 10000
+		if newCap < minCap {
+			break
+		}
+
+		poolObj.performShrink(newCap, inUse, uint64(prevCap))
+
+		newLen := poolObj.pool.Capacity()
+		if newLen >= prevCap {
+			break
+		}
+		prevCap = newLen
+	}
 }
