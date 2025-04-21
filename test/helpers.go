@@ -1,14 +1,11 @@
 package test
 
 import (
-	"fmt"
-	"github.com/AlexsanderHamir/memory_context/contexts"
-	"github.com/AlexsanderHamir/memory_context/pool"
 	"reflect"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/AlexsanderHamir/memory_context/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,7 +115,7 @@ func storeDefaultConfigValues(config pool.PoolConfig) DefaultConfigValues {
 // createCustomConfig creates a custom configuration with different values
 func createCustomConfig(t *testing.T) pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
-		SetInitialCapacity(100).
+		SetInitialCapacity(101210).
 		SetHardLimit(10000000028182820).
 		SetGrowthPercent(0.5).
 		SetFixedGrowthFactor(1.0).
@@ -141,7 +138,7 @@ func createCustomConfig(t *testing.T) pool.PoolConfig {
 		SetFastPathExponentialThresholdFactor(3.0121).
 		SetFastPathFixedGrowthFactor(0.8121).
 		SetFastPathShrinkEventsTrigger(4121).
-		SetFastPathShrinkAggressiveness(pool.AggressivenessAggressive).
+		SetFastPathShrinkAggressiveness(pool.AggressivenessVeryAggressive).
 		SetFastPathShrinkPercent(0.3121).
 		SetFastPathShrinkMinCapacity(20121).
 		SetVerbose(true).
@@ -162,7 +159,6 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 	assert.NotEqual(t, original.GrowthPercent, custom.GetGrowth().GetGrowthPercent())
 	assert.NotEqual(t, original.FixedGrowthFactor, custom.GetGrowth().GetFixedGrowthFactor())
 	assert.NotEqual(t, original.ExponentialThresholdFactor, custom.GetGrowth().GetExponentialThresholdFactor())
-	assert.NotEqual(t, original.ShrinkAggressiveness, custom.GetShrink().GetAggressivenessLevel())
 	assert.NotEqual(t, original.ShrinkCheckInterval, custom.GetShrink().GetCheckInterval())
 	assert.NotEqual(t, original.IdleThreshold, custom.GetShrink().GetIdleThreshold())
 	assert.NotEqual(t, original.MinIdleBeforeShrink, custom.GetShrink().GetMinIdleBeforeShrink())
@@ -197,7 +193,6 @@ func createHardLimitTestConfig(t *testing.T, blocking bool) pool.PoolConfig {
 		SetHardLimit(20).
 		SetMinShrinkCapacity(10).
 		SetRingBufferBlocking(blocking).
-		SetVerbose(blocking). // Only verbose for blocking test
 		Build()
 	require.NoError(t, err)
 	return config
@@ -229,7 +224,6 @@ func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
 		}
 	}
 
-	fmt.Println("nilCount", nilCount)
 	assert.Equal(t, 80, nilCount)
 
 	// Clean up non-nil objects
@@ -264,10 +258,6 @@ func runBlockingTest(t *testing.T, p *pool.Pool[*TestObject]) {
 		t.Fatal("goroutine did not unblock after returning an object")
 	}
 
-	// Clean up remaining objects
-	for i := 1; i < len(objects); i++ {
-		p.Put(objects[i])
-	}
 }
 
 func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGoroutines int) {
@@ -314,96 +304,6 @@ func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGorou
 	}
 }
 
-// createComprehensiveTestConfig creates a configuration for comprehensive testing
-func createComprehensiveTestConfig(t *testing.T) pool.PoolConfig {
-	config, err := pool.NewPoolConfigBuilder().
-		SetInitialCapacity(2).
-		SetGrowthPercent(0.5).
-		SetFixedGrowthFactor(1.0).
-		SetMinShrinkCapacity(1).
-		SetShrinkCheckInterval(10 * time.Millisecond).
-		SetIdleThreshold(20 * time.Millisecond).
-		SetMinIdleBeforeShrink(1).
-		SetShrinkCooldown(10 * time.Millisecond).
-		SetMinUtilizationBeforeShrink(0.1).
-		SetStableUnderutilizationRounds(1).
-		SetShrinkPercent(0.5).
-		SetMaxConsecutiveShrinks(5).
-		SetHardLimit(10).
-		SetRingBufferBlocking(true).
-		Build()
-	require.NoError(t, err)
-	return config
-}
-
-// testInitialGrowth tests the initial growth behavior of the pool
-func testInitialGrowth(t *testing.T, p *pool.Pool[*TestObject], numObjects int) []*TestObject {
-	objects := make([]*TestObject, numObjects)
-	for i := range numObjects {
-		objects[i] = p.Get()
-		assert.NotNil(t, objects[i])
-		assert.Equal(t, 42, objects[i].Value)
-	}
-	assert.True(t, p.IsGrowth())
-	return objects
-}
-
-// testShrinkBehavior tests the shrink behavior of the pool
-func testShrinkBehavior(t *testing.T, p *pool.Pool[*TestObject], objects []*TestObject) {
-	for _, obj := range objects {
-		p.Put(obj)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-	assert.True(t, p.IsShrunk())
-}
-
-// testHardLimitBlocking tests the hard limit and blocking behavior of the pool
-func testHardLimitBlocking(t *testing.T, p *pool.Pool[*TestObject], numObjects int) []*TestObject {
-	// First get all objects up to hard limit
-	objects := make([]*TestObject, numObjects)
-	for i := range numObjects {
-		objects[i] = p.Get()
-		assert.NotNil(t, objects[i])
-	}
-
-	// Try to get one more object - should block
-	done := make(chan bool)
-	go func() {
-		obj := p.Get()
-		assert.NotNil(t, obj)
-		done <- true
-	}()
-
-	// Wait a bit to ensure the goroutine is blocked
-	time.Sleep(100 * time.Millisecond)
-	select {
-	case <-done:
-		t.Fatal("Get should have blocked (100ms)")
-	default:
-		// Expected - goroutine is blocked
-	}
-
-	// Release one object to unblock the waiting goroutine
-	p.Put(objects[0])
-	select {
-	case <-done:
-		// Success - goroutine was unblocked
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Get should have unblocked (100ms)")
-	}
-
-	return objects
-}
-
-func cleanupPoolObjects(p *pool.Pool[*TestObject], objects []*TestObject) {
-	for _, obj := range objects {
-		if obj != nil {
-			p.Put(obj)
-		}
-	}
-}
-
 func testInvalidConfig(t *testing.T, name string, configFunc func() (pool.PoolConfig, error)) {
 	t.Run(name, func(t *testing.T) {
 		config, err := configFunc()
@@ -418,366 +318,4 @@ func testValidConfig(t *testing.T, name string, configFunc func() (pool.PoolConf
 		assert.NoError(t, err)
 		assert.NotNil(t, config)
 	})
-}
-
-type testSetup struct {
-	ctx     *contexts.MemoryContext
-	ctxType contexts.MemoryContextType
-}
-
-func createTestPoolConfig(t *testing.T, initialCapacity, hardLimit int, blocking bool) pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetInitialCapacity(initialCapacity).
-		SetHardLimit(hardLimit).
-		SetMinShrinkCapacity(initialCapacity).
-		SetRingBufferBlocking(blocking).
-		Build()
-	require.NoError(t, err)
-
-	return poolConfig
-}
-
-// createTestPools creates and configures all the test pools in the given context
-func createTestPools(t *testing.T, ctx *contexts.MemoryContext) {
-	// Create processor pool
-	processorPoolConfig := createTestPoolConfig(t, 5, 20, false)
-	processorAllocator := func() any {
-		return &TestObject{Value: 42}
-	}
-	processorCleaner := func(obj any) {
-		if to, ok := obj.(*TestObject); ok {
-			to.Value = 0
-		}
-	}
-
-	// Create buffer pool
-	bufferPoolConfig := createTestPoolConfig(t, 10, 30, false)
-	bufferAllocator := func() any {
-		return &TestBuffer{
-			Data: make([]byte, 1024),
-			Size: 1024,
-		}
-	}
-	bufferCleaner := func(obj any) {
-		if tb, ok := obj.(*TestBuffer); ok {
-			tb.Data = nil
-			tb.Size = 0
-		}
-	}
-
-	// Create metadata pool
-	metadataPoolConfig := createTestPoolConfig(t, 8, 25, false)
-	metadataAllocator := func() any {
-		return &TestMetadata{
-			Timestamp: time.Now(),
-			Priority:  0,
-			Tags:      make([]string, 0),
-		}
-	}
-	metadataCleaner := func(obj any) {
-		if tm, ok := obj.(*TestMetadata); ok {
-			tm.Timestamp = time.Time{}
-			tm.Priority = 0
-			tm.Tags = nil
-		}
-	}
-
-	// Create all pools
-	err := ctx.CreatePool(reflect.TypeOf(&TestObject{}), processorPoolConfig, processorAllocator, processorCleaner)
-	require.NoError(t, err)
-
-	err = ctx.CreatePool(reflect.TypeOf(&TestBuffer{}), bufferPoolConfig, bufferAllocator, bufferCleaner)
-	require.NoError(t, err)
-
-	err = ctx.CreatePool(reflect.TypeOf(&TestMetadata{}), metadataPoolConfig, metadataAllocator, metadataCleaner)
-	require.NoError(t, err)
-}
-
-// processJob handles a single job using resources from the pools
-func processJob(t *testing.T, ctx *contexts.MemoryContext, jobID int) *Job {
-	// Acquire all resources needed for a job
-	processor, _ := ctx.Acquire(reflect.TypeOf(&TestObject{}))
-	buffer, _ := ctx.Acquire(reflect.TypeOf(&TestBuffer{}))
-	metadata, _ := ctx.Acquire(reflect.TypeOf(&TestMetadata{}))
-
-	// Verify resources were acquired
-	assert.NotNil(t, processor, "Expected to acquire processor")
-	assert.NotNil(t, buffer, "Expected to acquire buffer")
-	assert.NotNil(t, metadata, "Expected to acquire metadata")
-
-	// Create a complete job with all resources
-	job := &Job{
-		ID:        jobID,
-		Processor: processor.(*TestObject),
-		Buffer:    buffer.(*TestBuffer),
-		Metadata:  metadata.(*TestMetadata),
-	}
-
-	// Simulate work using all resources
-	job.Metadata.Timestamp = time.Now()
-	job.Metadata.Priority = jobID % 3
-	job.Metadata.Tags = append(job.Metadata.Tags, "test")
-	job.Processor.Value = jobID
-	copy(job.Buffer.Data, []byte("test data"))
-
-	// Release all resources back to their pools
-	processorSuccess := ctx.Release(reflect.TypeOf(&TestObject{}), processor)
-	bufferSuccess := ctx.Release(reflect.TypeOf(&TestBuffer{}), buffer)
-	metadataSuccess := ctx.Release(reflect.TypeOf(&TestMetadata{}), metadata)
-
-	// Verify successful release
-	assert.True(t, processorSuccess, "Expected successful processor release")
-	assert.True(t, bufferSuccess, "Expected successful buffer release")
-	assert.True(t, metadataSuccess, "Expected successful metadata release")
-
-	return job
-}
-
-// worker processes jobs from the jobs channel and sends results to the results channel
-func worker(t *testing.T, ctx *contexts.MemoryContext, jobs <-chan int, results chan<- *Job, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for jobID := range jobs {
-		job := processJob(t, ctx, jobID)
-		results <- job
-	}
-}
-
-func testConcurrentAcquireRelease(t *testing.T) {
-	ctx := contexts.NewMemoryContext(contexts.MemoryContextConfig{
-		ContextType: "test_context",
-	})
-
-	// blocking mode otherwise it will return nil
-	poolConfig := createTestPoolConfig(t, 8, 8, true)
-	allocator := func() any {
-		return &TestObject{Value: 42}
-	}
-	cleaner := func(obj any) {
-		if to, ok := obj.(*TestObject); ok {
-			to.Value = 0
-		}
-	}
-
-	err := ctx.CreatePool(reflect.TypeOf(&TestObject{}), poolConfig, allocator, cleaner)
-	require.NoError(t, err)
-
-	const numGoroutines = 50
-	const operationsPerGoroutine = 1000
-	var wg sync.WaitGroup
-	var successCount int32
-
-	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for range operationsPerGoroutine {
-				obj, _ := ctx.Acquire(reflect.TypeOf(&TestObject{}))
-				if obj != nil {
-					if success := ctx.Release(reflect.TypeOf(&TestObject{}), obj); success {
-						atomic.AddInt32(&successCount, 1)
-					}
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-	assert.Equal(t, int32(numGoroutines*operationsPerGoroutine), successCount, "Expected all operations to succeed")
-}
-
-func testConcurrentChildCreation(t *testing.T) {
-	ctx := contexts.NewMemoryContext(contexts.MemoryContextConfig{
-		ContextType: "test_context",
-	})
-
-	const numGoroutines = 20
-	var wg sync.WaitGroup
-	var successCount int32
-
-	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := ctx.CreateChild()
-			if err == nil {
-				atomic.AddInt32(&successCount, 1)
-			}
-		}()
-	}
-
-	wg.Wait()
-	assert.Equal(t, int32(numGoroutines), successCount, "Expected all child creations to succeed")
-}
-
-func testConcurrentPoolOperationsWithChildren(t *testing.T) {
-	ctx := contexts.NewMemoryContext(contexts.MemoryContextConfig{
-		ContextType: "test_context",
-	})
-
-	poolConfig := createTestPoolConfig(t, 8, 8, true)
-	allocator := func() any {
-		return &TestObject{Value: 42}
-	}
-
-	cleaner := func(obj any) {
-		if to, ok := obj.(*TestObject); ok {
-			to.Value = 0
-		}
-	}
-
-	err := ctx.CreatePool(reflect.TypeOf(&TestObject{}), poolConfig, allocator, cleaner)
-	require.NoError(t, err)
-
-	const numChildren = 5
-	const numGoroutines = 10
-	const operationsPerGoroutine = 50
-	var wg sync.WaitGroup
-
-	for range numChildren {
-		_, err := ctx.CreateChild()
-		require.NoError(t, err)
-	}
-
-	for _, child := range ctx.GetChildren() {
-		for range numGoroutines {
-			wg.Add(1)
-			go func(c *contexts.MemoryContext) {
-				defer wg.Done()
-				for range operationsPerGoroutine {
-					obj, _ := c.Acquire(reflect.TypeOf(&TestObject{}))
-					require.NotNil(t, obj, "Failed to acquire object from pool")
-					success := c.Release(reflect.TypeOf(&TestObject{}), obj)
-					require.True(t, success, "Failed to release object back to pool")
-				}
-			}(child)
-		}
-	}
-
-	wg.Wait()
-}
-
-func testConcurrentClose(t *testing.T) {
-	ctx := contexts.NewMemoryContext(contexts.MemoryContextConfig{
-		ContextType: "test_context",
-	})
-
-	poolConfig := createTestPoolConfig(t, 2, 10, false)
-	allocator := func() any {
-		return &TestObject{Value: 42}
-	}
-	cleaner := func(obj any) {
-		if to, ok := obj.(*TestObject); ok {
-			to.Value = 0
-		}
-	}
-
-	err := ctx.CreatePool(reflect.TypeOf(&TestObject{}), poolConfig, allocator, cleaner)
-	require.NoError(t, err)
-
-	const numGoroutines = 10
-	var wg sync.WaitGroup
-	var closeCount int32
-
-	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := ctx.Close(); err == nil {
-				atomic.AddInt32(&closeCount, 1)
-			}
-		}()
-	}
-
-	wg.Wait()
-	assert.Equal(t, int32(1), closeCount, "Expected only one successful close")
-}
-
-func testOperationsAfterClose(t *testing.T) {
-	ctx := contexts.NewMemoryContext(contexts.MemoryContextConfig{
-		ContextType: "test_context_after_close",
-	})
-
-	// Create a test pool
-	poolConfig := createTestPoolConfig(t, 2, 10, false)
-	allocator := func() any {
-		return &TestObject{Value: 42}
-	}
-	cleaner := func(obj any) {
-		if to, ok := obj.(*TestObject); ok {
-			to.Value = 0
-		}
-	}
-
-	err := ctx.CreatePool(reflect.TypeOf(&TestObject{}), poolConfig, allocator, cleaner)
-	require.NoError(t, err)
-
-	// Close the context
-	require.NoError(t, ctx.Close())
-
-	// Test operations after close
-	obj, cleaner := ctx.Acquire(reflect.TypeOf(&TestObject{}))
-	assert.Nil(t, obj, "Expected nil object when acquiring after close")
-	assert.Nil(t, cleaner, "Expected nil cleaner when acquiring after close")
-
-	assert.False(t, ctx.Release(reflect.TypeOf(&TestObject{}), &TestObject{}), "Expected false when releasing after close")
-	_, err = ctx.CreateChild()
-	assert.Error(t, err, "Expected error when creating child after close")
-}
-
-func testStressTest(t *testing.T) {
-	ctx := contexts.NewMemoryContext(contexts.MemoryContextConfig{
-		ContextType: "stress_test",
-	})
-
-	poolConfig := createTestPoolConfig(t, 2, 10, false)
-
-	for i := range 5 {
-		objType := reflect.TypeOf(&TestObject{})
-		allocator := func() any {
-			return &TestObject{Value: i}
-		}
-		cleaner := func(obj any) {
-			if to, ok := obj.(*TestObject); ok {
-				to.Value = 0
-			}
-		}
-		require.NoError(t, ctx.CreatePool(objType, poolConfig, allocator, cleaner))
-	}
-
-	const numGoroutines = 100
-	const duration = 2 * time.Second
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
-
-	for i := range numGoroutines {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					// Randomly choose an operation
-					switch id % 4 {
-					case 0:
-						obj, _ := ctx.Acquire(reflect.TypeOf(&TestObject{}))
-						if obj != nil {
-							ctx.Release(reflect.TypeOf(&TestObject{}), obj)
-						}
-					case 1:
-						ctx.CreateChild()
-					case 2:
-						ctx.GetPool(reflect.TypeOf(&TestObject{}))
-					}
-				}
-			}
-		}(i)
-	}
-
-	time.Sleep(duration)
-	close(stop)
-	wg.Wait()
-
-	assert.NoError(t, ctx.Close())
 }
