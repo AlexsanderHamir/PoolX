@@ -13,10 +13,10 @@ import (
 type Pool[T any] struct {
 	cacheL1 chan T
 	pool    *RingBuffer[T]
-	
-	mu      sync.RWMutex
-	cond    *sync.Cond
-	stats   *poolStats
+
+	mu    sync.RWMutex
+	cond  *sync.Cond
+	stats *poolStats
 
 	isShrinkBlocked bool
 	isGrowthBlocked bool
@@ -201,9 +201,11 @@ func (g *growthParameters) GetFixedGrowthFactor() float64 {
 
 type shrinkParameters struct {
 	// EnforceCustomConfig controls whether the pool requires explicit configuration.
-	// When set to true, the user must manually provide all configuration values (e.g., shrink/growth parameters).
+	// When set to true, the user must manually provide all configuration values.
 	// If set to false (default), the pool will fall back to built-in default configurations when values are missing.
 	// This flag does not disable auto-shrink behavior—it only governs configuration strictness.
+	// if you want to change a couple of fields but not all of them, you don't need to set this to true,
+	// only use this when you don't want any of the default values.
 	enforceCustomConfig bool
 
 	// AggressivenessLevel is an optional high-level control that adjusts
@@ -336,6 +338,10 @@ type fastPathParameters struct {
 	refillPercent float64
 
 	growth *growthParameters
+
+	// Only two fields are used from this struct:
+	// - shrinkPercent
+	// - minCapacity
 	shrink *shrinkParameters
 
 	// enableChannelGrowth allows the L1 channel (cache layer) to dynamically grow
