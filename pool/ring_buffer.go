@@ -55,6 +55,9 @@ type RingBuffer[T any] struct {
 	readCond  *sync.Cond // Signaled when data has been read.
 	writeCond *sync.Cond // Signaled when data has been written.
 	closed    bool       // Tracks if the writer is closed
+
+	blockedReaders int
+	blockedWriters int
 }
 
 // New returns a new RingBuffer whose buffer has the given size.
@@ -78,9 +81,7 @@ func NewWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], e
 
 	rb := New[T](size)
 
-	if config.block {
-		rb.WithBlocking(true)
-	}
+	rb.WithBlocking(config.block)
 
 	if config.rTimeout > 0 {
 		rb.WithReadTimeout(config.rTimeout)
@@ -193,8 +194,10 @@ func (r *RingBuffer[T]) readErr(locked bool) error {
 // Returns false if waited longer than rTimeout.
 // Must be called when locked and returns locked.
 func (r *RingBuffer[T]) waitRead() (ok bool) {
+	r.blockedWriters++
 	if r.rTimeout <= 0 {
 		r.readCond.Wait()
+		r.blockedWriters--
 		return true
 	}
 
@@ -204,8 +207,10 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 	r.readCond.Wait()
 	if time.Since(start) >= r.rTimeout {
 		r.setErr(context.DeadlineExceeded, true)
+		r.blockedWriters--
 		return false
 	}
+
 	return true
 }
 
@@ -269,9 +274,10 @@ func (r *RingBuffer[T]) Write(item T) error {
 		r.isFull = true
 	}
 
-	if r.block {
+	if r.block && r.blockedReaders > 0 {
 		r.writeCond.Broadcast()
 	}
+
 	return nil
 }
 
@@ -466,15 +472,21 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		return item, err
 	}
 
-	emptyBuffer := r.w == r.r
-	for emptyBuffer && !r.isFull {
+	// if multiple goroutines get unblocked by the condition variable
+	// they will all try to read at the same time
+	// by using a loop we make sure that only one goroutine will read the item
+	// and the others will check if the buffer is empty again.
+	for r.w == r.r && !r.isFull {
 		if !r.block {
 			return item, ErrIsEmpty
 		}
 
+		r.blockedReaders++
 		if !r.waitWrite() {
+			r.blockedReaders--
 			return item, context.DeadlineExceeded
 		}
+		r.blockedReaders--
 
 		if err := r.readErr(true); err != nil {
 			return item, err
@@ -485,7 +497,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	r.r = (r.r + 1) % r.size
 	r.isFull = false
 
-	if r.block {
+	if r.block && r.blockedWriters > 0 {
 		r.readCond.Broadcast()
 	}
 
@@ -558,9 +570,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) { // TODO: check why 
 // CopyConfig copies the configuration settings from the source buffer to the target buffer.
 // This includes blocking mode, timeouts, and cancellation context.
 func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
-	if source.block {
-		r.WithBlocking(true)
-	}
+	r.WithBlocking(source.block)
 
 	if source.rTimeout > 0 {
 		r.WithReadTimeout(source.rTimeout)
@@ -624,6 +634,7 @@ func (r *RingBuffer[T]) Close() error {
 		r.writeCond.Broadcast()
 	}
 
+	r.mu.Unlock()
 	return nil
 }
 
@@ -667,4 +678,17 @@ func (r *RingBuffer[T]) GetAll() (items []T, err error) {
 	}
 
 	return items, r.readErr(true)
+}
+
+func (r *RingBuffer[T]) GetBlockedReaders() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.blockedReaders
+}
+
+func (r *RingBuffer[T]) GetBlockedWriters() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.blockedWriters
 }
