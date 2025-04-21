@@ -24,7 +24,6 @@ func setupPool(b *testing.B, config PoolConfig) *Pool[*Example] {
 			b.Fatalf("Failed to set shrink aggressiveness: %v", err)
 		}
 		config, err = builder.
-			SetVerbose(true).
 			Build()
 		if err != nil {
 			b.Fatalf("Failed to build pool config: %v", err)
@@ -104,7 +103,6 @@ func Benchmark_Put(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	b.SetParallelism(10)
 	poolObj := setupPool(b, nil)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -121,19 +119,24 @@ func Benchmark_Grow(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		poolObj.grow(time.Now())
+
+		time.Sleep(3 * time.Millisecond)
 	}
 }
-
-// POOL CONFIG
-// defaultPoolCapacity                                   = 10_000_000
-// defaultHardLimit                                      = 10_000_000
 
 func Benchmark_SlowPath(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	poolObj := setupPool(b, nil)
-	b.SetParallelism(1)
+	config, err := NewPoolConfigBuilder().
+		SetInitialCapacity(4096 * 10).
+		SetHardLimit(4096 * 10).
+		Build()
+	if err != nil {
+		b.Fatalf("Failed to create custom config: %v", err)
+	}
+
+	poolObj := setupPool(b, config)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			obj := poolObj.slowPath()
@@ -146,18 +149,23 @@ func Benchmark_RepeatedShrink(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	poolObj := setupPool(b, nil)
-
-	for range 2_000_000 {
-		poolObj.Put(poolObj.allocator())
+	config, err := NewPoolConfigBuilder().
+		SetInitialCapacity(4096 * 100).
+		SetHardLimit(4096 * 100).
+		SetMinShrinkCapacity(1).
+		Build()
+	if err != nil {
+		b.Fatalf("Failed to create custom config: %v", err)
 	}
+
+	poolObj := setupPool(b, config)
 
 	prevCap := poolObj.pool.Capacity()
 	minCap := int(poolObj.config.shrink.minCapacity)
 
 	for {
 		inUse := 0
-		newCap := prevCap - 10000
+		newCap := prevCap - 2000
 		if newCap < minCap {
 			break
 		}

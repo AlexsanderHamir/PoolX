@@ -94,7 +94,7 @@ func newRingBufferWithConfig[T any](size int, config *RingBufferConfig) (*RingBu
 	return rb, nil
 }
 
-// QithBlocking sets the blocking mode of the ring buffer.
+// WithBlocking sets the blocking mode of the ring buffer.
 // If block is true, Read and Write will block when there is no data to read or no space to write.
 // If block is false, Read and Write will return ErrIsEmpty or ErrIsFull immediately.
 // By default, the ring buffer is not blocking.
@@ -507,7 +507,8 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 // GetN returns up to n items from the buffer.
 // Returns ErrIsEmpty if the buffer is empty.
 // The returned slice will have length between 0 and n.
-func (r *RingBuffer[T]) GetN(n int) (items []T, err error) { // TODO: check why this is faster than GetAll
+// WARNING: could block if the ring buffer is empty and the ring buffer is in blocking mode
+func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 	if n <= 0 {
 		return nil, nil
 	}
@@ -639,7 +640,7 @@ func (r *RingBuffer[T]) Close() error {
 }
 
 func (r *RingBuffer[T]) getAll() (part1, part2 []T, err error) {
-	part1, part2, err = r.GetAllView()
+	part1, part2, err = r.getAllView()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -647,7 +648,7 @@ func (r *RingBuffer[T]) getAll() (part1, part2 []T, err error) {
 	return part1, part2, nil
 }
 
-func (r *RingBuffer[T]) GetAllView() (part1, part2 []T, err error) {
+func (r *RingBuffer[T]) getAllView() (part1, part2 []T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -687,4 +688,56 @@ func (r *RingBuffer[T]) GetBlockedWriters() int {
 	defer r.mu.Unlock()
 
 	return r.blockedWriters
+}
+
+func (r *RingBuffer[T]) getNView(n int) (part1, part2 []T, err error) {
+	if n <= 0 {
+		return nil, nil, nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.readErr(true); err != nil {
+		return nil, nil, err
+	}
+
+	for r.w == r.r && !r.isFull {
+		if !r.block {
+			return nil, nil, ErrIsEmpty
+		}
+		if !r.waitWrite() {
+			return nil, nil, context.DeadlineExceeded
+		}
+		if err := r.readErr(true); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var count int
+	if r.w > r.r {
+		count = r.w - r.r
+	} else {
+		count = r.size - r.r + r.w
+	}
+
+	if count > n {
+		count = n
+	}
+
+	if r.w > r.r || count <= r.size-r.r {
+		part1 = r.buf[r.r : r.r+count]
+	} else {
+		part1 = r.buf[r.r:r.size]
+		part2 = r.buf[0 : count-len(part1)]
+	}
+
+	r.r = (r.r + count) % r.size
+	r.isFull = false
+
+	if r.block {
+		r.readCond.Broadcast()
+	}
+
+	return part1, part2, r.readErr(true)
 }

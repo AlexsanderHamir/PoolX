@@ -345,47 +345,52 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 	p.minCapacity = defaultMinCapacity
 }
 
-func (p *Pool[T]) refill(fillTarget int) RefillResult {
+func (p *Pool[T]) checkGrowthNeeded(fillTarget int) (bool, RefillResult) {
 	var result RefillResult
-
 	noObjsAvailable := p.pool.Length() == 0
 	biggerRequestThanAvailable := fillTarget > p.pool.Length()
 
 	if noObjsAvailable || biggerRequestThanAvailable {
 		if p.isGrowthBlocked {
 			result.Reason = GrowthBlocked
-			return result
+			return false, result
 		}
 
 		now := time.Now()
 		if !p.grow(now) {
 			result.Reason = GrowthFailed
-			return result
+			return false, result
 		}
 
 		result.GrowthNeeded = true
 	}
+	return true, result
+}
 
+func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, string, error) {
 	currentObjsAvailable := p.pool.Length()
 	toMove := min(fillTarget, currentObjsAvailable)
 
-	items, err := p.pool.GetN(toMove)
+	part1, part2, err := p.pool.getNView(toMove)
 	if err != nil && err != ErrIsEmpty {
 		if p.config.verbose {
 			log.Printf("[REFILL] Error getting items from ring buffer: %v", err)
 		}
-		result.Reason = fmt.Sprintf("%s: %v", RingBufferError, err)
-		return result
+		return nil, nil, fmt.Sprintf("%s: %v", RingBufferError, err), err
 	}
 
-	if items == nil && err == nil {
+	// TODO: improve this hacky check
+	if part1 == nil && part2 == nil && err == nil || len(part1) == 0 && len(part2) == 0 {
 		if p.config.verbose {
 			log.Println("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
 		}
-		result.Reason = NoItemsToMove
-		return result
+		return nil, nil, NoItemsToMove, nil
 	}
 
+	return part1, part2, "", nil
+}
+
+func (p *Pool[T]) moveItemsToL1(items []T, result *RefillResult) {
 	for _, item := range items {
 		select {
 		case p.cacheL1 <- item:
@@ -402,6 +407,25 @@ func (p *Pool[T]) refill(fillTarget int) RefillResult {
 			}
 		}
 	}
+}
+
+func (p *Pool[T]) refill(fillTarget int) RefillResult {
+	var result RefillResult
+
+	shouldContinue, growthResult := p.checkGrowthNeeded(fillTarget)
+	if !shouldContinue {
+		return growthResult
+	}
+	result = growthResult
+
+	part1, part2, reason, err := p.getItemsToMove(fillTarget)
+	if err != nil || reason != "" {
+		result.Reason = reason
+		return result
+	}
+
+	p.moveItemsToL1(part1, &result)
+	p.moveItemsToL1(part2, &result)
 
 	result.Success = true
 	result.Reason = RefillSucceeded
@@ -461,7 +485,7 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 
 	itemsToKeep := min(availableToKeep, p.pool.Length())
 	if itemsToKeep > 0 {
-		items, err := p.pool.GetN(itemsToKeep)
+		part1, part2, err := p.pool.getNView(itemsToKeep)
 		if err != nil && err != ErrIsEmpty {
 			if p.config.verbose {
 				log.Printf("[SHRINK] Error getting items from old ring buffer: %v", err)
@@ -469,7 +493,14 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 			return
 		}
 
-		if _, err := newRingBuffer.WriteMany(items); err != nil {
+		if _, err := newRingBuffer.WriteMany(part1); err != nil {
+			if p.config.verbose {
+				log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
+			}
+			return
+		}
+
+		if _, err := newRingBuffer.WriteMany(part2); err != nil {
 			if p.config.verbose {
 				log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
 			}
@@ -477,7 +508,8 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 		}
 	}
 
-	p.pool.clearBuffer()
+	// WARNING: need to check if optimization causes a bug where this would clear the new buffer
+	// p.pool.clearBuffer()
 	p.pool = newRingBuffer
 
 	p.stats.currentCapacity.Store(uint64(newCapacity))
