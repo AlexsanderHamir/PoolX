@@ -184,15 +184,20 @@ func maxUint64(a, b uint64) uint64 {
 // this is blocking
 func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) int {
 	if fastPathRemaining > 0 {
-		p.cacheL1 <- obj
-		fastPathRemaining--
-	} else {
-		if err := p.pool.Write(obj); err != nil {
-			if p.config.verbose {
-				log.Printf("[SETPOOL] Error writing to ring buffer: %v", err)
-			}
+		select {
+		case p.cacheL1 <- obj:
+			fastPathRemaining--
+			return fastPathRemaining
+		default:
 		}
 	}
+
+	if err := p.pool.Write(obj); err != nil {
+		if p.config.verbose {
+			log.Printf("[SETPOOL] Error writing to ring buffer: %v", err)
+		}
+	}
+
 	return fastPathRemaining
 }
 

@@ -82,9 +82,25 @@ func (p *Pool[T]) Cleaner() func(T) {
 	return p.cleaner
 }
 
-func (p *Pool[T]) Get() (zero T) {
+func (p *Pool[T]) Get() T {
 	p.handleShrinkBlocked()
 
+	if obj, found := p.tryGetFromL1(); found {
+		p.validateReturnedObject(obj, "L1")
+		return obj
+	}
+
+	if obj := p.tryRefillAndGetL1(); !isZero(obj) {
+		return obj
+	}
+
+	obj := p.slowPath()
+	p.validateReturnedObject(obj, "slowPath")
+	p.recordSlowPathStats()
+	return obj
+}
+
+func (p *Pool[T]) tryRefillAndGetL1() T {
 	ableToRefill, refillReason := p.tryRefillIfNeeded()
 	if !ableToRefill {
 		if obj, shouldContinue := p.handleRefillFailure(refillReason); !shouldContinue {
@@ -93,28 +109,33 @@ func (p *Pool[T]) Get() (zero T) {
 	}
 
 	if obj, found := p.tryGetFromL1(); found {
-		if p.config.verbose {
-			var zero T
-			if reflect.DeepEqual(obj, zero) {
-				log.Printf("[GET] Warning: L1 hit returned zero value")
-			}
-		}
+		p.validateReturnedObject(obj, "L1 after refill")
 		return obj
 	}
 
-	fmt.Println("DEBUGAI: slowpath")
-	obj := p.slowPath()
-	fmt.Println("DEBUGAI: slowpath done")
-	if p.config.verbose {
-		var zero T
-		if reflect.DeepEqual(obj, zero) {
-			log.Printf("[GET] Warning: slowPath returned zero value")
-		}
+	var zero T
+	return zero
+}
+
+func (p *Pool[T]) validateReturnedObject(obj T, source string) {
+	if !p.config.verbose {
+		return
 	}
 
+	if isZero(obj) {
+		log.Printf("[GET] Warning: %s returned zero value", source)
+	}
+}
+
+func (p *Pool[T]) recordSlowPathStats() {
 	p.stats.l2HitCount.Add(1)
 	p.updateUsageStats()
-	return obj
+}
+
+// Helper function to check if an object is zero value
+func isZero[T any](obj T) bool {
+	var zero T
+	return reflect.DeepEqual(obj, zero)
 }
 
 func (p *Pool[T]) Put(obj T) {
@@ -177,7 +198,6 @@ func (p *Pool[T]) slowPath() (obj T) {
 		}
 		return obj
 	}
-
 	p.stats.blockedGets.Add(^uint64(0))
 
 	if p.config.verbose {

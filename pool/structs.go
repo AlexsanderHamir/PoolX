@@ -11,11 +11,13 @@ import (
 // Only pointers can be stored in the pool, anything else will cause an error.
 // (no panic will be thrown)
 type Pool[T any] struct {
-	cacheL1         chan T
-	pool            *RingBuffer[T]
-	mu              sync.RWMutex
-	cond            *sync.Cond
-	stats           *poolStats
+	cacheL1 chan T
+	pool    *RingBuffer[T]
+	
+	mu      sync.RWMutex
+	cond    *sync.Cond
+	stats   *poolStats
+
 	isShrinkBlocked bool
 	isGrowthBlocked bool
 	poolType        reflect.Type
