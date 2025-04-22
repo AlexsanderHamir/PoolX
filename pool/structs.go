@@ -65,7 +65,7 @@ type poolStats struct {
 	initialCapacity int
 
 	mu        sync.RWMutex
-	reqPerObj float64 // derived
+	reqPerObj float64 
 
 	// depending when you collect the utilization, it may be low, be selective.
 	utilization  float64 // derived
@@ -101,7 +101,7 @@ type poolConfig struct {
 	// Determines how fast path is utilized.
 	fastPath *fastPathParameters
 
-	ringBufferConfig *RingBufferConfig
+	ringBufferConfig *ringBufferConfig
 
 	verbose bool
 }
@@ -142,7 +142,7 @@ func (c *poolConfig) GetFastPath() *fastPathParameters {
 	return c.fastPath
 }
 
-func (c *poolConfig) GetRingBufferConfig() *RingBufferConfig {
+func (c *poolConfig) GetRingBufferConfig() *ringBufferConfig {
 	return c.ringBufferConfig
 }
 

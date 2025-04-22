@@ -11,7 +11,7 @@ type PoolConfig interface {
 	GetGrowth() *growthParameters
 	GetShrink() *shrinkParameters
 	GetFastPath() *fastPathParameters
-	GetRingBufferConfig() *RingBufferConfig
+	GetRingBufferConfig() *ringBufferConfig
 	IsVerbose() bool
 }
 

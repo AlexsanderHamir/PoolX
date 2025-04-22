@@ -5,31 +5,31 @@ import (
 	"time"
 )
 
-type RingBufferConfig struct {
+type ringBufferConfig struct {
 	block    bool
 	rTimeout time.Duration
 	wTimeout time.Duration
 }
 
 // Getter methods for RingBufferConfig
-func (c *RingBufferConfig) IsBlocking() bool {
+func (c *ringBufferConfig) IsBlocking() bool {
 	return c.block
 }
 
-func (c *RingBufferConfig) GetReadTimeout() time.Duration {
+func (c *ringBufferConfig) GetReadTimeout() time.Duration {
 	return c.rTimeout
 }
 
-func (c *RingBufferConfig) GetWriteTimeout() time.Duration {
+func (c *ringBufferConfig) GetWriteTimeout() time.Duration {
 	return c.wTimeout
 }
 
-type RingBufferConfigBuilder struct {
-	config *RingBufferConfig
+type ringBufferConfigBuilder struct {
+	config *ringBufferConfig
 }
 
-func NewRingBufferConfigBuilder() *RingBufferConfigBuilder {
-	return &RingBufferConfigBuilder{
+func NewRingBufferConfigBuilder() *ringBufferConfigBuilder {
+	return &ringBufferConfigBuilder{
 		config: defaultRingBufferConfig,
 	}
 }
@@ -37,7 +37,7 @@ func NewRingBufferConfigBuilder() *RingBufferConfigBuilder {
 // WithBlocking sets whether the RingBuffer should operate in blocking mode.
 // If true, Read and Write operations will block when there is no data to read or no space to write.
 // If false, Read and Write operations will return ErrIsEmpty or ErrIsFull immediately.
-func (b *RingBufferConfigBuilder) WithBlocking(block bool) *RingBufferConfigBuilder {
+func (b *ringBufferConfigBuilder) WithBlocking(block bool) *ringBufferConfigBuilder {
 	b.config.block = block
 	return b
 }
@@ -45,7 +45,7 @@ func (b *RingBufferConfigBuilder) WithBlocking(block bool) *RingBufferConfigBuil
 // WithReadTimeout sets the timeout for read operations.
 // If no writes occur within this timeout, the RingBuffer will be closed and context.DeadlineExceeded will be returned.
 // A timeout of 0 or less will disable timeouts.
-func (b *RingBufferConfigBuilder) WithReadTimeout(d time.Duration) *RingBufferConfigBuilder {
+func (b *ringBufferConfigBuilder) WithReadTimeout(d time.Duration) *ringBufferConfigBuilder {
 	b.config.rTimeout = d
 	return b
 }
@@ -53,13 +53,13 @@ func (b *RingBufferConfigBuilder) WithReadTimeout(d time.Duration) *RingBufferCo
 // WithWriteTimeout sets the timeout for write operations.
 // If no reads occur within this timeout, the RingBuffer will be closed and context.DeadlineExceeded will be returned.
 // A timeout of 0 or less will disable timeouts.
-func (b *RingBufferConfigBuilder) WithWriteTimeout(d time.Duration) *RingBufferConfigBuilder {
+func (b *ringBufferConfigBuilder) WithWriteTimeout(d time.Duration) *ringBufferConfigBuilder {
 	b.config.wTimeout = d
 	return b
 }
 
 // Build creates a new RingBuffer with the configured settings.
-func (b *RingBufferConfigBuilder) Build(size int) (*RingBuffer[any], error) {
+func (b *ringBufferConfigBuilder) Build(size int) (*RingBuffer[any], error) {
 	if size <= 0 {
 		return nil, errors.New("size must be greater than 0")
 	}

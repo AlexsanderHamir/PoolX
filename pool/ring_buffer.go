@@ -74,7 +74,7 @@ func NewRingBuffer[T any](size int) *RingBuffer[T] {
 
 // NewWithConfig creates a new RingBuffer with the given size and configuration.
 // It returns an error if the size is less than or equal to 0.
-func newRingBufferWithConfig[T any](size int, config *RingBufferConfig) (*RingBuffer[T], error) {
+func newRingBufferWithConfig[T any](size int, config *ringBufferConfig) (*RingBuffer[T], error) {
 	if size <= 0 {
 		return nil, errors.New("size must be greater than 0")
 	}
@@ -639,6 +639,8 @@ func (r *RingBuffer[T]) Close() error {
 	return nil
 }
 
+// this is only called when we're creating a new buffer from the old one
+// so we can copy the items to the new buffer.
 func (r *RingBuffer[T]) getAll() (part1, part2 []T, err error) {
 	part1, part2, err = r.getAllView()
 	if err != nil {
@@ -690,7 +692,7 @@ func (r *RingBuffer[T]) GetBlockedWriters() int {
 	return r.blockedWriters
 }
 
-func (r *RingBuffer[T]) getNView(n int) (part1, part2 []T, err error) {
+func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 	if n <= 0 {
 		return nil, nil, nil
 	}
