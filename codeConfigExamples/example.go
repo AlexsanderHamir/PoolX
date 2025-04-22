@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"math/rand"
-	"net/http"
-	_ "net/http/pprof"
 	"reflect"
 	"sync"
 	"time"
@@ -33,14 +31,6 @@ var cleaner = func(obj *Example) {
 func main() {
 	numWorkers := 50
 	objectsPerWorker := 5
-
-	// Start pprof HTTP server
-	go func() {
-		fmt.Println("Starting pprof server on :6060")
-		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
-			fmt.Printf("pprof server error: %v\n", err)
-		}
-	}()
 
 	config := configs.CreateHighThroughputConfig()
 	internalConfig := pool.ToInternalConfig(config)

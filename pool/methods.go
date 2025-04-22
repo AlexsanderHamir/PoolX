@@ -77,7 +77,6 @@ func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T), poo
 	return poolObj, nil
 }
 
-// return the cleaner function
 func (p *Pool[T]) Cleaner() func(T) {
 	return p.cleaner
 }

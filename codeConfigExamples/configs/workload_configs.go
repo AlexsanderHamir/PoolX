@@ -6,8 +6,43 @@ import (
 	"github.com/AlexsanderHamir/memory_context/pool"
 )
 
-// This are just made up examples, you should adjust the configs based on your specific workload.
+// 2025/04/22 12:29:03 [SHRINK] UtilizationCheck — usage healthy: 46.14% > 30.00%
+// [DEBUG] Ending UtilizationCheck
+// 2025/04/22 12:29:03 [SHRINK] UtilCheck — rounds: 0 / required: 5 | allowed: false
+// ========== Pool Stats ==========
+// Objects In Use                           : 263
+// Total Available Objects                  : 307
+// Current Ring Buffer Capacity             : 344
+// Ring Buffer Length                       : 86
+// Peak In Use                              : 263
+// Total Gets                               : 250923
+// Total Growth Events                      : 5
+// Total Shrink Events                      : 3
+// Consecutive Shrinks                      : 0
 
+// ---------- Fast Path Resize Stats ----------
+// Last Resize At Growth Num: 4
+// Current L1 Capacity      : 236
+// L1 Length                : 221
+// ---------------------------------------
+
+// ---------- Fast Get Stats ----------
+// Fast Path (L1) Hits  : 250905
+// Slow Path (L2) Hits  : 0
+// Allocator Misses (L3): 5
+// ---------------------------------------
+
+// ---------- Fast Return Stats ----------
+// Fast Return Hit   : 250649
+// Fast Return Miss  : 11
+// L2 Spill Rate     : 0.00%
+// ---------------------------------------
+
+// ---------- Usage Stats ----------
+
+// Request Per Object   : 1161.68
+// Utilization %       : 46.14%
+// ---------------------------------------
 // creates a configuration optimized for high-throughput workloads.
 // This configuration is designed for scenarios where:
 // - High concurrent access is expected
@@ -21,7 +56,7 @@ func CreateHighThroughputConfig() pool.PoolConfig {
 		// - Max capacity: 5000 objects
 		// - Verbose logging enabled
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(128, 5000, true, true).
+		SetPoolBasicConfigs(128, 5000, false, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
