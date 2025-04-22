@@ -114,3 +114,41 @@ func TestRingBufferEdgeCases(t *testing.T) {
 	rb = pool.NewRingBuffer[int](-1)
 	assert.Nil(t, rb)
 }
+
+func TestRingBufferViewModification(t *testing.T) {
+	rb := pool.NewRingBuffer[int](10)
+
+	values := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	for _, v := range values {
+		if err := rb.Write(v); err != nil {
+			t.Fatalf("Failed to write to buffer: %v", err)
+		}
+	}
+
+	part1, _, err := rb.GetNView(5)
+	if err != nil {
+		t.Fatalf("Failed to get views: %v", err)
+	}
+
+	if len(part1) > 0 {
+		part1[0] = 999
+		part1 = append(part1, 1000)
+	}
+
+	readValues, err := rb.GetN(5)
+	if err != nil && err != pool.ErrIsEmpty {
+		t.Fatalf("Failed to read from buffer: %v", err)
+	}
+
+	readValuesMap := make(map[int]bool)
+	for _, v := range readValues {
+		readValuesMap[v] = true
+	}
+
+	for i, v := range part1 {
+		if readValuesMap[v] {
+			t.Logf("Value at index %d was modified: got %d, want %d", i, v, values[i])
+			t.Log("WARNING: Do not modify the buffer view")
+		}
+	}
+}

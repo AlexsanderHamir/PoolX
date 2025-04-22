@@ -143,9 +143,7 @@ func createCustomConfig(t *testing.T) pool.PoolConfig {
 		SetFastPathShrinkMinCapacity(20121).
 		SetVerbose(true).
 		SetRingBufferBlocking(true).
-		WithTimeOut(5 * time.Second).
-		SetRingBufferReadTimeout(5 * time.Second).
-		SetRingBufferWriteTimeout(5 * time.Second).
+		SetRingBufferTimeout(5 * time.Second).
 		Build()
 	require.NoError(t, err)
 
