@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AlexsanderHamir/memory_context/codeConfigExamples/configs"
 	"github.com/AlexsanderHamir/memory_context/pool"
 )
 
@@ -41,20 +42,10 @@ func main() {
 		}
 	}()
 
-	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetPoolBasicConfigs(64, 10000, true, true).
-		SetRingBufferBasicConfigs(true, 0, 0, time.Second*10).
-		SetRingBufferGrowthConfigs(1000.0, 0.75, 1.0).
-		SetRingBufferShrinkConfigs(time.Second*2, time.Second*10, time.Second*10, 3, 3, 8, 10, 0.5, 0.5).
-		SetFastPathBasicConfigs(64, 2, 2, 1.0, 0.10).
-		SetFastPathGrowthConfigs(1000.0, 1.0, 0.75).
-		SetFastPathShrinkConfigs(0.5, 8).
-		Build()
-	if err != nil {
-		panic(err)
-	}
+	config := configs.CreateHighThroughputConfig()
+	internalConfig := pool.ToInternalConfig(config)
 
-	pool, err := pool.NewPool(poolConfig, allocator, cleaner, reflect.TypeOf(&Example{}))
+	pool, err := pool.NewPool(internalConfig, allocator, cleaner, reflect.TypeOf(&Example{}))
 	if err != nil {
 		panic(err)
 	}
@@ -89,13 +80,6 @@ func main() {
 			}
 		}(i)
 	}
-
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			fmt.Printf("Active objects: %d/%d\n", len(activeObjects), cap(activeObjects))
-		}
-	}()
 
 	select {}
 }
