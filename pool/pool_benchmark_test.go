@@ -37,30 +37,6 @@ func setupPool(b *testing.B, config PoolConfig) *Pool[*Example] {
 	return p
 }
 
-func Benchmark_Setup(b *testing.B) {
-	debug.SetGCPercent(-1)
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		poolObj := setupPool(b, nil)
-		_ = poolObj
-	}
-}
-
-// POOL CONFIG
-// fillAggressivenessExtreme                             = 1.0
-// defaultRefillPercent                                  = 0.10
-// defaultMinCapacity                                    = 128
-// defaultPoolCapacity                                   = 128
-
-// defaultHardLimit                                      = 10_000_000
-// defaultHardLimitBufferSize                            = 10_000_000
-// defaultGrowthEventsTrigger                            = 3
-// defaultEnableChannelGrowth                            = true
-// defaultExponentialThresholdFactor                     = 100.0
-// defaultGrowthPercent                                  = 0.25
-// defaultFixedGrowthFactor                              = 2.0
-
 func Benchmark_Get(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
@@ -89,26 +65,6 @@ func Benchmark_Get(b *testing.B) {
 		}
 	})
 
-}
-
-// POOL CONFIG
-// fillAggressivenessExtreme                             = 1.0
-// defaultRefillPercent                                  = 0.10
-// defaultMinCapacity                                    = 128
-// defaultPoolCapacity                                   = 128
-
-// defaultHardLimit                                      = 10_000_000
-// defaultHardLimitBufferSize                            = 10_000_000
-func Benchmark_Put(b *testing.B) {
-	debug.SetGCPercent(-1)
-	b.ReportAllocs()
-
-	poolObj := setupPool(b, nil)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			poolObj.Put(&Example{})
-		}
-	})
 }
 
 func Benchmark_Grow(b *testing.B) {
@@ -145,7 +101,7 @@ func Benchmark_SlowPath(b *testing.B) {
 	})
 }
 
-func Benchmark_RepeatedShrink(b *testing.B) {
+func Benchmark_Shrink(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
