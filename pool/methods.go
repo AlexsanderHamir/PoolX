@@ -85,6 +85,10 @@ func (p *Pool[T]) Cleaner() func(T) {
 func (p *Pool[T]) Get() T {
 	p.handleShrinkBlocked()
 
+	p.stats.mu.Lock()
+	p.stats.lastTimeCalledGet = time.Now()
+	p.stats.mu.Unlock()
+
 	if obj, found := p.tryGetFromL1(); found {
 		p.warningIfZero(obj, "L1")
 		return obj
@@ -130,6 +134,7 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 
 	if obj, found := p.tryGetFromL1(); found {
 		p.warningIfZero(obj, "L1 after refill")
+		p.updateUsageStats()
 		return obj
 	}
 
@@ -234,6 +239,7 @@ func (p *Pool[T]) shrink() {
 			}
 
 			p.mu.Unlock()
+			p.PrintPoolStats()
 		}
 	}
 }
