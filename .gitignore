@@ -34,7 +34,7 @@ pool/cpu.prof
 pool/mem.prof
 pool/allocs.prof
 pool/pool.test
-profiling.md
+profiling_commands.md
 pool/trace.out
 pool/cpu.out
 pool/mem.out
@@ -44,3 +44,5 @@ pool/pool.test.out
 pool/pool.test.out
 performance-report.md
 code_examples/simple/performance.md
+notes.md
+optimizations

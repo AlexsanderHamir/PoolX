@@ -44,7 +44,7 @@ var defaultFastPath = &fastPathParameters{
 	shrink:              defaultShrinkParameters,
 }
 
-var defaultRingBufferConfig = &RingBufferConfig{
+var defaultRingBufferConfig = &ringBufferConfig{
 	block:    false,
 	rTimeout: 0,
 	wTimeout: 0,
