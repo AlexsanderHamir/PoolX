@@ -211,6 +211,7 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 		return false
 	}
 
+	r.blockedWriters--
 	return true
 }
 
@@ -219,8 +220,10 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 // Returns false if waited longer than wTimeout.
 // Must be called when locked and returns locked.
 func (r *RingBuffer[T]) waitWrite() (ok bool) {
+	r.blockedReaders++
 	if r.wTimeout <= 0 {
 		r.writeCond.Wait()
+		r.blockedReaders--
 		return true
 	}
 
@@ -230,9 +233,11 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 	r.writeCond.Wait()
 	if time.Since(start) >= r.wTimeout {
 		r.setErr(context.DeadlineExceeded, true)
+		r.blockedReaders--
 		return false
 	}
 
+	r.blockedReaders--
 	return true
 }
 
@@ -481,12 +486,9 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 			return item, ErrIsEmpty
 		}
 
-		r.blockedReaders++
 		if !r.waitWrite() {
-			r.blockedReaders--
 			return item, context.DeadlineExceeded
 		}
-		r.blockedReaders--
 
 		if err := r.readErr(true); err != nil {
 			return item, err

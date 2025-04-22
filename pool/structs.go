@@ -45,7 +45,6 @@ type poolStats struct {
 	objectsInUse       atomic.Uint64
 	availableObjects   atomic.Uint64
 	peakInUse          atomic.Uint64
-	blockedGets        atomic.Uint64
 	currentCapacity    atomic.Uint64
 	consecutiveShrinks atomic.Uint64
 	totalGets          atomic.Uint64
@@ -65,7 +64,7 @@ type poolStats struct {
 	initialCapacity int
 
 	mu        sync.RWMutex
-	reqPerObj float64 
+	reqPerObj float64
 
 	// depending when you collect the utilization, it may be low, be selective.
 	utilization  float64 // derived

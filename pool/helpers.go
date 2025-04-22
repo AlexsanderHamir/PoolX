@@ -120,7 +120,6 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Printf("Total Growth Events  			 : %d\n", p.stats.totalGrowthEvents.Load())
 	fmt.Printf("Total Shrink Events  			 : %d\n", p.stats.totalShrinkEvents.Load())
 	fmt.Printf("Consecutive Shrinks  			 : %d\n", p.stats.consecutiveShrinks.Load())
-	fmt.Printf("Blocked Gets         			 : %d\n", p.stats.blockedGets.Load())
 
 	fmt.Println()
 	fmt.Println("---------- Fast Path Resize Stats ----------")
@@ -623,13 +622,22 @@ func (p *Pool[T]) shouldShrinkFastPath() bool {
 func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap uint64) int {
 	cfg := p.config.fastPath.shrink
 	newCap := int(float64(currentCap) * (1.0 - cfg.shrinkPercent))
+	inUse := int(p.stats.objectsInUse.Load())
 
 	if newCap < cfg.minCapacity {
 		if p.config.verbose {
 			log.Printf("[SHRINK | FAST PATH] Adjusting to min capacity: %d", cfg.minCapacity)
 		}
-		newCap = cfg.minCapacity
+		return cfg.minCapacity
 	}
+
+	if inUse > newCap {
+		if p.config.verbose {
+			log.Printf("[SHRINK | FAST PATH] Adjusting to in-use objects: %d", inUse)
+		}
+		return inUse
+	}
+
 	return newCap
 }
 
@@ -773,6 +781,8 @@ func (p *Pool[T]) handleShrinkBlocked() {
 		}
 		p.cond.Broadcast()
 	}
+
+	p.stats.lastTimeCalledGet = time.Now()
 }
 
 func (p *Pool[T]) handleRefillFailure(refillReason string) (T, bool) {
@@ -954,9 +964,9 @@ func (p *Pool[T]) getItemsFromOldBuffer() (part1, part2 []T, err error) {
 }
 
 func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, part2 []T, newCapacity uint64) error {
-	if len(part1) > int(newCapacity) {
+	if len(part1)+len(part2) > int(newCapacity) {
 		if p.config.verbose {
-			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(part1))
+			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(part1)+len(part2))
 		}
 		return ErrInvalidLength
 	}
