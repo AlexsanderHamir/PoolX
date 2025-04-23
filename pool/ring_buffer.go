@@ -10,31 +10,28 @@ import (
 
 var (
 	// ErrTooMuchDataToWrite is returned when the data to write is more than the buffer size.
-	ErrTooMuchDataToWrite = errors.New("too much data to write")
+	errTooMuchDataToWrite = errors.New("too much data to write")
 
 	// ErrIsFull is returned when the buffer is full and not blocking.
-	ErrIsFull = errors.New("ringbuffer is full")
+	errIsFull = errors.New("ringbuffer is full")
 
 	// ErrIsEmpty is returned when the buffer is empty and not blocking.
-	ErrIsEmpty = errors.New("ringbuffer is empty")
+	errIsEmpty = errors.New("ringbuffer is empty")
 
 	// ErrIsNotEmpty is returned when the buffer is not empty and not blocking.
-	ErrIsNotEmpty = errors.New("ringbuffer is not empty")
+	errIsNotEmpty = errors.New("ringbuffer is not empty")
 
 	// ErrAcquireLock is returned when the lock is not acquired on Try operations.
-	ErrAcquireLock = errors.New("unable to acquire lock")
+	errAcquireLock = errors.New("unable to acquire lock")
 
 	// ErrWriteOnClosed is returned when write on a closed ringbuffer.
-	ErrWriteOnClosed = errors.New("write on closed ringbuffer")
-
-	// ErrReaderClosed is returned when a ReadClosed closed the ringbuffer.
-	ErrReaderClosed = errors.New("reader closed")
+	errWriteOnClosed = errors.New("write on closed ringbuffer")
 
 	// ErrInvalidLength is returned when the length of the buffer is invalid.
-	ErrInvalidLength = errors.New("invalid length")
+	errInvalidLength = errors.New("invalid length")
 
 	// ErrNilValue is returned when a nil value is written to the ring buffer.
-	ErrNilValue = errors.New("cannot write nil value to ring buffer")
+	errNilValue = errors.New("cannot write nil value to ring buffer")
 )
 
 // RingBuffer is a circular buffer that implements io.ReaderWriter interface.
@@ -60,6 +57,24 @@ type RingBuffer[T any] struct {
 	blockedWriters int
 }
 
+type ringBufferConfig struct {
+	block    bool
+	rTimeout time.Duration
+	wTimeout time.Duration
+}
+
+func (c *ringBufferConfig) IsBlocking() bool {
+	return c.block
+}
+
+func (c *ringBufferConfig) GetReadTimeout() time.Duration {
+	return c.rTimeout
+}
+
+func (c *ringBufferConfig) GetWriteTimeout() time.Duration {
+	return c.wTimeout
+}
+
 // New returns a new RingBuffer whose buffer has the given size.
 func NewRingBuffer[T any](size int) *RingBuffer[T] {
 	if size <= 0 {
@@ -74,7 +89,7 @@ func NewRingBuffer[T any](size int) *RingBuffer[T] {
 
 // NewWithConfig creates a new RingBuffer with the given size and configuration.
 // It returns an error if the size is less than or equal to 0.
-func newRingBufferWithConfig[T any](size int, config *ringBufferConfig) (*RingBuffer[T], error) {
+func NewRingBufferWithConfig[T any](size int, config *ringBufferConfig) (*RingBuffer[T], error) {
 	if size <= 0 {
 		return nil, errors.New("size must be greater than 0")
 	}
@@ -160,7 +175,7 @@ func (r *RingBuffer[T]) setErr(err error, locked bool) error {
 
 	switch err {
 	// Internal errors are temporary
-	case nil, ErrIsEmpty, ErrIsFull, ErrAcquireLock, ErrTooMuchDataToWrite, ErrIsNotEmpty, context.DeadlineExceeded:
+	case nil, errIsEmpty, errIsFull, errAcquireLock, errTooMuchDataToWrite, errIsNotEmpty, context.DeadlineExceeded:
 		return err
 	default:
 		r.err = err
@@ -248,7 +263,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return ErrWriteOnClosed
+		return errWriteOnClosed
 	}
 
 	if r.err != nil {
@@ -256,7 +271,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 	}
 
 	if any(item) == nil {
-		return ErrNilValue
+		return errNilValue
 	}
 
 	if r.isFull {
@@ -266,10 +281,10 @@ func (r *RingBuffer[T]) Write(item T) error {
 			}
 
 			if r.isFull {
-				return ErrIsFull
+				return errIsFull
 			}
 		} else {
-			return ErrIsFull
+			return errIsFull
 		}
 	}
 
@@ -301,7 +316,7 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 
 	for i := range items {
 		if any(items[i]) == nil {
-			return 0, ErrNilValue
+			return 0, errNilValue
 		}
 
 		if r.isFull {
@@ -310,10 +325,10 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 					return n, context.DeadlineExceeded
 				}
 				if r.isFull {
-					return n, ErrIsFull
+					return n, errIsFull
 				}
 			} else {
-				return n, ErrIsFull
+				return n, errIsFull
 			}
 		}
 
@@ -416,7 +431,7 @@ func (r *RingBuffer[T]) PeekOne() (item T, err error) {
 	}
 
 	if r.w == r.r && !r.isFull {
-		return item, ErrIsEmpty
+		return item, errIsEmpty
 	}
 
 	return r.buf[r.r], nil
@@ -436,7 +451,7 @@ func (r *RingBuffer[T]) PeekN(n int) (items []T, err error) {
 	}
 
 	if r.w == r.r && !r.isFull {
-		return nil, ErrIsEmpty
+		return nil, errIsEmpty
 	}
 
 	var count int
@@ -483,7 +498,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	// and the others will check if the buffer is empty again.
 	for r.w == r.r && !r.isFull {
 		if !r.block {
-			return item, ErrIsEmpty
+			return item, errIsEmpty
 		}
 
 		if !r.waitWrite() {
@@ -525,7 +540,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 	// Keep waiting while the buffer is empty
 	for r.w == r.r && !r.isFull {
 		if !r.block {
-			return nil, ErrIsEmpty
+			return nil, errIsEmpty
 		}
 		if !r.waitWrite() {
 			return nil, context.DeadlineExceeded
@@ -708,7 +723,7 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 
 	for r.w == r.r && !r.isFull {
 		if !r.block {
-			return nil, nil, ErrIsEmpty
+			return nil, nil, errIsEmpty
 		}
 		if !r.waitWrite() {
 			return nil, nil, context.DeadlineExceeded

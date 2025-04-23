@@ -136,7 +136,7 @@ func TestRingBufferViewModification(t *testing.T) {
 	}
 
 	readValues, err := rb.GetN(5)
-	if err != nil && err != pool.ErrIsEmpty {
+	if err != nil {
 		t.Fatalf("Failed to read from buffer: %v", err)
 	}
 
