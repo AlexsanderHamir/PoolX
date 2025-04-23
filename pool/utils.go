@@ -87,7 +87,7 @@ func (p *Pool[T]) releaseObj(obj T) {
 	p.reduceObjectsInUse()
 }
 
-// Using a lock is necessary to avoid race conditions when decrementing,
+// Using a lock is necessary to avoid race conditions when reducing the number of objects in use.
 // even with atomic operations, since we're using two of them.
 func (p *Pool[T]) reduceObjectsInUse() {
 	p.mu.Lock()

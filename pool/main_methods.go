@@ -154,7 +154,6 @@ func (p *Pool[T]) shrink() {
 				continue
 			}
 
-			p.updateAvailableObjs()
 			p.performShrinkChecks(params, &idleCount, &underutilCount, &idleOK, &utilOK)
 			if idleOK || utilOK {
 				p.executeShrink(&idleCount, &underutilCount, &idleOK, &utilOK)
@@ -216,13 +215,4 @@ func (p *Pool[T]) Close() error {
 	p.resetPoolState()
 
 	return nil
-}
-
-func (p *Pool[T]) RingBufferCapacity() int {
-	return p.pool.Capacity()
-}
-
-// ring buffer length
-func (p *Pool[T]) RingBufferLength() int {
-	return p.pool.Length()
 }

@@ -125,6 +125,8 @@ func (p *Pool[T]) handleHealthyUtilization(utilization, minUtil float64, underut
 }
 
 func (p *Pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
+	p.updateAvailableObjs()
+
 	utilization := p.calculateUtilization()
 	minUtil := p.config.shrink.minUtilizationBeforeShrink * 100
 	requiredRounds := p.config.shrink.stableUnderutilizationRounds
@@ -388,4 +390,13 @@ func (p *Pool[T]) slowPath() (obj T, err error) {
 	p.logIfVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
 
 	return obj, nil
+}
+
+func (p *Pool[T]) RingBufferCapacity() int {
+	return p.pool.Capacity()
+}
+
+// ring buffer length
+func (p *Pool[T]) RingBufferLength() int {
+	return p.pool.Length()
 }
