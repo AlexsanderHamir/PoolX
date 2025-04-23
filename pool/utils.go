@@ -84,6 +84,15 @@ func (p *Pool[T]) releaseObj(obj T) {
 	}
 
 	p.cleaner(obj)
+	p.reduceObjectsInUse()
+}
+
+// Using a lock is necessary to avoid race conditions when decrementing,
+// even with atomic operations, since we're using two of them.
+func (p *Pool[T]) reduceObjectsInUse() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	for {
 		old := p.stats.objectsInUse.Load()
 		if old == 0 {
@@ -104,6 +113,32 @@ func (p *Pool[T]) reduceL1Hit() {
 		}
 
 		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+// This is a helper function to update the peak in use stats.
+func (p *Pool[T]) updatePeakInUse(currentInUse uint64) {
+	for {
+		peak := p.stats.peakInUse.Load()
+		if currentInUse <= peak {
+			break
+		}
+
+		if p.stats.peakInUse.CompareAndSwap(peak, currentInUse) {
+			break
+		}
+	}
+}
+
+func (p *Pool[T]) updateConsecutiveShrinks() {
+	for {
+		current := p.stats.consecutiveShrinks.Load()
+		if current == 0 {
+			break
+		}
+		if p.stats.consecutiveShrinks.CompareAndSwap(current, current-1) {
 			break
 		}
 	}

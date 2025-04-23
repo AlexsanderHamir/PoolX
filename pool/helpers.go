@@ -125,10 +125,6 @@ func (p *Pool[T]) handleHealthyUtilization(utilization, minUtil float64, underut
 }
 
 func (p *Pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
-	p.mu.Unlock()
-	p.updateAvailableObjs()
-	p.mu.Lock()
-
 	utilization := p.calculateUtilization()
 	minUtil := p.config.shrink.minUtilizationBeforeShrink * 100
 	requiredRounds := p.config.shrink.stableUnderutilizationRounds
@@ -213,7 +209,7 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, string, error) {
 	return part1, part2, "", nil
 }
 
-func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
+func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) error {
 	for _, item := range items {
 		select {
 		case p.cacheL1 <- item:
@@ -223,9 +219,11 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
 			result.ItemsFailed++
 			if err := p.pool.Write(item); err != nil {
 				p.logIfVerbose("[REFILL] Error putting object back in ring buffer: %v", err)
+				return fmt.Errorf("failed to put object back in ring buffer: %w", err)
 			}
 		}
 	}
+	return nil
 }
 
 // refill attempts to refill the L1 cache with objects from the pool.
@@ -245,8 +243,19 @@ func (p *Pool[T]) refill(fillTarget int) refillResult {
 		return result
 	}
 
-	p.moveItemsToL1(part1, &result)
-	p.moveItemsToL1(part2, &result)
+	err = p.moveItemsToL1(part1, &result)
+	if err != nil {
+		result.Success = false
+		result.Reason = fmt.Sprintf("%s: %v", ringBufferError, err)
+		return result
+	}
+
+	err = p.moveItemsToL1(part2, &result)
+	if err != nil {
+		result.Success = false
+		result.Reason = fmt.Sprintf("%s: %v", ringBufferError, err)
+		return result
+	}
 
 	result.Success = true
 	result.Reason = refillSucceeded
@@ -377,10 +386,6 @@ func (p *Pool[T]) slowPath() (obj T, err error) {
 	}
 
 	p.logIfVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
-
-	p.stats.mu.Lock()
-	p.stats.lastTimeCalledGet = time.Now()
-	p.stats.mu.Unlock()
 
 	return obj, nil
 }
