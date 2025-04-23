@@ -279,3 +279,52 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacit
 	}
 	return nil
 }
+
+// calculateGrowthParameters computes the necessary parameters for pool growth
+func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64, uint64) {
+	cfg := p.config.growth
+	currentCap := p.stats.currentCapacity.Load()
+	objectsInUse := p.stats.objectsInUse.Load()
+	exponentialThreshold := uint64(float64(p.config.initialCapacity) * cfg.exponentialThresholdFactor)
+	fixedStep := uint64(float64(p.config.initialCapacity) * cfg.fixedGrowthFactor)
+	return currentCap, objectsInUse, exponentialThreshold, fixedStep
+}
+
+// updatePoolCapacity handles the core capacity update logic
+func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
+	if p.needsToShrinkToHardLimit(newCapacity) {
+		newCapacity = uint64(p.config.hardLimit)
+		if p.config.verbose {
+			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
+		}
+		p.isGrowthBlocked = true
+	}
+
+	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)
+	if err != nil {
+		if p.config.verbose {
+			log.Printf("[GROW] Failed to create and populate buffer: %v", err)
+		}
+		return err
+	}
+
+	p.pool = newRingBuffer
+	p.stats.currentCapacity.Store(newCapacity)
+	return nil
+}
+
+// updateGrowthStats updates all statistics related to pool growth
+func (p *Pool[T]) updateGrowthStats(now time.Time) {
+	p.stats.lastGrowTime = now
+	p.stats.l3MissCount.Add(1)
+	p.stats.totalGrowthEvents.Add(1)
+	p.reduceL1Hit()
+}
+
+// logGrowthState logs the final state of the pool after growth
+func (p *Pool[T]) logGrowthState(newCapacity, objectsInUse uint64) {
+	if p.config.verbose {
+		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
+			newCapacity, p.pool.Length(), len(p.cacheL1), objectsInUse)
+	}
+}
