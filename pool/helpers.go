@@ -335,8 +335,6 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 	}
 
 	if obj, found := p.tryGetFromL1(); found {
-		p.warningIfZero(obj, "L1 after refill")
-		p.updateUsageStats()
 		return obj
 	}
 
