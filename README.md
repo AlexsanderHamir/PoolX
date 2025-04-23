@@ -105,10 +105,18 @@ if err != nil {
 
 1. Depending on the L1 size, the ring buffer may remain mostly empty unless frequent spills from L1 occur. This indicates that L1 or the ring buffer are not large enough to sustain the load.
 2. Object retrieval and return operations first attempt to use L1. Only if L1 is blocked (empty/full) will the ring buffer be accessed.
-3. If the ring buffer is non-blocking, it returns `ErrIsEmpty` for reads and `ErrIsFull` for writes.
+3. If the ring buffer is non-blocking, it returns `ErrIsEmpty` for reads and `ErrIsFull` for writes. (if it applies)
 4. If the ring buffer is set to blocking, it only blocks when the `hardLimit` is reached.
 5. When getting an object, the system first attempts to retrieve from L1. If unsuccessful, it tries to refill L1. If that also fails, it falls back to the ring buffer.
 6. When returning an object, it attempts to place it in L1. If there are blocked get requests, the object is instead returned to the ring buffer.
 7. Although many optimizations are in place, resizing is very expensive—minimize it when possible.
 8. The `minUtilizationBeforeShrink` configuration is crucial. When the ring buffer's utilization is at or below this threshold, it becomes eligible for shrinking. The system tries to find the most efficient size that can handle a high request volume without wasting space. Still, remember that resizing is costly.
-9. Keep in mind that objects are reused. For example, with 50,000 requests and only 1,000 objects in blocking mode, those 1,000 objects are rotated across all 50,000 requests.
+9. If growth has been blocked due to reaching the `hardLimit`, it will be re-enabled once the pool shrinks below that limit.
+10. If the number of consecutive shrinks reaches `maxConsecutiveShrinks`, further shrinking will be blocked until a new get request is received.
+11. Keep in mind that objects are reused. For example, with 50,000 requests and only 1,000 objects in blocking mode, those 1,000 objects are rotated across all 50,000 requests.
+
+## Warnings
+
+- Look at the default values before going with them.
+- The ring buffer is not on blocking mode by default.
+- Only pointers can be stored in the pool (ring buffer / L1), anything else will throw an error.

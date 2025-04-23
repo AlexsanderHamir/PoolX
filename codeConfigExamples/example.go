@@ -31,7 +31,6 @@ var cleaner = func(obj *Example) {
 func main() {
 	numWorkers := 50
 	objectsPerWorker := 5
-
 	config := configs.CreateHighThroughputConfig()
 
 	poolType := reflect.TypeOf(&Example{})
