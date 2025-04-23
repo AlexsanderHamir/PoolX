@@ -27,6 +27,7 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() {
 		newCap = currentCap + step
 	}
 
+	// WARNING: There may be objects in use, we're counting on the PUT to not drop objects.
 	newL1 := make(chan T, newCap)
 	for {
 		select {
@@ -36,8 +37,8 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() {
 			goto done
 		}
 	}
-done:
 
+done:
 	p.cacheL1 = newL1
 	p.stats.currentL1Capacity.Store(newCap)
 	p.stats.lastResizeAtGrowthNum.Store(p.stats.totalGrowthEvents.Load())

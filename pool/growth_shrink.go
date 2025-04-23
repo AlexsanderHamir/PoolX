@@ -285,13 +285,18 @@ func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64, uint64) {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
-	exponentialThreshold := uint64(float64(p.config.initialCapacity) * cfg.exponentialThresholdFactor)
-	fixedStep := uint64(float64(p.config.initialCapacity) * cfg.fixedGrowthFactor)
+	exponentialThreshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
+	fixedStep := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
 	return currentCap, objectsInUse, exponentialThreshold, fixedStep
 }
 
 // updatePoolCapacity handles the core capacity update logic
 func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
+	if uint64(p.config.hardLimit) == newCapacity {
+		p.isGrowthBlocked = true
+		return nil
+	}
+
 	if p.needsToShrinkToHardLimit(newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
 		if p.config.verbose {
