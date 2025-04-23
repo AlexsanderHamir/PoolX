@@ -22,7 +22,7 @@ type Pool[T any] struct {
 	isGrowthBlocked bool
 	poolType        reflect.Type
 
-	config    *poolConfig
+	config    *PoolConfig
 	cleaner   func(T)
 	allocator func() T
 
@@ -75,7 +75,7 @@ type poolStats struct {
 	lastGrowTime      time.Time
 }
 
-type poolConfig struct {
+type PoolConfig struct {
 	// Pool initial capacity which avoids resizing the slice,
 	// until it reaches the defined capacity.
 	initialCapacity int
@@ -105,47 +105,32 @@ type poolConfig struct {
 	verbose bool
 }
 
-func ToInternalConfig(config PoolConfig) *poolConfig {
-	if config == nil {
-		return nil
-	}
-
-	return &poolConfig{
-		initialCapacity:  config.GetInitialCapacity(),
-		hardLimit:        config.GetHardLimit(),
-		growth:           config.GetGrowth(),
-		shrink:           config.GetShrink(),
-		fastPath:         config.GetFastPath(),
-		ringBufferConfig: config.GetRingBufferConfig(),
-		verbose:          config.IsVerbose(),
-	}
-}
-
-func (c *poolConfig) GetInitialCapacity() int {
+// Getter methods for PoolConfig
+func (c *PoolConfig) GetInitialCapacity() int {
 	return c.initialCapacity
 }
 
-func (c *poolConfig) GetHardLimit() int {
+func (c *PoolConfig) GetHardLimit() int {
 	return c.hardLimit
 }
 
-func (c *poolConfig) GetGrowth() *growthParameters {
+func (c *PoolConfig) GetGrowth() *growthParameters {
 	return c.growth
 }
 
-func (c *poolConfig) GetShrink() *shrinkParameters {
+func (c *PoolConfig) GetShrink() *shrinkParameters {
 	return c.shrink
 }
 
-func (c *poolConfig) GetFastPath() *fastPathParameters {
+func (c *PoolConfig) GetFastPath() *fastPathParameters {
 	return c.fastPath
 }
 
-func (c *poolConfig) GetRingBufferConfig() *ringBufferConfig {
+func (c *PoolConfig) GetRingBufferConfig() *ringBufferConfig {
 	return c.ringBufferConfig
 }
 
-func (c *poolConfig) IsVerbose() bool {
+func (c *PoolConfig) IsVerbose() bool {
 	return c.verbose
 }
 
@@ -350,16 +335,9 @@ type fastPathParameters struct {
 	enableChannelGrowth bool
 }
 
+// Getter methods for fastPathParameters
 func (f *fastPathParameters) GetInitialSize() int {
 	return f.initialSize
-}
-
-func (f *fastPathParameters) GetGrowthEventsTrigger() int {
-	return f.growthEventsTrigger
-}
-
-func (f *fastPathParameters) GetShrinkEventsTrigger() int {
-	return f.shrinkEventsTrigger
 }
 
 func (f *fastPathParameters) GetFillAggressiveness() float64 {
@@ -370,16 +348,24 @@ func (f *fastPathParameters) GetRefillPercent() float64 {
 	return f.refillPercent
 }
 
+func (f *fastPathParameters) IsEnableChannelGrowth() bool {
+	return f.enableChannelGrowth
+}
+
+func (f *fastPathParameters) GetGrowthEventsTrigger() int {
+	return f.growthEventsTrigger
+}
+
+func (f *fastPathParameters) GetShrinkEventsTrigger() int {
+	return f.shrinkEventsTrigger
+}
+
 func (f *fastPathParameters) GetGrowth() *growthParameters {
 	return f.growth
 }
 
 func (f *fastPathParameters) GetShrink() *shrinkParameters {
 	return f.shrink
-}
-
-func (f *fastPathParameters) IsEnableChannelGrowth() bool {
-	return f.enableChannelGrowth
 }
 
 type Example struct {

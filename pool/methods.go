@@ -45,7 +45,7 @@ const (
 	NoItemsToMove   = "no items to move"
 )
 
-func NewPool[T any](config *poolConfig, allocator func() T, cleaner func(T), poolType reflect.Type) (*Pool[T], error) {
+func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poolType reflect.Type) (*Pool[T], error) {
 	if config == nil {
 		config = createDefaultConfig()
 	}
@@ -283,8 +283,8 @@ func (p *Pool[T]) grow(now time.Time) bool {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
-	exponentialThreshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
-	fixedStep := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
+	exponentialThreshold := uint64(float64(p.config.initialCapacity) * cfg.exponentialThresholdFactor)
+	fixedStep := uint64(float64(p.config.initialCapacity) * cfg.fixedGrowthFactor)
 
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
 	if p.needsToShrinkToHardLimit(newCapacity) {

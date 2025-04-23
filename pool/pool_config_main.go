@@ -213,9 +213,7 @@ func (b *poolConfigBuilder) SetFastPathShrinkAggressiveness(level Aggressiveness
 
 // SetRingBufferBasicConfigs sets the basic configuration parameters for the ring buffer.
 func (b *poolConfigBuilder) SetRingBufferBasicConfigs(block bool, rTimeout, wTimeout, bothTimeout time.Duration) *poolConfigBuilder {
-	if block {
-		b.config.ringBufferConfig.block = block
-	}
+	b.config.ringBufferConfig.block = block
 
 	if rTimeout > 0 {
 		b.config.ringBufferConfig.rTimeout = rTimeout

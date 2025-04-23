@@ -7,7 +7,7 @@ import (
 
 // poolConfigBuilder is responsible for building pool configurations with various settings
 type poolConfigBuilder struct {
-	config *poolConfig
+	config *PoolConfig
 }
 
 // NewPoolConfigBuilder creates a new pool configuration builder with default settings.
@@ -22,7 +22,7 @@ func NewPoolConfigBuilder() *poolConfigBuilder {
 	}
 
 	pgb := &poolConfigBuilder{
-		config: &poolConfig{
+		config: &PoolConfig{
 			initialCapacity:  defaultPoolCapacity,
 			hardLimit:        defaultHardLimit,
 			shrink:           &copiedShrink,
@@ -228,7 +228,7 @@ func (b *poolConfigBuilder) SetRingBufferWriteTimeout(d time.Duration) *poolConf
 
 // Build creates a new pool configuration with the configured settings.
 // It validates all configuration parameters and returns an error if any validation fails.
-func (b *poolConfigBuilder) Build() (*poolConfig, error) {
+func (b *poolConfigBuilder) Build() (*PoolConfig, error) {
 	if err := b.validateBasicConfig(); err != nil {
 		return nil, fmt.Errorf("basic configuration validation failed: %w", err)
 	}

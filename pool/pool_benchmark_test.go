@@ -16,7 +16,7 @@ var cleaner = func(e *Example) {
 	e.Age = 0
 }
 
-func setupPool(b *testing.B, config PoolConfig) *Pool[*Example] {
+func setupPool(b *testing.B, config *PoolConfig) *Pool[*Example] {
 	if config == nil {
 		builder, err := NewPoolConfigBuilder().
 			SetShrinkAggressiveness(AggressivenessExtreme)
@@ -30,7 +30,7 @@ func setupPool(b *testing.B, config PoolConfig) *Pool[*Example] {
 		}
 	}
 
-	p, err := NewPool(ToInternalConfig(config), allocator, cleaner, reflect.TypeOf(&Example{}))
+	p, err := NewPool(config, allocator, cleaner, reflect.TypeOf(&Example{}))
 	if err != nil {
 		b.Fatalf("Failed to create pool: %v", err)
 	}

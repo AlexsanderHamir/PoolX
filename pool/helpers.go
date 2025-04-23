@@ -56,6 +56,7 @@ func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint
 		}
 		return newCap
 	}
+	
 	newCap := currentCap + fixedStep
 	if p.config.verbose {
 		log.Printf("[GROW] Strategy: fixed-step | Threshold: %d | Current: %d | Step: %d | New capacity: %d",
@@ -705,9 +706,9 @@ func (p *Pool[T]) updateDerivedStats() {
 	p.stats.mu.Unlock()
 }
 
-func createDefaultConfig() *poolConfig {
+func createDefaultConfig() *PoolConfig {
 	pgb := &poolConfigBuilder{
-		config: &poolConfig{
+		config: &PoolConfig{
 			initialCapacity:  defaultPoolCapacity,
 			hardLimit:        defaultHardLimit,
 			shrink:           defaultShrinkParameters,
@@ -727,7 +728,7 @@ func createDefaultConfig() *poolConfig {
 	return pgb.config
 }
 
-func initializePoolStats(config *poolConfig) *poolStats {
+func initializePoolStats(config *PoolConfig) *poolStats {
 	stats := &poolStats{mu: sync.RWMutex{}}
 	stats.initialCapacity += config.initialCapacity
 	stats.currentCapacity.Store(uint64(config.initialCapacity))
@@ -744,7 +745,7 @@ func validateAllocator[T any](allocator func() T) error {
 	return nil
 }
 
-func initializePoolObject[T any](config *poolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T], poolType reflect.Type) (*Pool[T], error) {
+func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T], poolType reflect.Type) (*Pool[T], error) {
 	poolObj := &Pool[T]{
 		cacheL1:   make(chan T, config.fastPath.initialSize),
 		allocator: allocator,
