@@ -9,29 +9,30 @@ import (
 
 // poolStats contains all the statistics for the pool
 type poolStats struct {
-	mu                    sync.RWMutex
-	initialCapacity       uint64
-	currentCapacity       atomic.Uint64
-	availableObjects      atomic.Uint64
-	objectsInUse          atomic.Uint64
-	peakInUse             atomic.Uint64
-	totalGets             atomic.Uint64
-	totalGrowthEvents     atomic.Uint64
-	totalShrinkEvents     atomic.Uint64
-	consecutiveShrinks    atomic.Uint64
-	l1HitCount            atomic.Uint64
-	l2HitCount            atomic.Uint64
-	l3MissCount           atomic.Uint64
-	FastReturnHit         atomic.Uint64
-	FastReturnMiss        atomic.Uint64
-	lastTimeCalledGet     time.Time
-	lastShrinkTime        time.Time
-	lastGrowTime          time.Time
-	lastResizeAtGrowthNum atomic.Uint64
-	lastResizeAtShrinkNum atomic.Uint64
-	currentL1Capacity     atomic.Uint64
-	reqPerObj             float64
-	utilization           float64
+	mu sync.RWMutex
+
+	initialCapacity       uint64        // essential && static
+	currentCapacity       atomic.Uint64 // essential && dynamic
+	availableObjects      atomic.Uint64 // essential && dynamic
+	objectsInUse          atomic.Uint64 // essential && dynamic
+	peakInUse             atomic.Uint64 // no essential && is dynamic
+	totalGets             atomic.Uint64 // essential && dynamic
+	totalGrowthEvents     atomic.Uint64 // essential && dynamic
+	totalShrinkEvents     atomic.Uint64 // essential && dynamic
+	consecutiveShrinks    atomic.Uint64 // essential && dynamic
+	l1HitCount            atomic.Uint64 // no essential && is dynamic
+	l2HitCount            atomic.Uint64 // no essential && is dynamic
+	l3MissCount           atomic.Uint64 // no essential && is dynamic
+	FastReturnHit         atomic.Uint64 // no essential && is dynamic
+	FastReturnMiss        atomic.Uint64 // no essential && is dynamic
+	lastTimeCalledGet     time.Time     // essential && is dynamic
+	lastShrinkTime        time.Time     // essential && is dynamic
+	lastGrowTime          time.Time     // no essential && is dynamic
+	lastResizeAtGrowthNum atomic.Uint64 // essential && is dynamic
+	lastResizeAtShrinkNum atomic.Uint64 // essential && is dynamic
+	currentL1Capacity     atomic.Uint64 // essential && is dynamic
+	reqPerObj             float64       // no essential && is dynamic
+	utilization           float64       // essential && is dynamic
 }
 
 // PoolStats represents a snapshot of the pool's statistics at a given moment
