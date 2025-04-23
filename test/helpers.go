@@ -76,7 +76,7 @@ type DefaultConfigValues struct {
 }
 
 // storeDefaultConfigValues stores all default configuration values
-func storeDefaultConfigValues(config pool.PoolConfig) DefaultConfigValues {
+func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
 	return DefaultConfigValues{
 		InitialCapacity:                    config.GetInitialCapacity(),
 		HardLimit:                          config.GetHardLimit(),
@@ -113,7 +113,7 @@ func storeDefaultConfigValues(config pool.PoolConfig) DefaultConfigValues {
 }
 
 // createCustomConfig creates a custom configuration with different values
-func createCustomConfig(t *testing.T) pool.PoolConfig {
+func createCustomConfig(t *testing.T) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(101210).
 		SetHardLimit(10000000028182820).
@@ -151,7 +151,7 @@ func createCustomConfig(t *testing.T) pool.PoolConfig {
 }
 
 // verifyCustomValuesDifferent verifies that custom values are different from default values
-func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, custom pool.PoolConfig) {
+func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, custom *pool.PoolConfig) {
 	assert.NotEqual(t, original.InitialCapacity, custom.GetInitialCapacity())
 	assert.NotEqual(t, original.HardLimit, custom.GetHardLimit())
 	assert.NotEqual(t, original.GrowthPercent, custom.GetGrowth().GetGrowthPercent())
@@ -185,7 +185,7 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 }
 
 // createHardLimitTestConfig creates a configuration for hard limit testing
-func createHardLimitTestConfig(t *testing.T, blocking bool) pool.PoolConfig {
+func createHardLimitTestConfig(t *testing.T, blocking bool) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(10).
 		SetHardLimit(20).
@@ -197,7 +197,7 @@ func createHardLimitTestConfig(t *testing.T, blocking bool) pool.PoolConfig {
 }
 
 // createTestPool creates a pool with the given configuration
-func createTestPool(t *testing.T, config pool.PoolConfig) *pool.Pool[*TestObject] {
+func createTestPool(t *testing.T, config *pool.PoolConfig) *pool.Pool[*TestObject] {
 	allocator := func() *TestObject {
 		return &TestObject{Value: 42}
 	}
@@ -206,8 +206,7 @@ func createTestPool(t *testing.T, config pool.PoolConfig) *pool.Pool[*TestObject
 		obj.Value = 0
 	}
 
-	internalConfig := pool.ToInternalConfig(config)
-	p, err := pool.NewPool(internalConfig, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	return p
 }
@@ -302,7 +301,7 @@ func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGorou
 	}
 }
 
-func testInvalidConfig(t *testing.T, name string, configFunc func() (pool.PoolConfig, error)) {
+func testInvalidConfig(t *testing.T, name string, configFunc func() (*pool.PoolConfig, error)) {
 	t.Run(name, func(t *testing.T) {
 		config, err := configFunc()
 		assert.Error(t, err)
@@ -310,7 +309,7 @@ func testInvalidConfig(t *testing.T, name string, configFunc func() (pool.PoolCo
 	})
 }
 
-func testValidConfig(t *testing.T, name string, configFunc func() (pool.PoolConfig, error)) {
+func testValidConfig(t *testing.T, name string, configFunc func() (*pool.PoolConfig, error)) {
 	t.Run(name, func(t *testing.T) {
 		config, err := configFunc()
 		assert.NoError(t, err)

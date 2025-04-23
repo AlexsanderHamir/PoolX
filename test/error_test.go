@@ -14,23 +14,23 @@ import (
 func TestCapacityConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
-		config func() (pool.PoolConfig, error)
+		config func() (*pool.PoolConfig, error)
 	}{
 		{
 			name: "zero initial capacity",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetInitialCapacity(0).Build()
 			},
 		},
 		{
 			name: "negative initial capacity",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetInitialCapacity(-1).Build()
 			},
 		},
 		{
 			name: "hard limit less than initial capacity",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().
 					SetInitialCapacity(10).
 					SetHardLimit(5).
@@ -39,7 +39,7 @@ func TestCapacityConfigurations(t *testing.T) {
 		},
 		{
 			name: "zero hard limit",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().
 					SetInitialCapacity(10).
 					SetHardLimit(0).
@@ -48,7 +48,7 @@ func TestCapacityConfigurations(t *testing.T) {
 		},
 		{
 			name: "negative hard limit",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().
 					SetInitialCapacity(10).
 					SetHardLimit(-1).
@@ -65,41 +65,41 @@ func TestCapacityConfigurations(t *testing.T) {
 func TestGrowthConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
-		config func() (pool.PoolConfig, error)
+		config func() (*pool.PoolConfig, error)
 	}{
 		{
 			name: "zero growth percent",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetGrowthPercent(0).Build()
 			},
 		},
 		{
 			name: "negative growth percent",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetGrowthPercent(-0.1).Build()
 			},
 		},
 		{
 			name: "negative fixed growth factor",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFixedGrowthFactor(-1.0).Build()
 			},
 		},
 		{
 			name: "zero fixed growth factor",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFixedGrowthFactor(0).Build()
 			},
 		},
 		{
 			name: "negative exponential threshold factor",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetGrowthExponentialThresholdFactor(-1.0).Build()
 			},
 		},
 		{
 			name: "zero exponential threshold factor",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetGrowthExponentialThresholdFactor(0).Build()
 			},
 		},
@@ -113,29 +113,29 @@ func TestGrowthConfigurations(t *testing.T) {
 func TestShrinkConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
-		config func() (pool.PoolConfig, error)
+		config func() (*pool.PoolConfig, error)
 	}{
 		{
 			name: "zero shrink percent",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetShrinkPercent(0).Build()
 			},
 		},
 		{
 			name: "negative shrink percent",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetShrinkPercent(-0.1).Build()
 			},
 		},
 		{
 			name: "shrink percent greater than 100",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetShrinkPercent(1.5).Build()
 			},
 		},
 		{
 			name: "negative shrink aggressiveness",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				builder, err := pool.NewPoolConfigBuilder().SetShrinkAggressiveness(-1)
 				if err != nil {
 					return nil, err
@@ -145,7 +145,7 @@ func TestShrinkConfigurations(t *testing.T) {
 		},
 		{
 			name: "shrink aggressiveness above extreme",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				builder, err := pool.NewPoolConfigBuilder().SetShrinkAggressiveness(pool.AggressivenessExtreme + 1)
 				if err != nil {
 					return nil, err
@@ -155,49 +155,49 @@ func TestShrinkConfigurations(t *testing.T) {
 		},
 		{
 			name: "negative shrink check interval",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetShrinkCheckInterval(-1 * time.Second).Build()
 			},
 		},
 		{
 			name: "negative min idle before shrink",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetMinIdleBeforeShrink(-1).Build()
 			},
 		},
 		{
 			name: "negative shrink cooldown",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetShrinkCooldown(-1 * time.Second).Build()
 			},
 		},
 		{
 			name: "negative min utilization before shrink",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetMinUtilizationBeforeShrink(-0.1).Build()
 			},
 		},
 		{
 			name: "min utilization before shrink greater than 100",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetMinUtilizationBeforeShrink(1.5).Build()
 			},
 		},
 		{
 			name: "negative stable underutilization rounds",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetStableUnderutilizationRounds(-1).Build()
 			},
 		},
 		{
 			name: "negative min shrink capacity",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetMinShrinkCapacity(-1).Build()
 			},
 		},
 		{
 			name: "negative max consecutive shrinks",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetMaxConsecutiveShrinks(-1).Build()
 			},
 		},
@@ -211,41 +211,41 @@ func TestShrinkConfigurations(t *testing.T) {
 func TestFastPathConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
-		config func() (pool.PoolConfig, error)
+		config func() (*pool.PoolConfig, error)
 	}{
 		{
 			name: "zero fast path initial size",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFastPathInitialSize(0).Build()
 			},
 		},
 		{
 			name: "negative fast path initial size",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFastPathInitialSize(-1).Build()
 			},
 		},
 		{
 			name: "negative fast path fill aggressiveness",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFastPathFillAggressiveness(-0.1).Build()
 			},
 		},
 		{
 			name: "fast path fill aggressiveness greater than 100",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFastPathFillAggressiveness(1.5).Build()
 			},
 		},
 		{
 			name: "negative fast path refill percent",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFastPathRefillPercent(-0.1).Build()
 			},
 		},
 		{
 			name: "fast path refill percent greater than 100",
-			config: func() (pool.PoolConfig, error) {
+			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetFastPathRefillPercent(1.5).Build()
 			},
 		},
@@ -257,7 +257,7 @@ func TestFastPathConfigurations(t *testing.T) {
 }
 
 func TestValidConfiguration(t *testing.T) {
-	configFunc := func() (pool.PoolConfig, error) {
+	configFunc := func() (*pool.PoolConfig, error) {
 		builder, err := pool.NewPoolConfigBuilder().
 			SetInitialCapacity(10).
 			SetHardLimit(20).
