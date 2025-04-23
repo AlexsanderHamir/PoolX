@@ -7,56 +7,57 @@ import (
 	"time"
 )
 
-// Only pointers can be stored in the pool, anything else will cause an error.
-// (no panic will be thrown)
+// Pool is a generic object pool implementation that provides efficient object reuse.
+// It uses a two-level caching strategy with a fast path (L1 cache) and a main pool.
+// The pool is designed to be thread-safe and supports dynamic resizing based on usage patterns.
+//
+// Type parameter T must be a pointer type. Non-pointer types will cause an error.
 type Pool[T any] struct {
-	cacheL1 chan T
-	pool    *RingBuffer[T]
+	cacheL1 chan T         // Fast path channel for quick object access
+	pool    *RingBuffer[T] // Main pool storage using a ring buffer
 
-	mu    sync.RWMutex
-	cond  *sync.Cond
-	stats *poolStats
+	mu    sync.RWMutex // Protects pool state modifications
+	cond  *sync.Cond   // Condition variable for blocking operations
+	stats *poolStats   // Tracks pool usage statistics
 
-	isShrinkBlocked bool
-	isGrowthBlocked bool
-	poolType        reflect.Type
+	isShrinkBlocked bool         // Prevents shrinking when true
+	isGrowthBlocked bool         // Prevents growth when true
+	poolType        reflect.Type // Type information for validation
 
-	config    *PoolConfig
-	cleaner   func(T)
-	allocator func() T
+	config    *PoolConfig // Pool configuration parameters
+	cleaner   func(T)     // Optional cleanup function for objects
+	allocator func() T    // Function to create new objects
 
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx    context.Context    // Context for managing pool lifecycle
+	cancel context.CancelFunc // Function to cancel pool operations
 }
 
+// PoolConfig defines the configuration parameters for the pool.
+// It controls various aspects of pool behavior including growth, shrinking,
+// and performance characteristics.
 type PoolConfig struct {
-	// Pool initial capacity which avoids resizing the slice,
-	// until it reaches the defined capacity.
+	// initialCapacity sets the starting size of the pool.
+	// This helps avoid initial resizing operations.
 	initialCapacity int
 
-	// hardLimit sets the maximum number of objects the pool will grow to.
-	// Once reached, the pool stops growing and Get() calls block until an object is returned.
-	//
-	// If the pool shrinks below the hardLimit, growth is allowed again.
-	//
-	// ⚠️ WARNING:
-	// 1. A hardLimit that's too low for your workload can cause goroutine starvation.
-	// 2. A lower hardLimit relative to the number of incoming requests increases latency,
-	// trading off performance for tighter memory control.
+	// hardLimit is the maximum number of objects the pool can hold.
+	// When reached, Get() calls will block or return nil if the pool is configured to not block.
+	// This helps prevent unbounded memory growth.
 	hardLimit int
 
-	// Determines how the pool grows.
+	// growth defines how the pool expands when demand increases
 	growth *growthParameters
 
-	// Determines how the pool shrinks.
+	// shrink defines how the pool contracts when demand decreases
 	shrink *shrinkParameters
 
-	// Determines how fast path is utilized.
+	// fastPath controls the L1 cache behavior for high-performance access
 	fastPath *fastPathParameters
 
-	// Determines how the ring buffer is utilized.
+	// ringBufferConfig configures the main pool's ring buffer
 	ringBufferConfig *ringBufferConfig
 
+	// verbose enables detailed logging of pool operations
 	verbose bool
 }
 
@@ -89,40 +90,20 @@ func (c *PoolConfig) IsVerbose() bool {
 	return c.verbose
 }
 
+// growthParameters controls how the pool expands to meet demand.
+// It supports both exponential and fixed growth strategies.
 type growthParameters struct {
-	// Threshold multiplier that determines when to switch from exponential to fixed growth.
-	// Once the capacity reaches (InitialCapacity * ExponentialThresholdFactor), the growth
-	// strategy switches to fixed mode.
-	//
-	// Example:
-	//   InitialCapacity = 12
-	//   ExponentialThresholdFactor = 4.0
-	//   Threshold = 12 * 4.0 = 48
-	//
-	//   → Pool grows exponentially until it reaches capacity 48,
-	//     then it grows at a fixed pace.
+	// exponentialThresholdFactor determines when to switch from exponential to fixed growth.
+	// Once capacity reaches (InitialCapacity * ExponentialThresholdFactor),
+	// growth switches to fixed mode to prevent excessive expansion.
 	exponentialThresholdFactor float64
 
-	// Growth percentage used while in exponential mode.
-	// Determines how much the capacity increases as a percentage of the current capacity.
-	//
-	// Example:
-	//   CurrentCapacity = 20
-	//   GrowthPercent = 0.5 (50%)
-	//   Growth = 20 * 0.5 = 10 → NewCapacity = 30
-	//
-	//   → Pool grows: 12 → 18 → 27 → 40 → 60 → ...
+	// growthPercent defines the growth rate during exponential phase.
+	// For example, 0.5 means increase capacity by 50% each time.
 	growthPercent float64
 
-	// Once in fixed growth mode, this fixed value is added to the current capacity
-	// each time the pool grows.
-	//
-	// Example:
-	//   InitialCapacity = 12
-	//   FixedGrowthFactor = 1.0
-	//   fixed step = 12 * 1.0 = 12
-	//
-	//   → Pool grows: 48 → 60 → 72 → ...
+	// fixedGrowthFactor determines the fixed growth amount after exponential phase.
+	// The pool grows by (InitialCapacity * FixedGrowthFactor) each time.
 	fixedGrowthFactor float64
 }
 
@@ -138,60 +119,42 @@ func (g *growthParameters) GetFixedGrowthFactor() float64 {
 	return g.fixedGrowthFactor
 }
 
+// shrinkParameters controls how the pool contracts when demand decreases.
+// It provides fine-grained control over when and how the pool shrinks.
 type shrinkParameters struct {
-	// EnforceCustomConfig controls whether the pool requires explicit configuration.
-	// When set to true, the user must manually provide all configuration values.
-	// If set to false (default), the pool will fall back to built-in default configurations when values are missing.
-	// This flag does not disable auto-shrink behavior—it only governs configuration strictness.
-	// if you want to change a couple of fields but not all of them, you don't need to set this to true,
-	// only use this when you don't want any of the default values.
+	// enforceCustomConfig requires explicit configuration of all parameters.
+	// When false, uses default values for unspecified parameters.
 	enforceCustomConfig bool
 
-	// AggressivenessLevel is an optional high-level control that adjusts
-	// shrink sensitivity and timing behavior. Valid values range from 0 (disabled)
-	// to higher levels (1–5), where higher levels cause faster and more frequent shrinking.
-	// This can override individual parameter values.
+	// aggressivenessLevel provides a high-level control for shrink behavior.
+	// Higher levels (1-5) cause more aggressive shrinking.
 	aggressivenessLevel AggressivenessLevel
 
-	// CheckInterval controls how frequently the background shrink goroutine runs.
-	// This determines how often the pool is evaluated for possible shrink conditions.
+	// checkInterval determines how often the pool checks for shrink conditions
 	checkInterval time.Duration
 
-	// IdleThreshold is the minimum duration the pool must remain idle
-	// (no calls to Get) before it can be considered for shrinking.
+	// idleThreshold is the minimum time the pool must be idle before shrinking
 	idleThreshold time.Duration
 
-	// MinIdleBeforeShrink defines how many consecutive idle checks
-	// (based on IdleThreshold and CheckInterval) must occur before a shrink is allowed.
-	// This prevents shrinking during short idle spikes.
+	// minIdleBeforeShrink requires multiple consecutive idle checks before shrinking
 	minIdleBeforeShrink int
 
-	// ShrinkCooldown is the minimum amount of time that must pass between
-	// two consecutive shrink operations. This prevents excessive or aggressive shrinking.
+	// shrinkCooldown prevents too frequent shrink operations
 	shrinkCooldown time.Duration
 
-	// MinUtilizationBeforeShrink defines the threshold for utilization ratio
-	// (ObjectsInUse / CurrentCapacity) under which the pool is considered underutilized.
-	// If the utilization stays below this value for StableUnderutilizationRounds,
-	// the pool becomes a shrink candidate.
+	// minUtilizationBeforeShrink defines the utilization threshold for shrinking
 	minUtilizationBeforeShrink float64
 
-	// StableUnderutilizationRounds defines how many consecutive background checks
-	// must detect underutilization before a shrink is triggered.
-	// This avoids false positives caused by temporary usage dips.
+	// stableUnderutilizationRounds requires consistent underutilization before shrinking
 	stableUnderutilizationRounds int
 
-	// ShrinkStepPercent determines how much of the pool should be reduced
-	// when a shrink operation is triggered (e.g. 0.25 = shrink by 25%).
+	// shrinkPercent determines how much to reduce the pool size when shrinking
 	shrinkPercent float64
 
-	// MaxConsecutiveShrinks defines how many shrink operations can happen back-to-back
-	// before the shrink logic pauses until a get request happens.
-	// The default is 2, setting for less than two won't be allowed.
+	// maxConsecutiveShrinks limits back-to-back shrink operations
 	maxConsecutiveShrinks int
 
-	// MinCapacity defines the lowest allowed capacity after shrinking.
-	// The pool will never shrink below this value, even under aggressive conditions.
+	// minCapacity sets the minimum pool size, preventing excessive shrinking
 	minCapacity int
 }
 
@@ -239,54 +202,32 @@ func (s *shrinkParameters) GetMinCapacity() int {
 	return s.minCapacity
 }
 
+// fastPathParameters controls the L1 cache behavior for high-performance access.
+// The fast path provides quick access to objects without main pool contention.
 type fastPathParameters struct {
-	// bufferSize defines the capacity of the fast path channel.
-	// This determines how many objects can be held in the fast path before falling back
-	// to the slower, lock-protected main pool. (length <= currentCapacity)
+	// initialSize sets the starting capacity of the fast path channel
 	initialSize int
 
-	// growthEventsTrigger defines how many pool growth events must occur
-	// before triggering a capacity increase for the L1 channel.
-	// This helps align L1 growth with real demand, reducing premature allocations
-	// while still adapting to sustained load.
-	//
-	// ⚠️ WARNING:
-	// growing or shrinking the l1 buffer too often will cause goroutines to drop.
+	// growthEventsTrigger determines when to increase fast path capacity
 	growthEventsTrigger int
 
-	// shrinkEventsTrigger defines how many pool shrink events must occur
-	// before triggering a capacity decrease for the L1 channel.
-	// This helps align L1 shrink with real demand, reducing premature allocations
-	// while still adapting to sustained load.
+	// shrinkEventsTrigger determines when to decrease fast path capacity
 	shrinkEventsTrigger int
 
-	// fillAggressiveness controls how aggressively the pool refills the fast path buffer
-	// from the main pool. It is a float between 0.0 and 1.0, representing the fraction of the
-	// fast path buffer that should be proactively filled during initialization, and refills.
-	// Example: 0.5 means fill the fast path up to 50% of its capacity.
+	// fillAggressiveness controls how aggressively to fill the fast path
+	// (0.0 to 1.0, representing fill percentage)
 	fillAggressiveness float64
 
-	// refillPercent defines the minimum occupancy threshold (as a fraction of bufferSize)
-	// at which the fast path buffer should be refilled from the main pool.
-	// When the number of objects in the fast path drops below this percentage of its capacity,
-	// a refill is triggered.
-	//
-	// Must be a float > 0.0 and < 1.0 (e.g., 0.99). A value of 1.0 is invalid,
-	// because it would cause a refill attempt even when the buffer is completely full,
-	// which is unnecessary and wasteful.
+	// refillPercent triggers refill when occupancy drops below this threshold
 	refillPercent float64
 
+	// growth controls how the fast path expands
 	growth *growthParameters
 
-	// Only two fields are used from this struct:
-	// - shrinkPercent
-	// - minCapacity
+	// shrink controls how the fast path contracts
 	shrink *shrinkParameters
 
-	// enableChannelGrowth allows the L1 channel (cache layer) to dynamically grow
-	// by reallocating it with a larger buffer size when needed.
-	// This can improve performance under high concurrency by reducing contention
-	// and increasing fast-path hit rates.
+	// enableChannelGrowth allows dynamic resizing of the fast path channel
 	enableChannelGrowth bool
 }
 
@@ -323,22 +264,24 @@ func (f *fastPathParameters) GetShrink() *shrinkParameters {
 	return f.shrink
 }
 
+// refillResult reports the outcome of a fast path refill operation
 type refillResult struct {
-	Success       bool
-	Reason        string
-	ItemsMoved    int
-	ItemsFailed   int
-	GrowthNeeded  bool
-	GrowthBlocked bool
+	Success       bool   // Whether the refill was successful
+	Reason        string // Explanation if refill failed
+	ItemsMoved    int    // Number of items moved to fast path
+	ItemsFailed   int    // Number of items that failed to move
+	GrowthNeeded  bool   // Whether fast path needs to grow
+	GrowthBlocked bool   // Whether growth is currently blocked
 }
 
+// shrinkDefaults provides default values for shrink parameters
 type shrinkDefaults struct {
-	interval      time.Duration
-	idle          time.Duration
-	minIdle       int
-	cooldown      time.Duration
-	utilization   float64
-	underutilized int
-	percent       float64
-	maxShrinks    int
+	interval      time.Duration // Default check interval
+	idle          time.Duration // Default idle threshold
+	minIdle       int           // Default minimum idle checks
+	cooldown      time.Duration // Default shrink cooldown
+	utilization   float64       // Default utilization threshold
+	underutilized int           // Default underutilization rounds
+	percent       float64       // Default shrink percentage
+	maxShrinks    int           // Default maximum consecutive shrinks
 }

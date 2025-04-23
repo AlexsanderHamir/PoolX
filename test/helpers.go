@@ -117,7 +117,7 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(101210).
 		SetHardLimit(10000000028182820).
-		SetGrowthPercent(0.5).
+		SetGrowthPercent(0.52).
 		SetFixedGrowthFactor(1.0).
 		SetGrowthExponentialThresholdFactor(4.0).
 		SetShrinkCheckInterval(2 * time.Second).
