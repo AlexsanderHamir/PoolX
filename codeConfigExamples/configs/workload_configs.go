@@ -6,8 +6,9 @@ import (
 	"github.com/AlexsanderHamir/memory_context/pool"
 )
 
+// POOL STATS ON THIS CONFIG
+
 // 2025/04/22 12:29:03 [SHRINK] UtilizationCheck — usage healthy: 46.14% > 30.00%
-// [DEBUG] Ending UtilizationCheck
 // 2025/04/22 12:29:03 [SHRINK] UtilCheck — rounds: 0 / required: 5 | allowed: false
 // ========== Pool Stats ==========
 // Objects In Use                           : 263
@@ -43,13 +44,14 @@ import (
 // Request Per Object   : 1161.68
 // Utilization %       : 46.14%
 // ---------------------------------------
+
 // creates a configuration optimized for high-throughput workloads.
 // This configuration is designed for scenarios where:
 // - High concurrent access is expected
 // - Low latency is critical
 // - Memory usage can be more aggressive
 // - Fast object reuse is important
-func CreateHighThroughputConfig() pool.PoolConfig {
+func CreateHighThroughputConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		// Basic pool settings:
 		// - Initial capacity: 128 objects (ring buffer and fast path if not set otherwise)
@@ -103,7 +105,7 @@ func CreateHighThroughputConfig() pool.PoolConfig {
 
 // creates a configuration optimized for memory-constrained environments
 // with conservative growth and aggressive shrinking.
-func CreateMemoryConstrainedConfig() pool.PoolConfig {
+func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		SetPoolBasicConfigs(32, 500, false, true).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*15).
@@ -121,7 +123,7 @@ func CreateMemoryConstrainedConfig() pool.PoolConfig {
 
 // creates a configuration optimized for low-latency applications
 // with minimal object creation overhead and fast access patterns.
-func CreateLowLatencyConfig() pool.PoolConfig {
+func CreateLowLatencyConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		SetPoolBasicConfigs(256, 10000, false, true).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*2).
@@ -139,7 +141,7 @@ func CreateLowLatencyConfig() pool.PoolConfig {
 
 // creates a configuration optimized for batch processing workloads
 // with predictable object usage patterns and less frequent object creation.
-func CreateBatchProcessingConfig() pool.PoolConfig {
+func CreateBatchProcessingConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		SetPoolBasicConfigs(64, 2000, false, true).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*10).
@@ -157,7 +159,7 @@ func CreateBatchProcessingConfig() pool.PoolConfig {
 
 // creates a configuration optimized for real-time systems
 // with minimal latency and predictable performance.
-func CreateRealTimeConfig() pool.PoolConfig {
+func CreateRealTimeConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		SetPoolBasicConfigs(512, 20000, false, true).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*1).
@@ -175,7 +177,7 @@ func CreateRealTimeConfig() pool.PoolConfig {
 
 // creates a configuration optimized for general-purpose applications
 // with a good balance between performance and resource usage.
-func CreateBalancedConfig() pool.PoolConfig {
+func CreateBalancedConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		SetPoolBasicConfigs(96, 3000, false, true).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*8).

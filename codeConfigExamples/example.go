@@ -33,9 +33,10 @@ func main() {
 	objectsPerWorker := 5
 
 	config := configs.CreateHighThroughputConfig()
-	internalConfig := pool.ToInternalConfig(config)
 
-	pool, err := pool.NewPool(internalConfig, allocator, cleaner, reflect.TypeOf(&Example{}))
+	poolType := reflect.TypeOf(&Example{})
+
+	pool, err := pool.NewPool(config, allocator, cleaner, poolType)
 	if err != nil {
 		panic(err)
 	}
