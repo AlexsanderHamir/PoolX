@@ -1,32 +1,6 @@
 # Memory Context
 
-A high-performance Go library for managing memory through memory contexts and object pools, the idea is to reduce the unecessary creation of memory.
-
-## Features
-
-- **Context Manager**:
-
-  - Caches memory contexts.
-  - Returns a reference to the context.
-  - Cleans idle contexts if configured to do so.
-  - Controls how many references are a allowed for all contexts.
-
-- **Memory Context**:
-
-  - Hierarchical context management with parent-child relationships
-  - Child inherits the parent pools.
-  - Object pooling with type-specific pools
-  - Reference counting for memory management
-  - Support for custom pool configurations and allocators
-
-- **Pool**
-
-  - **Type-Specific Pools**: Create pools for specific data types
-  - **Custom Allocators**: Implement custom allocation strategies for objects
-  - **Pool Lifecycle Management**: Configurable cleanup and resource management
-  - **Performance Monitoring**: Track pool utilization and performance metrics
-  - **Ring Buffer Storage**: Uses efficient ring buffer implementation for object storage and retrieval
-  - **Fast Path Optimization**: Specialized high-performance path for frequent operations
+A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios.
 
 ## Installation
 
@@ -34,102 +8,107 @@ A high-performance Go library for managing memory through memory contexts and ob
 go get github.com/AlexsanderHamir/memory_context
 ```
 
-## Basic Usage
+## Quick Example
 
 ```go
-import "github.com/AlexsanderHamir/memory_context"
+import (
+    "github.com/AlexsanderHamir/memory_context/pool"
+    "time"
+)
 
-// Create a new memory context with default settings
-ctx := memory_context.NewContext()
-
-// Use the context for memory operations
-// ...
-```
-
-## Advanced Configuration
-
-The library provides extensive configuration options through the `PoolConfigBuilder`:
-
-```go
-// Create a custom pool configuration
-config := pool.NewPoolConfigBuilder().
-    SetInitialCapacity(1000).                    // Initial pool size
-    SetGrowthPercent(50).                        // Growth percentage when expanding
-    SetShrinkAggressiveness(pool.AggressivenessModerate). // Shrink behavior
-    SetHardLimit(10000).                         // Maximum pool size
-    SetFastPathInitialSize(100).                 // Fast path initial size
-    SetVerbose(true).                            // Enable verbose logging
+poolConfig, err := pool.NewPoolConfigBuilder().
+    SetPoolBasicConfigs(128, 5000, false, true).
+    SetRingBufferBasicConfigs(true, 0, 0, time.Second*5).
+    SetRingBufferGrowthConfigs(150.0, 0.85, 1.2).
+    SetRingBufferShrinkConfigs(
+        time.Second*2,
+        time.Second*5,
+        time.Second*1,
+        2,
+        5,
+        15,
+        3,
+        0.3,
+        0.5,
+    ).
+    SetFastPathBasicConfigs(128, 4, 4, 1.0, 0.20).
+    SetFastPathGrowthConfigs(100.0, 1.5, 0.85).
+    SetFastPathShrinkConfigs(0.7, 5).
     Build()
 
-// Use the configuration with your memory context
+if err != nil {
+    // handle error
+}
+
+poolType := reflect.TypeOf(&Example{})
+
+pool, err := pool.NewPool(poolConfig, allocator, cleaner, poolType)
+if err != nil {
+    panic(err)
+}
 ```
 
-### Key Configuration Options
+## Configuration
 
-- **Pool Size Management**:
+### SetPoolBasicConfigs
 
-  - `SetInitialCapacity`: Initial number of items in the pool
-  - `SetHardLimit`: Maximum pool size
-  - `SetGrowthPercent`: Percentage increase when growing
-  - `SetFixedGrowthFactor`: Fixed growth multiplier
+- `initialCapacity`: Initial capacity of the ring buffer and fast path. If no capacity is provided for the fast path, it uses the same value.
+- `hardLimit`: Maximum number of objects the pool can grow to. The fast path and ring buffer grow together; once the ring buffer reaches the hard limit, the fast path stops growing as well.
+- `verbose`: Enables logging for pool activity.
+- `enableChannelGrowth`: When disabled, the fast path will not grow even if the ring buffer does.
 
-- **Shrink Behavior**:
+### SetRingBufferBasicConfigs
 
-  - `SetShrinkAggressiveness`: Control how aggressively the pool shrinks (1-5)
+- `block`: Whether the ring buffer blocks on reads/writes when there are no objects to read or no space to write.
+- `rTimeout`: Read timeout.
+- `wTimeout`: Write timeout.
+- `bothTimeout`: Timeout for both reads and writes.
 
-    - Level 1 (Conservative): Minimal shrinking, preserves capacity for potential load spikes
-    - Level 2 (Balanced): Default balanced approach to memory management
-    - Level 3 (Aggressive): More frequent shrinking to optimize memory usage
-    - Level 4 (Very Aggressive): Rapid capacity reduction when underutilized
-    - Level 5 (Extreme): Maximum memory optimization, may impact performance
+### SetRingBufferGrowthConfigs
 
-  - `SetShrinkCheckInterval`: How often to check for shrinking opportunities
+- `exponentialThresholdFactor`: Threshold at which the growth strategy switches from exponential to fixed; this is a multiplier of the initial capacity.
+- `growthPercent`: Percentage increase during exponential growth.
+- `fixedGrowthFactor`: Multiplier of initial capacity used during fixed growth after the threshold is reached.
 
-    - Defines the frequency of background checks for pool shrinking conditions
-    - Shorter intervals enable more responsive memory management
-    - Longer intervals reduce overhead but may delay memory reclamation
+### SetRingBufferShrinkConfigs
 
-  - `SetIdleThreshold`: How long items must be idle before considering shrink
+- `checkInterval`: Frequency at which the pool checks whether it should shrink.
+- `idleThreshold`: Duration of inactivity (since the last get request) before the pool is considered idle and eligible for shrinking.
+- `shrinkCooldown`: Minimum time to wait between consecutive shrink operations.
+- `minIdleBeforeShrink`: Minimum number of idle checks before shrinking is allowed.
+- `minCapacity`: Minimum number of objects the pool can shrink to.
+- `maxConsecutiveShrinks`: Maximum number of consecutive shrink operations allowed before further shrinking is blocked. Blocking is lifted by the next get request.
+- `minUtilizationBeforeShrink`: Minimum utilization percentage that allows shrinking.
+- `stableUnderutilizationRounds`: Number of consecutive underutilization checks required before shrinking.
+- `shrinkPercent`: Percentage by which capacity is reduced during shrinking.
 
-    - Minimum duration the pool must remain idle before shrinking
-    - Helps prevent premature shrinking during temporary usage dips
-    - Longer thresholds provide more stability but may retain memory longer
+### SetFastPathBasicConfigs
 
-  - `SetShrinkPercent`: Percentage to shrink by when reducing size
+- `initialSize`: Initial size of the fast path (L1 cache).
+- `growthEventsTrigger`: Number of ring buffer growth events required before the fast path grows.
+- `shrinkEventsTrigger`: Number of ring buffer shrink events required before the fast path shrinks.
+- `fillAggressiveness`: Degree of aggressiveness when filling the fast path (range: 0.0 to 1.0).
+- `refillPercent`: Threshold at which the fast path is refilled, based on emptiness percentage.
 
-    - Controls how much capacity is reduced during each shrink operation
-    - Example: 0.25 means reduce capacity by 25% when shrinking
-    - Higher values release memory faster but may require more frequent growth
+### SetFastPathGrowthConfigs
 
-  - `SetMinShrinkCapacity`: Minimum capacity after shrinking operations
-    - Prevents the pool from shrinking below a specified size
-    - Ensures a baseline capacity for sudden usage spikes
-    - Helps maintain performance by keeping a minimum buffer of available objects
-    - Setting it to be equal to the initial size will block shrinking.
+- `exponentialThresholdFactor`: Threshold for switching from exponential to fixed growth in the fast path.
+- `fixedGrowthFactor`: Multiplier used for fixed growth.
+- `growthPercent`: Percentage by which the fast path grows during exponential growth.
 
-- **Fast Path Optimization**:
+### SetFastPathShrinkConfigs
 
-  - `SetFastPathInitialSize`: Initial size of the fast path
-  - `SetFastPathFillAggressiveness`: How aggressively to fill the fast path
-  - `SetFastPathRefillPercent`: Percentage to refill when depleted
+- `shrinkPercent`: Percentage by which the fast path is shrunk.
+- `minCapacity`: Minimum number of objects the fast path can shrink to.
 
-- **Ring Buffer Configuration**:
-  - `SetRingBufferBlocking`: Enable/disable blocking operations
-  - `WithTimeOut`: Set timeout for buffer operations
-  - `SetRingBufferReadTimeout`: Specific read timeout
-  - `SetRingBufferWriteTimeout`: Specific write timeout
+## Pool Behavior
 
-## Performance Considerations
-
-- Use appropriate growth and shrink settings based on your workload
-- Consider enabling the fast path for high-frequency operations
-- Monitor pool utilization to tune configuration parameters
-- Use verbose mode during development to understand pool behavior
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+1. Depending on the L1 size, the ring buffer may remain mostly empty unless frequent spills from L1 occur. This indicates that L1 or the ring buffer are not large enough to sustain the load.
+2. Object retrieval and return operations first attempt to use L1. Only if L1 is blocked (empty/full) will the ring buffer be accessed.
+3. If the ring buffer is non-blocking, it returns `ErrIsEmpty` for reads and `ErrIsFull` for writes.
+4. If the ring buffer is set to blocking, it only blocks when the `hardLimit` is reached.
+5. When getting an object, the system first attempts to retrieve from L1. If unsuccessful, it tries to refill L1. If that also fails, it falls back to the ring buffer.
+6. When returning an object, it attempts to place it in L1. If there are blocked get requests, the object is instead returned to the ring buffer.
+7. Although many optimizations are in place, resizing is very expensive—minimize it when possible.
+8. The `minUtilizationBeforeShrink` configuration is crucial. When the ring buffer's utilization is at or below this threshold, it becomes eligible for shrinking. The system tries to find the most efficient size that can handle a high request volume without wasting space. Still, remember that resizing is costly.
+9. Keep in mind that objects are reused. For example, with 50,000 requests and only 1,000 objects in blocking mode, those 1,000 objects are rotated across all 50,000 requests.

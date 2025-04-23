@@ -1,44 +1,41 @@
-# Object Pool Design Documentation
+# Pool Design Documentation
 
 ![Flow](./flow.png)
 
 ## Overview
 
-This object pool implementation is designed to efficiently manage object lifecycle and memory usage while maintaining high performance under various load conditions. The system uses a multi-tiered approach with a fast path (L1 cache) and a main pool (L2) to optimize object access patterns.
+This object pool is designed to control object creation according to its configuration.
 
 ## Architecture
 
 ### Core Components
 
-1. **Fast Path (L1 Cache)**
+**Fast Path (L1 Cache)**
 
-   - A channel-based cache layer for quick object access
-   - Configurable size and growth behavior
-   - Proactive refilling from the main pool
-   - Optional dynamic growth capability
+- The ring buffer is fast but requires a lock on every request to get an object. To reduce mutex overhead, we make fewer but larger requests to the ring buffer (size determined by configuration) and fill a channel with the objects.
 
-2. **Main Pool (L2)**
+**Main Pool (L2)**
 
-   - Ring buffer implementation for efficient object storage
-   - Handles object creation and lifecycle management
-   - Implements growth and shrink strategies
-   - Manages object allocation and deallocation
+- Ring buffer implementation for efficient object storage, it can return nil immediatly, block or block with timeout.
 
-3. **Configuration System**
-   - Highly configurable parameters for fine-tuning behavior
-   - Builder pattern for easy configuration
-   - Default values for common use cases
-   - Validation of configuration parameters
+**Configuration System**
+
+- Highly configurable parameters for fine-tuning behavior
+- Builder pattern for easy configuration
+- Default values for common use cases
+
+**Pool**
+The pool object manages the fast path and the ring buffer. It's responsible for growing, shrinking, and other core operations.
 
 ### Key Features
 
 - **Adaptive Growth**: Implements both exponential and fixed growth strategies
-- **Intelligent Shrinking**: Configurable shrink behavior based on utilization
+- **Intelligent Shrinking**: Configurable shrink behavior based on utilization or idleness
 - **Fast Path Optimization**: L1 cache for high-performance object access
 - **Memory Management**: Configurable hard limits and capacity controls
 - **Performance Monitoring**: Built-in statistics and metrics collection
 
-## Configuration Options
+## Configuration Options ()
 
 ### Pool Configuration
 
@@ -57,11 +54,17 @@ This object pool implementation is designed to efficiently manage object lifecyc
 
 ### Shrink Parameters
 
+- `enforceCustomConfig`: Removes all default configuration
+- `aggressivenessLevel`: High-level control (0-5) that adjusts shrink parameters
 - `checkInterval`: Frequency of shrink checks
 - `idleThreshold`: Minimum idle time before shrinking
 - `minUtilizationBeforeShrink`: Utilization threshold for shrinking
 - `shrinkPercent`: Amount to reduce pool size by
 - `maxConsecutiveShrinks`: Limit on consecutive shrink operations
+- `minIdleBeforeShrink`: Number of consecutive idle checks required before shrinking
+- `shrinkCooldown`: Minimum time between consecutive shrink operations
+- `stableUnderutilizationRounds`: Consecutive underutilization checks needed before shrinking
+- `minCapacity`: Minimum allowed capacity after shrinking
 
 ### Fast Path Parameters
 
@@ -71,28 +74,6 @@ This object pool implementation is designed to efficiently manage object lifecyc
 - `fillAggressiveness`: How aggressively to refill L1
 - `refillPercent`: Threshold for L1 refilling
 
-## Performance Considerations
-
-### Memory Usage
-
-- The pool balances between memory efficiency and performance
-- Hard limits prevent unbounded growth
-- Shrink mechanisms reclaim unused memory
-- L1 cache size affects memory footprint
-
-### Latency
-
-- Fast path provides low-latency access to frequently used objects
-- Growth and shrink operations are designed to minimize impact
-- Configuration can be tuned for specific latency requirements
-
-### Concurrency
-
-- Thread-safe implementation
-- Lock-free fast path for common operations
-- Efficient synchronization for pool management
-- Configurable for different concurrency patterns
-
 ## Best Practices
 
 1. Set appropriate initial capacity based on expected load
@@ -100,6 +81,7 @@ This object pool implementation is designed to efficiently manage object lifecyc
 3. Tune growth and shrink parameters for your workload
 4. Monitor pool statistics for optimization
 5. Use appropriate fast path settings for your access patterns
+6. Ensure sufficient object capacity for your workload - undersizing the pool relative to request volume will result in excessive blocking or dropped goroutines.
 
 ## Monitoring and Metrics
 
