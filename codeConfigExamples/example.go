@@ -34,7 +34,6 @@ func main() {
 	config := configs.CreateHighThroughputConfig()
 
 	poolType := reflect.TypeOf(&Example{})
-
 	pool, err := pool.NewPool(config, allocator, cleaner, poolType)
 	if err != nil {
 		panic(err)

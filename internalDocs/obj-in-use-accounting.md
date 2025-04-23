@@ -23,3 +23,30 @@ func (p *Pool[T]) reduceObjectsInUse() {
 	}
 }
 ```
+
+**Variations that cause race conditions**
+
+1.
+
+```go
+func (p *Pool[T]) reduceObjectsInUse() {
+	p.stats.objectsInUse.Add(^uint64(0))
+}
+```
+
+2.
+
+```go
+func (p *Pool[T]) reduceObjectsInUse() {
+	for {
+		old := p.stats.objectsInUse.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.objectsInUse.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+```
