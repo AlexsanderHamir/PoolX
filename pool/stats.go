@@ -34,36 +34,59 @@ type poolStats struct {
 	utilization           float64
 }
 
+// PoolStats represents a snapshot of the pool's statistics at a given moment
+type PoolStatsSnapshot struct {
+	// Basic Pool Stats
+	ObjectsInUse       uint64
+	AvailableObjects   uint64
+	CurrentCapacity    uint64
+	RingBufferLength   uint64
+	PeakInUse          uint64
+	TotalGets          uint64
+	TotalGrowthEvents  uint64
+	TotalShrinkEvents  uint64
+	ConsecutiveShrinks uint64
+
+	// Fast Path Resize Stats
+	LastResizeAtGrowthNum uint64
+	CurrentL1Capacity     uint64
+	L1Length              uint64
+
+	// Fast Get Stats
+	L1HitCount  uint64
+	L2HitCount  uint64
+	L3MissCount uint64
+
+	// Fast Return Stats
+	FastReturnHit  uint64
+	FastReturnMiss uint64
+	L2SpillRate    float64
+
+	// Usage Stats
+	RequestPerObject float64
+	Utilization      float64
+
+	// Time Stats
+	LastGetTime    time.Time
+	LastShrinkTime time.Time
+	LastGrowTime   time.Time
+}
+
 func (p *Pool[T]) updateAvailableObjs() {
-	p.mu.RLock()
-	p.stats.availableObjects.Store(uint64(p.pool.Length() + len(p.cacheL1)))
-	p.mu.RUnlock()
+	ringBufferLength := p.pool.Length()
+	l1Length := len(p.cacheL1)
+
+	p.stats.availableObjects.Store(uint64(ringBufferLength + l1Length))
 }
 
 func (p *Pool[T]) updateUsageStats() {
 	currentInUse := p.stats.objectsInUse.Add(1)
 	p.stats.totalGets.Add(1)
 
-	for {
-		peak := p.stats.peakInUse.Load()
-		if currentInUse <= peak {
-			break
-		}
-
-		if p.stats.peakInUse.CompareAndSwap(peak, currentInUse) {
-			break
-		}
-	}
-
-	for {
-		current := p.stats.consecutiveShrinks.Load()
-		if current == 0 {
-			break
-		}
-		if p.stats.consecutiveShrinks.CompareAndSwap(current, current-1) {
-			break
-		}
-	}
+	p.mu.Lock()
+	p.updatePeakInUse(currentInUse)
+	p.updateConsecutiveShrinks()
+	p.mu.Unlock()
 }
 
 func (p *Pool[T]) updateDerivedStats() {
@@ -149,4 +172,71 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Printf("Last Shrink Time     : %s\n", p.stats.lastShrinkTime.Format(time.RFC3339))
 	fmt.Printf("Last Grow Time       : %s\n", p.stats.lastGrowTime.Format(time.RFC3339))
 	fmt.Println("=================================")
+}
+
+// GetPoolStatsSnapshot returns a snapshot of the current pool statistics
+func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
+	p.stats.mu.RLock()
+	defer p.stats.mu.RUnlock()
+
+	p.updateAvailableObjs()
+
+	fastReturnHit := p.stats.FastReturnHit.Load()
+	fastReturnMiss := p.stats.FastReturnMiss.Load()
+	totalReturns := fastReturnHit + fastReturnMiss
+
+	var l2SpillRate float64
+	if totalReturns > 0 {
+		l2SpillRate = float64(fastReturnMiss) / float64(totalReturns)
+	}
+
+	// p.updateDerivedStats()
+	return &PoolStatsSnapshot{
+		// Basic Pool Stats
+		ObjectsInUse:       p.stats.objectsInUse.Load(),
+		AvailableObjects:   p.stats.availableObjects.Load(),
+		CurrentCapacity:    p.stats.currentCapacity.Load(),
+		RingBufferLength:   uint64(p.pool.Length()),
+		PeakInUse:          p.stats.peakInUse.Load(),
+		TotalGets:          p.stats.totalGets.Load(),
+		TotalGrowthEvents:  p.stats.totalGrowthEvents.Load(),
+		TotalShrinkEvents:  p.stats.totalShrinkEvents.Load(),
+		ConsecutiveShrinks: p.stats.consecutiveShrinks.Load(),
+
+		// Fast Path Resize Stats
+		LastResizeAtGrowthNum: p.stats.lastResizeAtGrowthNum.Load(),
+		CurrentL1Capacity:     p.stats.currentL1Capacity.Load(),
+		L1Length:              uint64(len(p.cacheL1)),
+
+		// Fast Get Stats
+		L1HitCount:  p.stats.l1HitCount.Load(),
+		L2HitCount:  p.stats.l2HitCount.Load(),
+		L3MissCount: p.stats.l3MissCount.Load(),
+
+		// Fast Return Stats
+		FastReturnHit:  fastReturnHit,
+		FastReturnMiss: fastReturnMiss,
+		L2SpillRate:    l2SpillRate,
+
+		// Usage Stats
+		RequestPerObject: p.stats.reqPerObj,
+		Utilization:      p.stats.utilization,
+
+		// Time Stats
+		LastGetTime:    p.stats.lastTimeCalledGet,
+		LastShrinkTime: p.stats.lastShrinkTime,
+		LastGrowTime:   p.stats.lastGrowTime,
+	}
+}
+
+func (s *PoolStatsSnapshot) Validate(reqNum int) error {
+	if s.TotalGets != uint64(reqNum) {
+		return fmt.Errorf("total gets (%d) does not match request number (%d)", s.TotalGets, reqNum)
+	}
+
+	if s.AvailableObjects != s.CurrentCapacity {
+		return fmt.Errorf("available objects (%d) does not match current capacity (%d)", s.AvailableObjects, s.CurrentCapacity)
+	}
+
+	return nil
 }
