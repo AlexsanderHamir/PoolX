@@ -10,23 +10,29 @@ func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
 	return defaultShrinkMap
 }
 
-func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) int {
+// logIfVerbose is a helper method to reduce logging code duplication
+func (p *Pool[T]) logIfVerbose(format string, args ...any) {
+	if p.config.verbose {
+		log.Printf(format, args...)
+	}
+}
+
+func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 	if fastPathRemaining > 0 {
 		select {
 		case p.cacheL1 <- obj:
 			fastPathRemaining--
-			return fastPathRemaining
+			return fastPathRemaining, nil
 		default:
 		}
 	}
 
 	if err := p.pool.Write(obj); err != nil {
-		if p.config.verbose {
-			log.Printf("[SETPOOL] Error writing to ring buffer: %v", err)
-		}
+		p.logIfVerbose("[SETPOOL] Error writing to ring buffer: %v", err)
+		return fastPathRemaining, fmt.Errorf("failed to write to ring buffer: %w", err)
 	}
 
-	return fastPathRemaining
+	return fastPathRemaining, nil
 }
 
 func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
@@ -52,7 +58,8 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 	}
 }
 
-// calculateUtilization calculates the current utilization percentage of the pool
+// calculateUtilization calculates the current utilization percentage of the pool.
+// Returns 0 if there are no objects in the pool.
 func (p *Pool[T]) calculateUtilization() float64 {
 	inUse := p.stats.objectsInUse.Load()
 	available := p.stats.availableObjects.Load()
@@ -139,6 +146,8 @@ func (p *Pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermission
 	}
 }
 
+// ApplyDefaults applies default values to the shrink parameters based on the aggressiveness level.
+// It ensures the aggressiveness level is within valid bounds and applies corresponding defaults.
 func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDefaults) {
 	if p.aggressivenessLevel < AggressivenessDisabled {
 		p.aggressivenessLevel = AggressivenessDisabled
@@ -192,17 +201,12 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, string, error) {
 
 	part1, part2, err := p.pool.GetNView(toMove)
 	if err != nil && err != errIsEmpty {
-		if p.config.verbose {
-			log.Printf("[REFILL] Error getting items from ring buffer: %v", err)
-		}
-		return nil, nil, fmt.Sprintf("%s: %v", ringBufferError, err), err
+		p.logIfVerbose("[REFILL] Error getting items from ring buffer: %v", err)
+		return nil, nil, fmt.Sprintf("%s: %v", ringBufferError, err), fmt.Errorf("failed to get items from ring buffer: %w", err)
 	}
 
-	// TODO: improve this hacky check
 	if part1 == nil && part2 == nil && err == nil || len(part1) == 0 && len(part2) == 0 {
-		if p.config.verbose {
-			log.Println("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
-		}
+		p.logIfVerbose("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
 		return nil, nil, noItemsToMove, nil
 	}
 
@@ -214,20 +218,18 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
 		select {
 		case p.cacheL1 <- item:
 			result.ItemsMoved++
-			if p.config.verbose {
-				log.Printf("[REFILL] Moved object to L1 | Remaining: %d", p.pool.Length())
-			}
+			p.logIfVerbose("[REFILL] Moved object to L1 | Remaining: %d", p.pool.Length())
 		default:
 			result.ItemsFailed++
 			if err := p.pool.Write(item); err != nil {
-				if p.config.verbose {
-					log.Printf("[REFILL] Error putting object back in ring buffer: %v", err)
-				}
+				p.logIfVerbose("[REFILL] Error putting object back in ring buffer: %v", err)
 			}
 		}
 	}
 }
 
+// refill attempts to refill the L1 cache with objects from the pool.
+// It returns a refillResult containing information about the refill operation.
 func (p *Pool[T]) refill(fillTarget int) refillResult {
 	var result refillResult
 
@@ -251,13 +253,14 @@ func (p *Pool[T]) refill(fillTarget int) refillResult {
 	return result
 }
 
-func (p *Pool[T]) slowPathPut(obj T) {
+func (p *Pool[T]) slowPathPut(obj T) error {
 	if err := p.pool.Write(obj); err != nil {
-		panic(err)
+		return fmt.Errorf("failed to write to ring buffer: %w", err)
 	}
 
 	p.stats.FastReturnMiss.Add(1)
 	p.logPut("slow path put unblocked")
+	return nil
 }
 
 func (p *Pool[T]) logRefillResult(result refillResult) {
@@ -267,7 +270,11 @@ func (p *Pool[T]) logRefillResult(result refillResult) {
 	}
 }
 
-func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) bool {
+func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotShrink bool) {
+	if params == nil {
+		return false
+	}
+
 	if p.stats.consecutiveShrinks.Load() == uint64(params.maxConsecutiveShrinks) {
 		if p.config.verbose {
 			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
@@ -277,10 +284,15 @@ func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) bool {
 		p.isShrinkBlocked = false
 		return true
 	}
+
 	return false
 }
 
-func (p *Pool[T]) handleShrinkCooldown(params *shrinkParameters) bool {
+func (p *Pool[T]) handleShrinkCooldown(params *shrinkParameters) (cooldownActive bool) {
+	if params == nil {
+		return false
+	}
+
 	timeSinceLastShrink := time.Since(p.stats.lastShrinkTime)
 	if timeSinceLastShrink < params.shrinkCooldown {
 		if p.config.verbose {
@@ -288,6 +300,7 @@ func (p *Pool[T]) handleShrinkCooldown(params *shrinkParameters) bool {
 		}
 		return true
 	}
+
 	return false
 }
 
@@ -358,22 +371,18 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
 
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the ring buffer before calling the slow path.
-func (p *Pool[T]) slowPath() (obj T) {
-	obj, err := p.pool.GetOne()
+func (p *Pool[T]) slowPath() (obj T, err error) {
+	obj, err = p.pool.GetOne()
 	if err != nil {
-		if p.config.verbose {
-			log.Printf("[SLOWPATH] Error getting object from ring buffer: %v", err)
-		}
-		return obj
+		p.logIfVerbose("[SLOWPATH] Error getting object from ring buffer: %v", err)
+		return obj, fmt.Errorf("failed to get object from ring buffer: %w", err)
 	}
 
-	if p.config.verbose {
-		log.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
-	}
+	p.logIfVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
 
 	p.stats.mu.Lock()
 	p.stats.lastTimeCalledGet = time.Now()
 	p.stats.mu.Unlock()
 
-	return obj
+	return obj, nil
 }

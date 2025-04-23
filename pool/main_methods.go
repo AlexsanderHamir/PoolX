@@ -46,20 +46,20 @@ const (
 
 // Creates a new pool with the given config, allocator, cleaner, and pool type, only pointers can be stored.
 func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poolType reflect.Type) (*Pool[T], error) {
+	if err := validateAllocator(allocator); err != nil {
+		return nil, err
+	}
+
 	if config == nil {
 		config = createDefaultConfig()
 	}
-
-	stats := initializePoolStats(config)
 
 	ringBuffer, err := NewRingBufferWithConfig[T](config.initialCapacity, config.ringBufferConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := validateAllocator(allocator); err != nil {
-		return nil, err
-	}
+	stats := initializePoolStats(config)
 
 	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer, poolType)
 	if err != nil {
@@ -82,7 +82,6 @@ func (p *Pool[T]) Get() T {
 	p.handleShrinkBlocked()
 
 	if obj, found := p.tryGetFromL1(); found {
-		p.warningIfZero(obj, "L1")
 		return obj
 	}
 
@@ -90,14 +89,18 @@ func (p *Pool[T]) Get() T {
 		return obj
 	}
 
-	obj := p.slowPath()
+	obj, err := p.slowPath()
+	if err != nil {
+		p.logIfVerbose("[GET] Error in slowPath: %v", err)
+	}
+
 	p.warningIfZero(obj, "slowPath")
 	p.recordSlowPathStats()
 	return obj
 }
 
 // Put returns an object to the pool, either to L1 or the ring buffer, preferring L1.
-func (p *Pool[T]) Put(obj T) {
+func (p *Pool[T]) Put(obj T) error {
 	p.releaseObj(obj)
 
 	if p.config.verbose {
@@ -106,15 +109,18 @@ func (p *Pool[T]) Put(obj T) {
 
 	blockedReaders := p.pool.GetBlockedReaders()
 	if blockedReaders > 0 {
-		p.slowPathPut(obj)
-		return
+		err := p.slowPathPut(obj)
+		if err != nil {
+			p.logIfVerbose("[PUT] Error in slowPathPut: %v", err)
+		}
+		return err
 	}
 
 	if p.tryFastPathPut(obj) {
-		return
+		return nil
 	}
 
-	p.slowPathPut(obj)
+	return p.slowPathPut(obj)
 }
 
 // shrink is a background goroutine that checks the pool for idle and underutilized objects, and shrinks the pool if necessary.
@@ -135,12 +141,14 @@ func (p *Pool[T]) shrink() {
 		case <-ticker.C:
 			p.mu.Lock()
 
-			if p.handleMaxConsecutiveShrinks(params) {
+			cannotShrink := p.handleMaxConsecutiveShrinks(params)
+			if cannotShrink {
 				p.mu.Unlock()
 				continue
 			}
 
-			if p.handleShrinkCooldown(params) {
+			cooldownActive := p.handleShrinkCooldown(params)
+			if cooldownActive {
 				p.mu.Unlock()
 				continue
 			}
@@ -159,53 +167,27 @@ func (p *Pool[T]) shrink() {
 	}
 }
 
-// grow is a background goroutine that grows the pool if necessary.
+// grow is called when the demand for objects exceeds the current capacity, if enabled.
 func (p *Pool[T]) grow(now time.Time) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	cfg := p.config.growth
-	currentCap := p.stats.currentCapacity.Load()
-	objectsInUse := p.stats.objectsInUse.Load()
-	exponentialThreshold := uint64(float64(p.config.initialCapacity) * cfg.exponentialThresholdFactor)
-	fixedStep := uint64(float64(p.config.initialCapacity) * cfg.fixedGrowthFactor)
+	currentCap, objectsInUse, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
+	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth)
 
-	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, cfg)
-	if p.needsToShrinkToHardLimit(newCapacity) {
-		newCapacity = uint64(p.config.hardLimit)
-		if p.config.verbose {
-			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
-		}
-
-		p.isGrowthBlocked = true
-	}
-
-	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)
-	if err != nil {
-		if p.config.verbose {
-			log.Printf("[GROW] Failed to create and populate buffer: %v", err)
-		}
+	if err := p.updatePoolCapacity(newCapacity); err != nil {
+		p.logIfVerbose("[GROW] Error in updatePoolCapacity: %v", err)
 		return false
 	}
 
-	p.pool = newRingBuffer
-	p.stats.currentCapacity.Store(newCapacity)
-
-	p.stats.lastGrowTime = now
-	p.stats.l3MissCount.Add(1)
-	p.stats.totalGrowthEvents.Add(1)
-	p.reduceL1Hit()
-
+	p.updateGrowthStats(now)
 	p.tryL1ResizeIfTriggered()
-	if p.config.verbose {
-		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
-			newCapacity, p.pool.Length(), len(p.cacheL1), objectsInUse)
-	}
+	p.logGrowthState(newCapacity, objectsInUse)
 
 	return true
 }
 
-// Close closes the pool, releasing all resources.
+// closes the pool, releasing all resources.
 func (p *Pool[T]) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

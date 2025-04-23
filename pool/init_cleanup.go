@@ -67,7 +67,11 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 
 	for range poolObj.config.initialCapacity {
 		obj := poolObj.allocator()
-		fastPathRemaining = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
+		var err error
+		fastPathRemaining, err = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
+		if err != nil {
+			return fmt.Errorf("failed to set pool and buffer: %w", err)
+		}
 	}
 	return nil
 }
