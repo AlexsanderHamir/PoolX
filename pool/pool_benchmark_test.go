@@ -7,16 +7,21 @@ import (
 	"time"
 )
 
-var allocator = func() *Example {
-	return &Example{}
+type example struct {
+	Name string
+	Age  int
 }
 
-var cleaner = func(e *Example) {
+var allocator = func() *example {
+	return &example{}
+}
+
+var cleaner = func(e *example) {
 	e.Name = ""
 	e.Age = 0
 }
 
-func setupPool(b *testing.B, config *PoolConfig) *Pool[*Example] {
+func setupPool(b *testing.B, config *PoolConfig) *Pool[*example] {
 	if config == nil {
 		builder, err := NewPoolConfigBuilder().
 			SetShrinkAggressiveness(AggressivenessExtreme)
@@ -30,7 +35,7 @@ func setupPool(b *testing.B, config *PoolConfig) *Pool[*Example] {
 		}
 	}
 
-	p, err := NewPool(config, allocator, cleaner, reflect.TypeOf(&Example{}))
+	p, err := NewPool(config, allocator, cleaner, reflect.TypeOf(&example{}))
 	if err != nil {
 		b.Fatalf("Failed to create pool: %v", err)
 	}

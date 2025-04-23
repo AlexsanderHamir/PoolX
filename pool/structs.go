@@ -4,7 +4,6 @@ import (
 	"context"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -28,51 +27,6 @@ type Pool[T any] struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-}
-
-type shrinkDefaults struct {
-	interval      time.Duration
-	idle          time.Duration
-	minIdle       int
-	cooldown      time.Duration
-	utilization   float64
-	underutilized int
-	percent       float64
-	maxShrinks    int
-}
-
-type poolStats struct {
-	objectsInUse       atomic.Uint64
-	availableObjects   atomic.Uint64
-	peakInUse          atomic.Uint64
-	currentCapacity    atomic.Uint64
-	consecutiveShrinks atomic.Uint64
-	totalGets          atomic.Uint64
-
-	totalGrowthEvents     atomic.Uint64
-	totalShrinkEvents     atomic.Uint64
-	lastResizeAtGrowthNum atomic.Uint64
-	lastResizeAtShrinkNum atomic.Uint64
-	currentL1Capacity     atomic.Uint64
-
-	FastReturnHit  atomic.Uint64
-	FastReturnMiss atomic.Uint64
-	l1HitCount     atomic.Uint64
-	l2HitCount     atomic.Uint64
-	l3MissCount    atomic.Uint64
-
-	initialCapacity int
-
-	mu        sync.RWMutex
-	reqPerObj float64
-
-	// depending when you collect the utilization, it may be low, be selective.
-	utilization  float64 // derived
-	L2SplillRate float64 // calculated
-
-	lastTimeCalledGet time.Time
-	lastShrinkTime    time.Time
-	lastGrowTime      time.Time
 }
 
 type PoolConfig struct {
@@ -100,6 +54,7 @@ type PoolConfig struct {
 	// Determines how fast path is utilized.
 	fastPath *fastPathParameters
 
+	// Determines how the ring buffer is utilized.
 	ringBufferConfig *ringBufferConfig
 
 	verbose bool
@@ -368,16 +323,22 @@ func (f *fastPathParameters) GetShrink() *shrinkParameters {
 	return f.shrink
 }
 
-type Example struct {
-	Name string
-	Age  int
-}
-
-type RefillResult struct {
+type refillResult struct {
 	Success       bool
 	Reason        string
 	ItemsMoved    int
 	ItemsFailed   int
 	GrowthNeeded  bool
 	GrowthBlocked bool
+}
+
+type shrinkDefaults struct {
+	interval      time.Duration
+	idle          time.Duration
+	minIdle       int
+	cooldown      time.Duration
+	utilization   float64
+	underutilized int
+	percent       float64
+	maxShrinks    int
 }
