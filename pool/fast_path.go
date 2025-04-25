@@ -10,13 +10,13 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() {
 		return
 	}
 
-	sinceLastResize := p.stats.totalGrowthEvents.Load() - p.stats.lastResizeAtGrowthNum.Load()
+	sinceLastResize := p.stats.totalGrowthEvents.Load() - p.stats.lastL1ResizeAtGrowthNum
 	if sinceLastResize < trigger {
 		return
 	}
 
 	cfg := p.config.fastPath.growth
-	currentCap := p.stats.currentL1Capacity.Load()
+	currentCap := p.stats.currentL1Capacity
 	threshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
 	step := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
 
@@ -40,8 +40,8 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() {
 
 done:
 	p.cacheL1 = newL1
-	p.stats.currentL1Capacity.Store(newCap)
-	p.stats.lastResizeAtGrowthNum.Store(p.stats.totalGrowthEvents.Load())
+	p.stats.currentL1Capacity = newCap
+	p.stats.lastL1ResizeAtGrowthNum = p.stats.totalGrowthEvents.Load()
 }
 
 func (p *Pool[T]) tryGetFromL1() (T, bool) {
@@ -50,7 +50,9 @@ func (p *Pool[T]) tryGetFromL1() (T, bool) {
 		if p.config.verbose {
 			log.Println("[GET] L1 hit")
 		}
-		p.stats.l1HitCount.Add(1)
+		if p.config.enableStats {
+			p.stats.l1HitCount.Add(1)
+		}
 		p.updateUsageStats()
 		return obj, true
 	default:
@@ -65,7 +67,9 @@ func (p *Pool[T]) tryGetFromL1() (T, bool) {
 func (p *Pool[T]) tryFastPathPut(obj T) bool {
 	select {
 	case p.cacheL1 <- obj:
-		p.stats.FastReturnHit.Add(1)
+		if p.config.enableStats {
+			p.stats.FastReturnHit.Add(1)
+		}
 		p.logPut("Fast return hit")
 		return true
 	default:
@@ -77,9 +81,8 @@ func (p *Pool[T]) tryFastPathPut(obj T) bool {
 }
 
 func (p *Pool[T]) calculateL1Usage() (int, int, float64) {
-	currentCap := p.stats.currentL1Capacity.Load()
-
 	p.mu.RLock()
+	currentCap := p.stats.currentL1Capacity
 	currentLength := len(p.cacheL1)
 	p.mu.RUnlock()
 
@@ -117,7 +120,7 @@ func (p *Pool[T]) calculateFillTarget(currentCap int) int {
 }
 
 func (p *Pool[T]) shouldShrinkFastPath() bool {
-	sinceLast := p.stats.totalShrinkEvents.Load() - p.stats.lastResizeAtShrinkNum.Load()
+	sinceLast := p.stats.totalShrinkEvents - p.stats.lastResizeAtShrinkNum
 	trigger := uint64(p.config.fastPath.shrinkEventsTrigger)
 
 	return sinceLast >= trigger
@@ -169,8 +172,8 @@ func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	}
 
 	p.cacheL1 = newL1
-	p.stats.lastResizeAtShrinkNum.Store(p.stats.totalShrinkEvents.Load())
-	p.stats.currentL1Capacity.Store(uint64(newCapacity))
+	p.stats.lastResizeAtShrinkNum = p.stats.totalShrinkEvents
+	p.stats.currentL1Capacity = uint64(newCapacity)
 }
 
 func (p *Pool[T]) logFastPathShrink(currentCap uint64, newCap int, inUse int) {

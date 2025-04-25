@@ -31,7 +31,7 @@ func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity uint64) bool {
 func (p *Pool[T]) ShrinkExecution() {
 	p.logShrinkHeader()
 
-	currentCap := p.stats.currentCapacity.Load()
+	currentCap := p.stats.currentCapacity
 	inUse := int(p.stats.objectsInUse.Load())
 	newCapacity := int(float64(currentCap) * (1.0 - p.config.shrink.shrinkPercent))
 
@@ -51,7 +51,7 @@ func (p *Pool[T]) ShrinkExecution() {
 		return
 	}
 
-	currentCap = p.stats.currentL1Capacity.Load()
+	currentCap = p.stats.currentL1Capacity
 	newCapacity = p.adjustFastPathShrinkTarget(currentCap)
 
 	p.logFastPathShrink(currentCap, newCapacity, inUse)
@@ -106,10 +106,10 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 
 	p.pool = newRingBuffer
 
-	p.stats.currentCapacity.Store(uint64(newCapacity))
-	p.stats.totalShrinkEvents.Add(1)
+	p.stats.currentCapacity = uint64(newCapacity)
+	p.stats.totalShrinkEvents++
 	p.stats.lastShrinkTime = time.Now()
-	p.stats.consecutiveShrinks.Add(1)
+	p.stats.consecutiveShrinks++
 
 	if p.config.verbose {
 		log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d",
@@ -260,7 +260,7 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, par
 }
 
 func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacity uint64) error {
-	currentCapacity := p.stats.currentCapacity.Load()
+	currentCapacity := p.stats.currentCapacity
 	toAdd := newCapacity - currentCapacity
 	if toAdd <= 0 {
 		if p.config.verbose {
@@ -283,7 +283,7 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacit
 // calculateGrowthParameters computes the necessary parameters for pool growth
 func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64, uint64) {
 	cfg := p.config.growth
-	currentCap := p.stats.currentCapacity.Load()
+	currentCap := p.stats.currentCapacity
 	objectsInUse := p.stats.objectsInUse.Load()
 	exponentialThreshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
 	fixedStep := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
@@ -314,15 +314,14 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 	}
 
 	p.pool = newRingBuffer
-	p.stats.currentCapacity.Store(newCapacity)
+	p.stats.currentCapacity = newCapacity
 	return nil
 }
 
 // updateGrowthStats updates all statistics related to pool growth
 func (p *Pool[T]) updateGrowthStats(now time.Time) {
 	p.stats.lastGrowTime = now
-	p.stats.l3MissCount.Add(1)
-	p.stats.totalGrowthEvents.Add(1)
+	p.stats.l3MissCount++
 	p.reduceL1Hit()
 }
 
