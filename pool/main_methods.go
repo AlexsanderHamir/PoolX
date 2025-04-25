@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"log"
 	"reflect"
 	"time"
@@ -79,8 +80,15 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poo
 }
 
 // Get returns an object from the pool, either from L1 or the ring buffer, preferring L1.
-func (p *Pool[T]) Get() T {
-	p.handleShrinkBlocked()
+func (p *Pool[T]) Get() (zero T) {
+	if p.closed.Load() {
+		return zero
+	}
+
+	if err := p.handleShrinkBlocked(); err != nil {
+		p.logIfVerbose("[GET] Error in handleShrinkBlocked: %v", err)
+		return zero
+	}
 
 	if obj, found := p.tryGetFromL1(); found {
 		return obj
@@ -93,7 +101,7 @@ func (p *Pool[T]) Get() T {
 	obj, err := p.slowPath()
 	if err != nil {
 		p.logIfVerbose("[GET] Error in slowPath: %v", err)
-		return obj
+		return zero
 	}
 
 	p.warningIfZero(obj, "slowPath")
@@ -102,7 +110,12 @@ func (p *Pool[T]) Get() T {
 }
 
 // Put returns an object to the pool, either to L1 or the ring buffer, preferring L1.
+// CLOSED, doesn't acquire mutex
 func (p *Pool[T]) Put(obj T) error {
+	if p.closed.Load() {
+		return errors.New("pool is closed")
+	}
+
 	p.releaseObj(obj)
 
 	if p.config.verbose {
@@ -142,6 +155,10 @@ func (p *Pool[T]) shrink() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
+			if p.closed.Load() {
+				p.mu.Unlock()
+				return
+			}
 
 			cannotShrink := p.handleMaxConsecutiveShrinks(params)
 			if cannotShrink {
@@ -171,6 +188,10 @@ func (p *Pool[T]) shrink() {
 
 // grow is called when the demand for objects exceeds the current capacity, if enabled.
 func (p *Pool[T]) grow(now time.Time) bool {
+	if p.closed.Load() {
+		return false
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -183,7 +204,6 @@ func (p *Pool[T]) grow(now time.Time) bool {
 	}
 
 	p.stats.totalGrowthEvents.Add(1)
-
 	if p.config.enableStats {
 		p.updateGrowthStats(now)
 	}
@@ -194,31 +214,14 @@ func (p *Pool[T]) grow(now time.Time) bool {
 	return true
 }
 
-// closes the pool, releasing all resources.
 func (p *Pool[T]) Close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.pool == nil && p.cacheL1 == nil {
-		return nil
+	if p.closed.Load() {
+		return errors.New("pool is already closed")
 	}
 
-	if p.cancel != nil {
-		p.cancel()
-		p.cancel = nil
+	if p.hasOutstandingObjects() {
+		return p.closeAsync()
 	}
 
-	if p.cond != nil {
-		p.cond.Broadcast()
-	}
-
-	if err := p.closeMainPool(); err != nil {
-		return err
-	}
-
-	p.cleanupCacheL1()
-
-	p.resetPoolState()
-
-	return nil
+	return p.closeImmediate()
 }

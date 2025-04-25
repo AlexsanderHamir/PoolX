@@ -58,7 +58,7 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 		poolType:  poolType,
 	}
 
-	poolObj.cond = sync.NewCond(&poolObj.mu)
+	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
 	return poolObj, nil
 }
 
@@ -77,24 +77,8 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 	return nil
 }
 
-func (p *Pool[T]) closeMainPool() error {
-	if p.pool == nil {
-		return nil
-	}
-
-	if err := p.pool.Close(); err != nil {
-		return fmt.Errorf("failed to close main pool: %w", err)
-	}
-
-	p.pool = nil
-	return nil
-}
-
 func (p *Pool[T]) cleanupCacheL1() {
-	if p.cacheL1 == nil {
-		return
-	}
-
+	var zero T
 	for {
 		select {
 		case obj, ok := <-p.cacheL1:
@@ -102,18 +86,11 @@ func (p *Pool[T]) cleanupCacheL1() {
 				return
 			}
 			p.cleaner(obj)
+			obj = zero
+			_ = obj
 		default:
 			close(p.cacheL1)
-			p.cacheL1 = nil
 			return
 		}
 	}
-}
-
-func (p *Pool[T]) resetPoolState() {
-	p.stats = nil
-	p.isGrowthBlocked = false
-	p.isShrinkBlocked = false
-	p.allocator = nil
-	p.cleaner = nil
 }

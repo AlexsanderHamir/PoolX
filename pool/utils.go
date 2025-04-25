@@ -30,24 +30,31 @@ func (p *Pool[T]) logPut(message string) {
 	}
 }
 
-func (p *Pool[T]) handleShrinkBlocked() {
+func (p *Pool[T]) handleShrinkBlocked() error {
 	if p.isShrinkBlocked {
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
 		}
-		p.cond.Broadcast()
+		p.shrinkCond.Broadcast()
 	}
 
 	p.stats.mu.Lock()
-	p.stats.lastTimeCalledGet = time.Now()
 
+	p.stats.lastTimeCalledGet = time.Now()
 	if p.stats.consecutiveShrinks > 0 {
 		p.stats.consecutiveShrinks--
 	}
+
 	p.stats.mu.Unlock()
+	return nil
 }
 
 func (p *Pool[T]) handleRefillFailure(refillReason string) (T, bool) {
+	if p.closed.Load() {
+		var zero T
+		return zero, false
+	}
+
 	if p.config.verbose {
 		log.Printf("[GET] Unable to refill — reason: %s", refillReason)
 	}
@@ -92,12 +99,7 @@ func (p *Pool[T]) releaseObj(obj T) {
 	p.reduceObjectsInUse()
 }
 
-// Using a lock is necessary to avoid race conditions when reducing the number of objects in use.
-// even with atomic operations, since we're using two of them.
 func (p *Pool[T]) reduceObjectsInUse() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	for {
 		old := p.stats.objectsInUse.Load()
 		if old == 0 {
@@ -110,7 +112,6 @@ func (p *Pool[T]) reduceObjectsInUse() {
 	}
 }
 
-// The function that calls this must hold the lock.
 func (p *Pool[T]) reduceL1Hit() {
 	for {
 		old := p.stats.l1HitCount.Load()

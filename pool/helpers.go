@@ -269,9 +269,8 @@ func (p *Pool[T]) slowPathPut(obj T) error {
 		return fmt.Errorf("failed to write to ring buffer: %w", err)
 	}
 
-	if p.config.enableStats {
-		p.stats.FastReturnMiss.Add(1)
-	}
+	p.stats.FastReturnMiss.Add(1)
+
 	p.logPut("slow path put unblocked")
 	return nil
 }
@@ -293,7 +292,7 @@ func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotS
 			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
 		}
 		p.isShrinkBlocked = true
-		p.cond.Wait()
+		p.shrinkCond.Wait()
 		p.isShrinkBlocked = false
 		return true
 	}
@@ -398,7 +397,41 @@ func (p *Pool[T]) RingBufferCapacity() int {
 	return p.pool.Capacity()
 }
 
-// ring buffer length
 func (p *Pool[T]) RingBufferLength() int {
 	return p.pool.Length()
+}
+
+func (p *Pool[T]) hasOutstandingObjects() bool {
+	totalGets := p.stats.totalGets.Load()
+	totalReturns := p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()
+	return totalReturns < totalGets
+}
+
+func (p *Pool[T]) closeAsync() error {
+	go p.waitAndClose()
+	return nil
+}
+
+func (p *Pool[T]) waitAndClose() {
+	for {
+		totalReturns := p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()
+		if totalReturns >= p.stats.totalGets.Load() {
+			p.performClosure()
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (p *Pool[T]) closeImmediate() error {
+	p.performClosure()
+	return nil
+}
+
+func (p *Pool[T]) performClosure() {
+	p.closed.Store(true)
+	p.cancel()
+	p.shrinkCond.Broadcast()
+	p.pool.Close()
+	p.cleanupCacheL1()
 }

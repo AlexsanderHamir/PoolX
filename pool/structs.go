@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,7 +18,7 @@ type Pool[T any] struct {
 	pool    *RingBuffer[T] // Main pool storage using a ring buffer
 
 	mu    sync.RWMutex // Protects pool state modifications
-	cond  *sync.Cond   // Condition variable for blocking operations
+	shrinkCond  *sync.Cond   // Condition variable for blocking operations
 	stats *poolStats   // Tracks pool usage statistics
 
 	isShrinkBlocked bool         // Prevents shrinking when true
@@ -30,6 +31,7 @@ type Pool[T any] struct {
 
 	ctx    context.Context    // Context for managing pool lifecycle
 	cancel context.CancelFunc // Function to cancel pool operations
+	closed atomic.Bool        // Prevents further operations after Close() is called
 }
 
 // PoolConfig defines the configuration parameters for the pool.
