@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -213,9 +214,13 @@ func createTestPool(t *testing.T, config *pool.PoolConfig) *pool.Pool[*TestObjec
 
 func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
 	objects := make([]*TestObject, 100)
+
 	var nilCount int
+	var err error
+
 	for i := range 100 {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		if objects[i] == nil {
 			nilCount++
 		}
@@ -233,14 +238,18 @@ func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
 
 func runBlockingTest(t *testing.T, p *pool.Pool[*TestObject]) {
 	objects := make([]*TestObject, 20)
+	var err error
+
 	for i := range 20 {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 
 	done := make(chan bool)
 	go func() {
-		obj := p.Get()
+		obj, err := p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, obj)
 		done <- true
 	}()
@@ -260,8 +269,10 @@ func runBlockingTest(t *testing.T, p *pool.Pool[*TestObject]) {
 func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGoroutines int) {
 	// First fill up the pool to its hard limit
 	objects := make([]*TestObject, 20)
+	var err error
 	for i := range 20 {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 
@@ -272,8 +283,9 @@ func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGorou
 	// Launch multiple goroutines that will try to get objects
 	for i := range numGoroutines {
 		go func(id int) {
-			<-start        // Wait for the start signal
-			obj := p.Get() // should remain blocked
+			<-start             // Wait for the start signal
+			obj, err := p.Get() // should remain blocked
+			require.NoError(t, err)
 			require.NotNil(t, obj)
 			done <- true
 		}(i)
@@ -315,4 +327,13 @@ func testValidConfig(t *testing.T, name string, configFunc func() (*pool.PoolCon
 		assert.NoError(t, err)
 		assert.NotNil(t, config)
 	})
+}
+
+func ValidateCapacity(p *pool.Pool[*TestObject], stats *pool.PoolStatsSnapshot) error {
+	ringCap := uint64(p.RingBufferCapacity())
+	if ringCap != stats.CurrentCapacity {
+		return fmt.Errorf("current capacity (%d) does not match ring buffer capacity (%d)", stats.CurrentCapacity, ringCap)
+	}
+
+	return nil
 }

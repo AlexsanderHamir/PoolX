@@ -25,7 +25,8 @@ func TestPerformanceGetPut(t *testing.T) {
 	start := time.Now()
 	objects := make([]*TestObject, 1000)
 	for i := range objects {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 	getDuration := time.Since(start)
@@ -60,7 +61,8 @@ func TestPerformanceGrowth(t *testing.T) {
 	start := time.Now()
 	objects := make([]*TestObject, 1000)
 	for i := range objects {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 	growthDuration := time.Since(start)
@@ -97,7 +99,8 @@ func TestPerformanceShrink(t *testing.T) {
 	// Fill pool
 	objects := make([]*TestObject, 1000)
 	for i := range objects {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 
@@ -143,7 +146,8 @@ func TestStressTest(t *testing.T) {
 	for time.Since(start) < 5*time.Second {
 		// Get objects
 		for i := range objects {
-			objects[i] = p.Get()
+			objects[i], err = p.Get()
+			require.NoError(t, err)
 			require.NotNil(t, objects[i])
 		}
 
@@ -161,7 +165,9 @@ func TestStressTest(t *testing.T) {
 	}
 
 	// Verify pool is still functioning
-	obj := p.Get()
+	var obj *TestObject
+	obj, err = p.Get()
+	require.NoError(t, err)
 	require.NotNil(t, obj)
 	err = p.Put(obj)
 	require.NoError(t, err)
@@ -185,7 +191,8 @@ func TestPerformanceFastPath(t *testing.T) {
 	start := time.Now()
 	objects := make([]*TestObject, 100)
 	for i := range objects {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 	fastPathDuration := time.Since(start)

@@ -27,7 +27,8 @@ func TestMemoryLeak(t *testing.T) {
 	p := createTestPool(t, config)
 	objects := make([]*TestObject, 1000)
 	for i := range objects {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 
@@ -77,7 +78,8 @@ func TestResourceCleanup(t *testing.T) {
 	// Get and return objects
 	objects := make([]*TestObject, 100)
 	for i := range objects {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects[i])
 	}
 
@@ -129,7 +131,8 @@ func TestConcurrentResourceCleanup(t *testing.T) {
 			defer wg.Done()
 			objects := make([]*TestObject, 20)
 			for j := range objects {
-				objects[j] = p.Get()
+				objects[j], err = p.Get()
+				require.NoError(t, err)
 				if objects[j] != nil {
 					time.Sleep(time.Millisecond)
 					_ = p.Put(objects[j])
@@ -157,7 +160,8 @@ func TestPoolReuse(t *testing.T) {
 	p1 := createTestPool(t, config)
 	objects1 := make([]*TestObject, 100)
 	for i := range objects1 {
-		objects1[i] = p1.Get()
+		objects1[i], err = p1.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects1[i])
 	}
 	for _, obj := range objects1 {
@@ -171,7 +175,8 @@ func TestPoolReuse(t *testing.T) {
 	p2 := createTestPool(t, config)
 	objects2 := make([]*TestObject, 100)
 	for i := range objects2 {
-		objects2[i] = p2.Get()
+		objects2[i], err = p2.Get()
+		require.NoError(t, err)
 		require.NotNil(t, objects2[i])
 	}
 	for _, obj := range objects2 {
