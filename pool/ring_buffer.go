@@ -24,9 +24,6 @@ var (
 	// ErrAcquireLock is returned when the lock is not acquired on Try operations.
 	errAcquireLock = errors.New("unable to acquire lock")
 
-	// ErrWriteOnClosed is returned when write on a closed ringbuffer.
-	errWriteOnClosed = errors.New("write on closed ringbuffer")
-
 	// ErrInvalidLength is returned when the length of the buffer is invalid.
 	errInvalidLength = errors.New("invalid length")
 
@@ -51,7 +48,6 @@ type RingBuffer[T any] struct {
 	mu        sync.Mutex
 	readCond  *sync.Cond // Signaled when data has been read.
 	writeCond *sync.Cond // Signaled when data has been written.
-	closed    bool       // Tracks if the writer is closed
 
 	blockedReaders int
 	blockedWriters int
@@ -262,12 +258,8 @@ func (r *RingBuffer[T]) Write(item T) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.closed {
-		return errWriteOnClosed
-	}
-
-	if r.err != nil {
-		return r.err
+	if err := r.readErr(true); err != nil {
+		return err
 	}
 
 	if any(item) == nil {
@@ -349,6 +341,10 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 
 // Length returns the number of items that can be read
 func (r *RingBuffer[T]) Length() int {
+	if r.err == io.EOF {
+		return 0
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -604,9 +600,6 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 // ClearBuffer clears all remaining items in the buffer and sets them to nil.
 // This is useful when shrinking the buffer and we need to clean up items that won't fit.
 func (r *RingBuffer[T]) clearBuffer() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if r.w == r.r && !r.isFull {
 		return
 	}
@@ -635,24 +628,20 @@ func (r *RingBuffer[T]) clearBuffer() {
 // Any pending items in the buffer will be cleared.
 func (r *RingBuffer[T]) Close() error {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	if r.closed {
+	if r.err == io.EOF {
 		return nil
 	}
 
-	r.closed = true
 	r.setErr(io.EOF, true)
-
-	r.mu.Unlock()
 	r.clearBuffer()
-	r.mu.Lock()
 
 	if r.block {
 		r.readCond.Broadcast()
 		r.writeCond.Broadcast()
 	}
 
-	r.mu.Unlock()
 	return nil
 }
 
@@ -697,12 +686,21 @@ func (r *RingBuffer[T]) getAllView() (part1, part2 []T, err error) {
 }
 
 func (r *RingBuffer[T]) GetBlockedReaders() int {
+	if r.err == io.EOF {
+		return 0
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	return r.blockedReaders
 }
 
 func (r *RingBuffer[T]) GetBlockedWriters() int {
+	if r.err == io.EOF {
+		return 0
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
