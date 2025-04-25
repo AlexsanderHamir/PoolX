@@ -27,7 +27,7 @@ go.work
 .DS_Store
 Thumbs.db
 
-tasks.md
+BigFutureTasks.md
 problem.md
 pool/usefulcommands
 pool/cpu.prof
@@ -46,3 +46,4 @@ performance-report.md
 code_examples/simple/performance.md
 notes.md
 optimizations
+dailyTasks.md

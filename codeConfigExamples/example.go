@@ -52,7 +52,10 @@ func main() {
 
 			for {
 				for j := range objectsPerWorker {
-					objects[j] = pool.Get()
+					objects[j], err = pool.Get()
+					if err != nil {
+						panic(err)
+					}
 					objects[j].ID = counter + j
 					objects[j].Name = fmt.Sprintf("Worker-%d-Test-%d", workerID, counter+j)
 					activeObjects <- struct{}{}
