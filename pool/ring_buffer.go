@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"sync"
 	"time"
 )
@@ -51,6 +52,10 @@ type RingBuffer[T any] struct {
 
 	blockedReaders int
 	blockedWriters int
+
+	// Hook function that will be called before blocking on a read or hitting a deadline
+	// Returns true if the hook successfully handled the situation, false otherwise
+	preReadBlockHook func() bool
 }
 
 type ringBufferConfig struct {
@@ -159,6 +164,15 @@ func (r *RingBuffer[T]) WithWriteTimeout(d time.Duration) *RingBuffer[T] {
 	return r
 }
 
+// WithPreReadBlockHook sets a hook function that will be called before blocking on a read or hitting a deadline.
+// The hook should return true if it successfully handled the situation, false otherwise.
+func (r *RingBuffer[T]) WithPreReadBlockHook(hook func() bool) *RingBuffer[T] {
+	r.mu.Lock()
+	r.preReadBlockHook = hook
+	r.mu.Unlock()
+	return r
+}
+
 func (r *RingBuffer[T]) setErr(err error, locked bool) error {
 	if !locked {
 		r.mu.Lock()
@@ -232,7 +246,14 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 // Must be called when locked and returns locked.
 func (r *RingBuffer[T]) waitWrite() (ok bool) {
 	r.blockedReaders++
+
 	if r.wTimeout <= 0 {
+		// Try hook before blocking
+		if r.preReadBlockHook != nil && r.preReadBlockHook() {
+			log.Println("[WAITWRITE] PreReadBlockHook returned true")
+			r.blockedReaders--
+			return true
+		}
 		r.writeCond.Wait()
 		r.blockedReaders--
 		return true
@@ -241,8 +262,21 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 	start := time.Now()
 	defer time.AfterFunc(r.wTimeout, r.writeCond.Broadcast).Stop()
 
+	// Try hook before blocking
+	if r.preReadBlockHook != nil && r.preReadBlockHook() {
+		log.Println("[WAITWRITE] PreReadBlockHook returned true")
+		r.blockedReaders--
+		return true
+	}
+
 	r.writeCond.Wait()
 	if time.Since(start) >= r.wTimeout {
+		// Try hook one last time before giving up
+		if r.preReadBlockHook != nil && r.preReadBlockHook() {
+			log.Println("[WAITWRITE] PreReadBlockHook returned true")
+			r.blockedReaders--
+			return true
+		}
 		r.setErr(context.DeadlineExceeded, true)
 		r.blockedReaders--
 		return false

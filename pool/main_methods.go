@@ -68,6 +68,8 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poo
 		return nil, err
 	}
 
+	ringBuffer.WithPreReadBlockHook(poolObj.preReadBlockHook)
+
 	poolObj.ctx, poolObj.cancel = context.WithCancel(context.Background())
 
 	if err := populateL1OrBuffer(poolObj); err != nil {
@@ -80,33 +82,29 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poo
 }
 
 // Get returns an object from the pool, either from L1 or the ring buffer, preferring L1.
-func (p *Pool[T]) Get() (zero T) {
+func (p *Pool[T]) Get() (zero T, err error) {
 	if p.closed.Load() {
-		return zero
+		return zero, errors.New("pool is closed")
 	}
 
-	if err := p.handleShrinkBlocked(); err != nil {
-		p.logIfVerbose("[GET] Error in handleShrinkBlocked: %v", err)
-		return zero
-	}
+	p.handleShrinkBlocked()
 
 	if obj, found := p.tryGetFromL1(); found {
-		return obj
+		return obj, nil
 	}
 
 	if obj := p.tryRefillAndGetL1(); !isZero(obj) {
-		return obj
+		return obj, nil
 	}
 
 	obj, err := p.slowPath()
 	if err != nil {
-		p.logIfVerbose("[GET] Error in slowPath: %v", err)
-		return zero
+		return zero, err
 	}
 
 	p.warningIfZero(obj, "slowPath")
 	p.recordSlowPathStats()
-	return obj
+	return obj, nil
 }
 
 // Put returns an object to the pool, either to L1 or the ring buffer, preferring L1.
@@ -193,6 +191,11 @@ func (p *Pool[T]) grow(now time.Time) bool {
 	}
 
 	p.mu.Lock()
+	if uint64(p.config.hardLimit) == p.stats.currentCapacity {
+		p.isGrowthBlocked = true
+		p.mu.Unlock()
+		return false
+	}
 	defer p.mu.Unlock()
 
 	currentCap, objectsInUse, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
@@ -208,9 +211,8 @@ func (p *Pool[T]) grow(now time.Time) bool {
 		p.updateGrowthStats(now)
 	}
 
-	p.tryL1ResizeIfTriggered()
+	//	p.tryL1ResizeIfTriggered() // DROPPING
 	p.logGrowthState(newCapacity, objectsInUse)
-
 	return true
 }
 
@@ -224,4 +226,19 @@ func (p *Pool[T]) Close() error {
 	}
 
 	return p.closeImmediate()
+}
+
+// Hook to Attempt to get an object from L1
+func (p *Pool[T]) preReadBlockHook() bool {
+	select {
+	case obj := <-p.cacheL1:
+		err := p.pool.Write(obj)
+		if err != nil {
+			p.logIfVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)
+			return false
+		}
+		return true
+	default:
+		return false
+	}
 }

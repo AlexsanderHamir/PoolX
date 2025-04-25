@@ -21,6 +21,7 @@ func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint
 		log.Printf("[GROW] Strategy: fixed-step | Threshold: %d | Current: %d | Step: %d | New capacity: %d",
 			threshold, currentCap, fixedStep, newCap)
 	}
+
 	return newCap
 }
 
@@ -259,8 +260,18 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, par
 	return nil
 }
 
+// currentCapacity = 436
+// newCapacity = 505
+// l1 length = 64
+// ring buffer length = 436 - L1 = 372
+// should not fill the 64 slots with new objects in the ring buffer.
+
+// toAdd = newCapacity - currentCapacity - l1 length = 505 - 436 - 64 = 5
+//
+
 func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacity uint64) error {
 	currentCapacity := p.stats.currentCapacity
+
 	toAdd := newCapacity - currentCapacity
 	if toAdd <= 0 {
 		if p.config.verbose {
@@ -277,6 +288,7 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacit
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -292,11 +304,6 @@ func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64, uint64) {
 
 // updatePoolCapacity handles the core capacity update logic
 func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
-	if uint64(p.config.hardLimit) == newCapacity {
-		p.isGrowthBlocked = true
-		return nil
-	}
-
 	if p.needsToShrinkToHardLimit(newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
 		if p.config.verbose {

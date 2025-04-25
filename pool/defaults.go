@@ -2,6 +2,8 @@ package pool
 
 import "time"
 
+
+
 var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
 	AggressivenessDisabled: {
 		0, 0, 0, 0, 0, 0, 0, 0,

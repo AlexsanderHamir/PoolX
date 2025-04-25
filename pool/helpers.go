@@ -62,8 +62,8 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 // Returns 0 if there are no objects in the pool.
 func (p *Pool[T]) calculateUtilization() float64 {
 	inUse := p.stats.objectsInUse.Load()
-	available := p.stats.availableObjects
-	total := inUse + available
+	available := p.pool.Length() + len(p.cacheL1)
+	total := inUse + uint64(available)
 
 	if total == 0 {
 		return 0
@@ -125,8 +125,6 @@ func (p *Pool[T]) handleHealthyUtilization(utilization, minUtil float64, underut
 }
 
 func (p *Pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
-	p.updateAvailableObjs()
-
 	utilization := p.calculateUtilization()
 	minUtil := p.config.shrink.minUtilizationBeforeShrink * 100
 	requiredRounds := p.config.shrink.stableUnderutilizationRounds
@@ -266,7 +264,7 @@ func (p *Pool[T]) refill(fillTarget int) refillResult {
 
 func (p *Pool[T]) slowPathPut(obj T) error {
 	if err := p.pool.Write(obj); err != nil {
-		return fmt.Errorf("failed to write to ring buffer: %w", err)
+		return fmt.Errorf("(write slow path) failed to write to ring buffer: %w", err)
 	}
 
 	p.stats.FastReturnMiss.Add(1)
@@ -384,8 +382,7 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
 func (p *Pool[T]) slowPath() (obj T, err error) {
 	obj, err = p.pool.GetOne()
 	if err != nil {
-		p.logIfVerbose("[SLOWPATH] Error getting object from ring buffer: %v", err)
-		return obj, fmt.Errorf("failed to get object from ring buffer: %w", err)
+		return obj, fmt.Errorf("(read slow path) failed to get object from ring buffer: %w", err)
 	}
 
 	p.logIfVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
@@ -408,19 +405,26 @@ func (p *Pool[T]) hasOutstandingObjects() bool {
 }
 
 func (p *Pool[T]) closeAsync() error {
-	go p.waitAndClose()
+	p.waitAndClose()
 	return nil
 }
 
 func (p *Pool[T]) waitAndClose() {
-	for {
+	maxAttempts := 3
+	attempts := 0
+
+	for attempts < maxAttempts {
 		totalReturns := p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()
 		if totalReturns >= p.stats.totalGets.Load() {
 			p.performClosure()
 			return
 		}
 		time.Sleep(1 * time.Second)
+		attempts++
 	}
+
+	p.logIfVerbose("[CLOSE] Timed out waiting for all objects to return after %d seconds", maxAttempts)
+	p.performClosure()
 }
 
 func (p *Pool[T]) closeImmediate() error {
@@ -434,4 +438,8 @@ func (p *Pool[T]) performClosure() {
 	p.shrinkCond.Broadcast()
 	p.pool.Close()
 	p.cleanupCacheL1()
+}
+
+func (p *Pool[T]) L1Length() int {
+	return len(p.cacheL1)
 }

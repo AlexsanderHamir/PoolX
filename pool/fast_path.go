@@ -27,7 +27,6 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() {
 		newCap = currentCap + step
 	}
 
-	// WARNING: There may be objects in use, we're counting on the PUT to not drop objects.
 	newL1 := make(chan T, newCap)
 	for {
 		select {
@@ -65,11 +64,15 @@ func (p *Pool[T]) tryGetFromL1() (T, bool) {
 }
 
 func (p *Pool[T]) tryFastPathPut(obj T) bool {
+	if p.closed.Load() {
+		return false
+	}
+
 	select {
+	case <-p.ctx.Done():
+		return false
 	case p.cacheL1 <- obj:
-		if p.config.enableStats {
-			p.stats.FastReturnHit.Add(1)
-		}
+		p.stats.FastReturnHit.Add(1)
 		p.logPut("Fast return hit")
 		return true
 	default:

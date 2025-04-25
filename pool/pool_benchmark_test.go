@@ -65,7 +65,10 @@ func Benchmark_Get(b *testing.B) {
 	poolObj := setupPool(b, config)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			obj := poolObj.Get()
+			obj, err := poolObj.Get()
+			if err != nil {
+				b.Fatalf("Failed to get object from pool: %v", err)
+			}
 			_ = obj
 		}
 	})

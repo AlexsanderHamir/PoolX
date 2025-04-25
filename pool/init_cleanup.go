@@ -33,7 +33,6 @@ func initializePoolStats(config *PoolConfig) *poolStats {
 	stats := &poolStats{mu: sync.RWMutex{}}
 	stats.initialCapacity = uint64(config.initialCapacity)
 	stats.currentCapacity = (uint64(config.initialCapacity))
-	stats.availableObjects = uint64(config.initialCapacity)
 	stats.currentL1Capacity = uint64(config.fastPath.initialSize)
 	return stats
 }

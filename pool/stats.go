@@ -12,9 +12,8 @@ import (
 type poolStats struct {
 	mu sync.RWMutex
 
-	initialCapacity  uint64
-	currentCapacity  uint64
-	availableObjects uint64
+	initialCapacity uint64
+	currentCapacity uint64
 
 	// Fast-path accessed fields — must be atomic
 	objectsInUse      atomic.Uint64
@@ -80,13 +79,6 @@ type PoolStatsSnapshot struct {
 	LastGrowTime   time.Time
 }
 
-func (p *Pool[T]) updateAvailableObjs() {
-	ringBufferLength := p.pool.Length()
-	l1Length := len(p.cacheL1)
-
-	p.stats.availableObjects = uint64(ringBufferLength + l1Length)
-}
-
 func (p *Pool[T]) updateUsageStats() {
 	currentInUse := p.stats.objectsInUse.Add(1)
 	p.stats.totalGets.Add(1)
@@ -106,7 +98,6 @@ func (p *Pool[T]) updateDerivedStats() {
 
 	totalGets := p.stats.totalGets.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
-	availableObjects := p.stats.availableObjects
 
 	currentCapacity := p.stats.currentCapacity
 
@@ -114,11 +105,12 @@ func (p *Pool[T]) updateDerivedStats() {
 	totalCreated := currentCapacity - uint64(initialCapacity)
 
 	p.stats.mu.Lock()
+	availableObjects := p.pool.Length() + len(p.cacheL1)
 	if totalCreated > 0 {
 		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
 	}
 
-	totalObjects := objectsInUse + availableObjects
+	totalObjects := objectsInUse + uint64(availableObjects)
 	if totalObjects > 0 {
 		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
 	}
@@ -126,11 +118,8 @@ func (p *Pool[T]) updateDerivedStats() {
 }
 
 func (p *Pool[T]) PrintPoolStats() {
-	p.updateAvailableObjs()
-
 	fmt.Println("========== Pool Stats ==========")
 	fmt.Printf("Objects In Use					 : %d\n", p.stats.objectsInUse.Load())
-	fmt.Printf("Total Available Objects			 : %d\n", p.stats.availableObjects)
 	fmt.Printf("Current Ring Buffer Capacity	 : %d\n", p.stats.currentCapacity)
 	fmt.Printf("Ring Buffer Length   			 : %d\n", p.pool.Length())
 	fmt.Printf("Peak In Use          			 : %d\n", p.stats.peakInUse)
@@ -172,13 +161,11 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Println()
 
 	p.updateDerivedStats()
-	p.stats.mu.RLock()
 	fmt.Println("---------- Usage Stats ----------")
 	fmt.Println()
 	fmt.Printf("Request Per Object   : %.2f\n", p.stats.reqPerObj)
 	fmt.Printf("Utilization %%       : %.2f%%\n", p.stats.utilization)
 	fmt.Println("---------------------------------------")
-	p.stats.mu.RUnlock()
 
 	fmt.Println("---------- Time Stats ----------")
 	fmt.Printf("Last Get Time        : %s\n", p.stats.lastTimeCalledGet.Format(time.RFC3339))
@@ -191,8 +178,6 @@ func (p *Pool[T]) PrintPoolStats() {
 func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	p.stats.mu.RLock()
 	defer p.stats.mu.RUnlock()
-
-	p.updateAvailableObjs()
 
 	fastReturnHit := p.stats.FastReturnHit.Load()
 	fastReturnMiss := p.stats.FastReturnMiss.Load()
@@ -207,7 +192,7 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		ObjectsInUse:       p.stats.objectsInUse.Load(),
-		AvailableObjects:   p.stats.availableObjects,
+		AvailableObjects:   uint64(p.pool.Length() + len(p.cacheL1)),
 		CurrentCapacity:    p.stats.currentCapacity,
 		RingBufferLength:   uint64(p.pool.Length()),
 		PeakInUse:          p.stats.peakInUse,
@@ -243,6 +228,11 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 }
 
 func (s *PoolStatsSnapshot) Validate(reqNum int) error {
+	totalReturns := s.FastReturnHit + s.FastReturnMiss
+	if totalReturns != s.TotalGets {
+		return fmt.Errorf("total returns (%d) does not match total gets (%d)", totalReturns, s.TotalGets)
+	}
+
 	if s.TotalGets != uint64(reqNum) {
 		return fmt.Errorf("total gets (%d) does not match request number (%d)", s.TotalGets, reqNum)
 	}
