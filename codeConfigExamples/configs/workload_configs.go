@@ -58,7 +58,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Max capacity: 5000 objects
 		// - Verbose logging enabled
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(128, 5000, false, true).
+		SetPoolBasicConfigs(128, 5000, true, true, false).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -107,7 +107,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 // with conservative growth and aggressive shrinking.
 func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetPoolBasicConfigs(32, 500, false, true).
+		SetPoolBasicConfigs(32, 500, false, true, false).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*15).
 		SetRingBufferGrowthConfigs(12.0, 0.5, 0.8).
 		SetRingBufferShrinkConfigs(time.Second*10, time.Second*30, time.Second*5, 10, 10, 20, 25, 0.2, 0.3).
@@ -125,7 +125,7 @@ func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 // with minimal object creation overhead and fast access patterns.
 func CreateLowLatencyConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetPoolBasicConfigs(256, 10000, false, true).
+		SetPoolBasicConfigs(256, 10000, false, true, false).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*2).
 		SetRingBufferGrowthConfigs(200.0, 1.0, 2.0).
 		SetRingBufferShrinkConfigs(time.Second*5, time.Second*10, time.Second*2, 3, 3, 10, 15, 0.8, 0.3).
@@ -143,7 +143,7 @@ func CreateLowLatencyConfig() *pool.PoolConfig {
 // with predictable object usage patterns and less frequent object creation.
 func CreateBatchProcessingConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetPoolBasicConfigs(64, 2000, false, true).
+		SetPoolBasicConfigs(64, 2000, false, true, false).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*10).
 		SetRingBufferGrowthConfigs(100.0, 0.7, 1.0).
 		SetRingBufferShrinkConfigs(time.Second*5, time.Second*15, time.Second*3, 5, 5, 15, 20, 0.5, 0.4).
@@ -161,7 +161,7 @@ func CreateBatchProcessingConfig() *pool.PoolConfig {
 // with minimal latency and predictable performance.
 func CreateRealTimeConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetPoolBasicConfigs(512, 20000, false, true).
+		SetPoolBasicConfigs(512, 20000, false, true, false).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*1).
 		SetRingBufferGrowthConfigs(300.0, 1.5, 3.0).
 		SetRingBufferShrinkConfigs(time.Second*3, time.Second*8, time.Second*1, 2, 2, 8, 12, 0.9, 0.2).
@@ -179,7 +179,7 @@ func CreateRealTimeConfig() *pool.PoolConfig {
 // with a good balance between performance and resource usage.
 func CreateBalancedConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
-		SetPoolBasicConfigs(96, 3000, false, true).
+		SetPoolBasicConfigs(96, 3000, false, true, false).
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*8).
 		SetRingBufferGrowthConfigs(120.0, 0.8, 1.5).
 		SetRingBufferShrinkConfigs(time.Second*4, time.Second*12, time.Second*2, 4, 4, 12, 18, 0.7, 0.4).

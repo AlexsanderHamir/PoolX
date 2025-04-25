@@ -226,6 +226,12 @@ func (b *poolConfigBuilder) SetRingBufferWriteTimeout(d time.Duration) *poolConf
 	return b
 }
 
+// SetEnableStats enables or disables the collection of non-essential pool statistics.
+func (b *poolConfigBuilder) SetEnableStats(enable bool) *poolConfigBuilder {
+	b.config.enableStats = enable
+	return b
+}
+
 // Build creates a new pool configuration with the configured settings.
 // It validates all configuration parameters and returns an error if any validation fails.
 func (b *poolConfigBuilder) Build() (*PoolConfig, error) {

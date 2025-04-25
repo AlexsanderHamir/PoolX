@@ -13,7 +13,7 @@ import (
 // Zero or negative values are ignored, the default values will be used.
 //
 // WARNING: The initial capacity apply to both ring buffer and fast path, which you can override.
-func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit int, verbose, enableChannelGrowth bool) *poolConfigBuilder {
+func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit int, verbose, enableChannelGrowth, enableStats bool) *poolConfigBuilder {
 	if initialCapacity > 0 {
 		b.config.initialCapacity = initialCapacity
 	}
@@ -27,6 +27,8 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 	}
 
 	b.config.fastPath.enableChannelGrowth = enableChannelGrowth
+
+	b.config.enableStats = enableStats
 
 	return b
 }
