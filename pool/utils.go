@@ -31,9 +31,6 @@ func (p *Pool[T]) logPut(message string) {
 }
 
 func (p *Pool[T]) handleShrinkBlocked() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if p.isShrinkBlocked {
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
@@ -41,7 +38,13 @@ func (p *Pool[T]) handleShrinkBlocked() {
 		p.cond.Broadcast()
 	}
 
+	p.stats.mu.Lock()
 	p.stats.lastTimeCalledGet = time.Now()
+
+	if p.stats.consecutiveShrinks > 0 {
+		p.stats.consecutiveShrinks--
+	}
+	p.stats.mu.Unlock()
 }
 
 func (p *Pool[T]) handleRefillFailure(refillReason string) (T, bool) {
@@ -61,16 +64,18 @@ func (p *Pool[T]) handleRefillFailure(refillReason string) (T, bool) {
 }
 
 func (p *Pool[T]) recordSlowPathStats() {
-	p.stats.l2HitCount.Add(1)
+	if p.config.enableStats {
+		p.stats.l2HitCount.Add(1)
+	}
 	p.updateUsageStats()
 }
 
 func (p *Pool[T]) IsShrunk() bool {
-	return p.stats.currentCapacity.Load() < uint64(p.config.initialCapacity)
+	return p.stats.currentCapacity < uint64(p.config.initialCapacity)
 }
 
 func (p *Pool[T]) IsGrowth() bool {
-	return p.stats.currentCapacity.Load() > uint64(p.config.initialCapacity)
+	return p.stats.currentCapacity > uint64(p.config.initialCapacity)
 }
 
 func (p *Pool[T]) Cleaner() func(T) {
@@ -105,6 +110,7 @@ func (p *Pool[T]) reduceObjectsInUse() {
 	}
 }
 
+// The function that calls this must hold the lock.
 func (p *Pool[T]) reduceL1Hit() {
 	for {
 		old := p.stats.l1HitCount.Load()
@@ -113,32 +119,6 @@ func (p *Pool[T]) reduceL1Hit() {
 		}
 
 		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
-			break
-		}
-	}
-}
-
-// This is a helper function to update the peak in use stats.
-func (p *Pool[T]) updatePeakInUse(currentInUse uint64) {
-	for {
-		peak := p.stats.peakInUse.Load()
-		if currentInUse <= peak {
-			break
-		}
-
-		if p.stats.peakInUse.CompareAndSwap(peak, currentInUse) {
-			break
-		}
-	}
-}
-
-func (p *Pool[T]) updateConsecutiveShrinks() {
-	for {
-		current := p.stats.consecutiveShrinks.Load()
-		if current == 0 {
-			break
-		}
-		if p.stats.consecutiveShrinks.CompareAndSwap(current, current-1) {
 			break
 		}
 	}

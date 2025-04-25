@@ -45,6 +45,12 @@ type PoolConfig struct {
 	// This helps prevent unbounded memory growth.
 	hardLimit int
 
+	// verbose enables detailed logging of pool operations
+	verbose bool
+
+	// enableStats enables the collection of non-essential pool statistics
+	enableStats bool
+
 	// growth defines how the pool expands when demand increases
 	growth *growthParameters
 
@@ -56,9 +62,6 @@ type PoolConfig struct {
 
 	// ringBufferConfig configures the main pool's ring buffer
 	ringBufferConfig *ringBufferConfig
-
-	// verbose enables detailed logging of pool operations
-	verbose bool
 }
 
 // Getter methods for PoolConfig

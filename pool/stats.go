@@ -2,37 +2,44 @@ package pool
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// poolStats contains all the statistics for the pool
+// poolStats contains all the statistics (essential and non-essential) for the pool
 type poolStats struct {
 	mu sync.RWMutex
 
-	initialCapacity       uint64        // essential && static
-	currentCapacity       atomic.Uint64 // essential && dynamic
-	availableObjects      atomic.Uint64 // essential && dynamic
-	objectsInUse          atomic.Uint64 // essential && dynamic
-	peakInUse             atomic.Uint64 // no essential && is dynamic
-	totalGets             atomic.Uint64 // essential && dynamic
-	totalGrowthEvents     atomic.Uint64 // essential && dynamic
-	totalShrinkEvents     atomic.Uint64 // essential && dynamic
-	consecutiveShrinks    atomic.Uint64 // essential && dynamic
-	l1HitCount            atomic.Uint64 // no essential && is dynamic
-	l2HitCount            atomic.Uint64 // no essential && is dynamic
-	l3MissCount           atomic.Uint64 // no essential && is dynamic
-	FastReturnHit         atomic.Uint64 // no essential && is dynamic
-	FastReturnMiss        atomic.Uint64 // no essential && is dynamic
-	lastTimeCalledGet     time.Time     // essential && is dynamic
-	lastShrinkTime        time.Time     // essential && is dynamic
-	lastGrowTime          time.Time     // no essential && is dynamic
-	lastResizeAtGrowthNum atomic.Uint64 // essential && is dynamic
-	lastResizeAtShrinkNum atomic.Uint64 // essential && is dynamic
-	currentL1Capacity     atomic.Uint64 // essential && is dynamic
-	reqPerObj             float64       // no essential && is dynamic
-	utilization           float64       // essential && is dynamic
+	initialCapacity  uint64
+	currentCapacity  uint64
+	availableObjects uint64
+
+	// Fast-path accessed fields — must be atomic
+	objectsInUse      atomic.Uint64
+	totalGets         atomic.Uint64
+	totalGrowthEvents atomic.Uint64
+	l1HitCount        atomic.Uint64
+	l2HitCount        atomic.Uint64
+	FastReturnHit     atomic.Uint64
+	FastReturnMiss    atomic.Uint64
+
+	peakInUse          uint64
+	totalShrinkEvents  uint64
+	consecutiveShrinks int
+	l3MissCount        uint64
+
+	lastTimeCalledGet time.Time
+	lastShrinkTime    time.Time
+	lastGrowTime      time.Time
+
+	lastL1ResizeAtGrowthNum uint64
+	lastResizeAtShrinkNum   uint64
+	currentL1Capacity       uint64
+
+	reqPerObj   float64
+	utilization float64
 }
 
 // PoolStats represents a snapshot of the pool's statistics at a given moment
@@ -46,7 +53,7 @@ type PoolStatsSnapshot struct {
 	TotalGets          uint64
 	TotalGrowthEvents  uint64
 	TotalShrinkEvents  uint64
-	ConsecutiveShrinks uint64
+	ConsecutiveShrinks int
 
 	// Fast Path Resize Stats
 	LastResizeAtGrowthNum uint64
@@ -77,25 +84,31 @@ func (p *Pool[T]) updateAvailableObjs() {
 	ringBufferLength := p.pool.Length()
 	l1Length := len(p.cacheL1)
 
-	p.stats.availableObjects.Store(uint64(ringBufferLength + l1Length))
+	p.stats.availableObjects = uint64(ringBufferLength + l1Length)
 }
 
 func (p *Pool[T]) updateUsageStats() {
 	currentInUse := p.stats.objectsInUse.Add(1)
 	p.stats.totalGets.Add(1)
 
-	p.mu.Lock()
-	p.updatePeakInUse(currentInUse)
-	p.updateConsecutiveShrinks()
-	p.mu.Unlock()
+	if p.config.enableStats {
+		p.stats.mu.Lock()
+		p.stats.peakInUse = maxUint64(p.stats.peakInUse, currentInUse)
+		p.stats.mu.Unlock()
+	}
 }
 
 func (p *Pool[T]) updateDerivedStats() {
+	if !p.config.enableStats {
+		log.Println("Stats are disabled")
+		return
+	}
+
 	totalGets := p.stats.totalGets.Load()
 	objectsInUse := p.stats.objectsInUse.Load()
-	availableObjects := p.stats.availableObjects.Load()
+	availableObjects := p.stats.availableObjects
 
-	currentCapacity := p.stats.currentCapacity.Load()
+	currentCapacity := p.stats.currentCapacity
 
 	initialCapacity := p.stats.initialCapacity
 	totalCreated := currentCapacity - uint64(initialCapacity)
@@ -109,7 +122,6 @@ func (p *Pool[T]) updateDerivedStats() {
 	if totalObjects > 0 {
 		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
 	}
-
 	p.stats.mu.Unlock()
 }
 
@@ -118,19 +130,19 @@ func (p *Pool[T]) PrintPoolStats() {
 
 	fmt.Println("========== Pool Stats ==========")
 	fmt.Printf("Objects In Use					 : %d\n", p.stats.objectsInUse.Load())
-	fmt.Printf("Total Available Objects			 : %d\n", p.stats.availableObjects.Load())
-	fmt.Printf("Current Ring Buffer Capacity	 : %d\n", p.stats.currentCapacity.Load())
+	fmt.Printf("Total Available Objects			 : %d\n", p.stats.availableObjects)
+	fmt.Printf("Current Ring Buffer Capacity	 : %d\n", p.stats.currentCapacity)
 	fmt.Printf("Ring Buffer Length   			 : %d\n", p.pool.Length())
-	fmt.Printf("Peak In Use          			 : %d\n", p.stats.peakInUse.Load())
+	fmt.Printf("Peak In Use          			 : %d\n", p.stats.peakInUse)
 	fmt.Printf("Total Gets           			 : %d\n", p.stats.totalGets.Load())
 	fmt.Printf("Total Growth Events  			 : %d\n", p.stats.totalGrowthEvents.Load())
-	fmt.Printf("Total Shrink Events  			 : %d\n", p.stats.totalShrinkEvents.Load())
-	fmt.Printf("Consecutive Shrinks  			 : %d\n", p.stats.consecutiveShrinks.Load())
+	fmt.Printf("Total Shrink Events  			 : %d\n", p.stats.totalShrinkEvents)
+	fmt.Printf("Consecutive Shrinks  			 : %d\n", p.stats.consecutiveShrinks)
 
 	fmt.Println()
 	fmt.Println("---------- Fast Path Resize Stats ----------")
-	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastResizeAtGrowthNum.Load())
-	fmt.Printf("Current L1 Capacity      : %d\n", p.stats.currentL1Capacity.Load())
+	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastL1ResizeAtGrowthNum)
+	fmt.Printf("Current L1 Capacity      : %d\n", p.stats.currentL1Capacity)
 	fmt.Printf("L1 Length                : %d\n", len(p.cacheL1))
 	fmt.Println("---------------------------------------")
 	fmt.Println()
@@ -139,7 +151,7 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Println("---------- Fast Get Stats ----------")
 	fmt.Printf("Fast Path (L1) Hits  : %d\n", p.stats.l1HitCount.Load())
 	fmt.Printf("Slow Path (L2) Hits  : %d\n", p.stats.l2HitCount.Load())
-	fmt.Printf("Allocator Misses (L3): %d\n", p.stats.l3MissCount.Load())
+	fmt.Printf("Allocator Misses (L3): %d\n", p.stats.l3MissCount)
 	fmt.Println("---------------------------------------")
 	fmt.Println()
 
@@ -195,24 +207,24 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		ObjectsInUse:       p.stats.objectsInUse.Load(),
-		AvailableObjects:   p.stats.availableObjects.Load(),
-		CurrentCapacity:    p.stats.currentCapacity.Load(),
+		AvailableObjects:   p.stats.availableObjects,
+		CurrentCapacity:    p.stats.currentCapacity,
 		RingBufferLength:   uint64(p.pool.Length()),
-		PeakInUse:          p.stats.peakInUse.Load(),
+		PeakInUse:          p.stats.peakInUse,
 		TotalGets:          p.stats.totalGets.Load(),
 		TotalGrowthEvents:  p.stats.totalGrowthEvents.Load(),
-		TotalShrinkEvents:  p.stats.totalShrinkEvents.Load(),
-		ConsecutiveShrinks: p.stats.consecutiveShrinks.Load(),
+		TotalShrinkEvents:  p.stats.totalShrinkEvents,
+		ConsecutiveShrinks: p.stats.consecutiveShrinks,
 
 		// Fast Path Resize Stats
-		LastResizeAtGrowthNum: p.stats.lastResizeAtGrowthNum.Load(),
-		CurrentL1Capacity:     p.stats.currentL1Capacity.Load(),
+		LastResizeAtGrowthNum: p.stats.lastL1ResizeAtGrowthNum,
+		CurrentL1Capacity:     p.stats.currentL1Capacity,
 		L1Length:              uint64(len(p.cacheL1)),
 
 		// Fast Get Stats
 		L1HitCount:  p.stats.l1HitCount.Load(),
 		L2HitCount:  p.stats.l2HitCount.Load(),
-		L3MissCount: p.stats.l3MissCount.Load(),
+		L3MissCount: p.stats.l3MissCount,
 
 		// Fast Return Stats
 		FastReturnHit:  fastReturnHit,

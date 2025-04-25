@@ -11,6 +11,7 @@ func createDefaultConfig() *PoolConfig {
 		config: &PoolConfig{
 			initialCapacity:  defaultPoolCapacity,
 			hardLimit:        defaultHardLimit,
+			enableStats:      defaultEnableStats,
 			shrink:           defaultShrinkParameters,
 			growth:           defaultGrowthParameters,
 			fastPath:         defaultFastPath,
@@ -31,9 +32,9 @@ func createDefaultConfig() *PoolConfig {
 func initializePoolStats(config *PoolConfig) *poolStats {
 	stats := &poolStats{mu: sync.RWMutex{}}
 	stats.initialCapacity = uint64(config.initialCapacity)
-	stats.currentCapacity.Store(uint64(config.initialCapacity))
-	stats.availableObjects.Store(uint64(config.initialCapacity))
-	stats.currentL1Capacity.Store(uint64(config.fastPath.initialSize))
+	stats.currentCapacity = (uint64(config.initialCapacity))
+	stats.availableObjects = uint64(config.initialCapacity)
+	stats.currentL1Capacity = uint64(config.fastPath.initialSize)
 	return stats
 }
 

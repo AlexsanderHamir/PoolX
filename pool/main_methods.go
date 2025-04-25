@@ -30,6 +30,7 @@ const (
 	defaultGrowthEventsTrigger                            = 3
 	defaultShrinkEventsTrigger                            = 3
 	defaultEnableChannelGrowth                            = true
+	defaultEnableStats                                    = false
 )
 
 const (
@@ -181,7 +182,12 @@ func (p *Pool[T]) grow(now time.Time) bool {
 		return false
 	}
 
-	p.updateGrowthStats(now)
+	p.stats.totalGrowthEvents.Add(1)
+
+	if p.config.enableStats {
+		p.updateGrowthStats(now)
+	}
+
 	p.tryL1ResizeIfTriggered()
 	p.logGrowthState(newCapacity, objectsInUse)
 

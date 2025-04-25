@@ -62,7 +62,7 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 // Returns 0 if there are no objects in the pool.
 func (p *Pool[T]) calculateUtilization() float64 {
 	inUse := p.stats.objectsInUse.Load()
-	available := p.stats.availableObjects.Load()
+	available := p.stats.availableObjects
 	total := inUse + available
 
 	if total == 0 {
@@ -269,7 +269,9 @@ func (p *Pool[T]) slowPathPut(obj T) error {
 		return fmt.Errorf("failed to write to ring buffer: %w", err)
 	}
 
-	p.stats.FastReturnMiss.Add(1)
+	if p.config.enableStats {
+		p.stats.FastReturnMiss.Add(1)
+	}
 	p.logPut("slow path put unblocked")
 	return nil
 }
@@ -286,7 +288,7 @@ func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotS
 		return false
 	}
 
-	if p.stats.consecutiveShrinks.Load() == uint64(params.maxConsecutiveShrinks) {
+	if p.stats.consecutiveShrinks == params.maxConsecutiveShrinks {
 		if p.config.verbose {
 			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
 		}
