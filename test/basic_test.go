@@ -39,7 +39,8 @@ func TestPoolGrowth(t *testing.T) {
 
 	objects := make([]*TestObject, 10)
 	for i := range 10 {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		assert.NoError(t, err)
 		assert.NotNil(t, objects[i])
 	}
 
@@ -82,7 +83,9 @@ func TestPoolShrink(t *testing.T) {
 
 	objects := make([]*TestObject, 10)
 	for i := range 10 {
-		objects[i] = p.Get()
+		objects[i], err = p.Get()
+		assert.NoError(t, err)
+		assert.NotNil(t, objects[i])
 	}
 
 	time.Sleep(300 * time.Millisecond)
