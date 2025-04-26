@@ -30,7 +30,7 @@ func (p *Pool[T]) logPut(message string) {
 	}
 }
 
-func (p *Pool[T]) handleShrinkBlocked()  {
+func (p *Pool[T]) handleShrinkBlocked() {
 	if p.isShrinkBlocked {
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
@@ -112,7 +112,6 @@ func (p *Pool[T]) reduceObjectsInUse() {
 }
 
 func (p *Pool[T]) reduceL1Hit() {
-
 	for {
 		old := p.stats.l1HitCount.Load()
 		if old == 0 {

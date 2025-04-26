@@ -379,7 +379,7 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, string) {
 
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the ring buffer before calling the slow path.
-func (p *Pool[T]) slowPath() (obj T, err error) {
+func (p *Pool[T]) SlowPath() (obj T, err error) {
 	obj, err = p.pool.GetOne()
 	if err != nil {
 		return obj, fmt.Errorf("(read slow path) failed to get object from ring buffer: %w", err)

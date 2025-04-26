@@ -3,9 +3,11 @@ package pool
 import (
 	"context"
 	"errors"
+	"fmt"
+
 	"io"
-	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -50,7 +52,7 @@ type RingBuffer[T any] struct {
 	readCond  *sync.Cond // Signaled when data has been read.
 	writeCond *sync.Cond // Signaled when data has been written.
 
-	blockedReaders int
+	blockedReaders atomic.Uint32
 	blockedWriters int
 
 	// Hook function that will be called before blocking on a read or hitting a deadline
@@ -219,10 +221,12 @@ func (r *RingBuffer[T]) readErr(locked bool) error {
 // Returns false if waited longer than rTimeout.
 // Must be called when locked and returns locked.
 func (r *RingBuffer[T]) waitRead() (ok bool) {
-	r.blockedWriters++
+	r.blockedWriters = r.blockedWriters + 1
+
+	defer func() { r.blockedWriters = r.blockedWriters - 1 }()
+
 	if r.rTimeout <= 0 {
 		r.readCond.Wait()
-		r.blockedWriters--
 		return true
 	}
 
@@ -232,11 +236,9 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 	r.readCond.Wait()
 	if time.Since(start) >= r.rTimeout {
 		r.setErr(context.DeadlineExceeded, true)
-		r.blockedWriters--
 		return false
 	}
 
-	r.blockedWriters--
 	return true
 }
 
@@ -245,44 +247,31 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 // Returns false if waited longer than wTimeout.
 // Must be called when locked and returns locked.
 func (r *RingBuffer[T]) waitWrite() (ok bool) {
-	r.blockedReaders++
+	r.blockedReaders.Add(1)
+
+	defer func() {
+		fmt.Println("decrement blocked readers", r.blockedReaders.Load())
+		r.decrementBlockedReaders()
+	}()
 
 	if r.wTimeout <= 0 {
-		// Try hook before blocking
-		if r.preReadBlockHook != nil && r.preReadBlockHook() {
-			log.Println("[WAITWRITE] PreReadBlockHook returned true")
-			r.blockedReaders--
-			return true
-		}
 		r.writeCond.Wait()
-		r.blockedReaders--
 		return true
 	}
 
 	start := time.Now()
 	defer time.AfterFunc(r.wTimeout, r.writeCond.Broadcast).Stop()
 
-	// Try hook before blocking
-	if r.preReadBlockHook != nil && r.preReadBlockHook() {
-		log.Println("[WAITWRITE] PreReadBlockHook returned true")
-		r.blockedReaders--
-		return true
-	}
-
 	r.writeCond.Wait()
 	if time.Since(start) >= r.wTimeout {
-		// Try hook one last time before giving up
-		if r.preReadBlockHook != nil && r.preReadBlockHook() {
-			log.Println("[WAITWRITE] PreReadBlockHook returned true")
-			r.blockedReaders--
-			return true
-		}
 		r.setErr(context.DeadlineExceeded, true)
-		r.blockedReaders--
 		return false
 	}
 
-	r.blockedReaders--
+	if r.block && r.blockedReaders.Load() > 0 {
+		r.writeCond.Broadcast()
+	}
+
 	return true
 }
 
@@ -320,7 +309,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 		r.isFull = true
 	}
 
-	if r.block && r.blockedReaders > 0 {
+	if r.block && r.blockedReaders.Load() > 0 {
 		r.writeCond.Broadcast()
 	}
 
@@ -516,9 +505,9 @@ func (r *RingBuffer[T]) PeekN(n int) (items []T, err error) {
 // Blocks if the buffer is empty and the ring buffer is in blocking mode, only a write will unblock it.
 func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if err := r.readErr(true); err != nil {
+		r.mu.Unlock()
 		return item, err
 	}
 
@@ -526,16 +515,30 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	// they will all try to read at the same time
 	// by using a loop we make sure that only one goroutine will read the item
 	// and the others will check if the buffer is empty again.
+
+	attempts := 1
 	for r.w == r.r && !r.isFull {
+		// for a write to happen we need to let go of the lock.
+		r.mu.Unlock()
+		tryAgain := r.preReadBlockHook()
+		r.mu.Lock()
+
+		if tryAgain && attempts > 0 {
+			attempts--
+			continue
+		}
+
 		if !r.block {
 			return item, errIsEmpty
 		}
 
 		if !r.waitWrite() {
+			r.mu.Unlock()
 			return item, context.DeadlineExceeded
 		}
 
 		if err := r.readErr(true); err != nil {
+			r.mu.Unlock()
 			return item, err
 		}
 	}
@@ -548,6 +551,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		r.readCond.Broadcast()
 	}
 
+	r.mu.Unlock()
 	return item, r.readErr(true)
 }
 
@@ -572,6 +576,9 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		if !r.block {
 			return nil, errIsEmpty
 		}
+
+		// attempt to get from L1 cache
+
 		if !r.waitWrite() {
 			return nil, context.DeadlineExceeded
 		}
@@ -720,14 +727,7 @@ func (r *RingBuffer[T]) getAllView() (part1, part2 []T, err error) {
 }
 
 func (r *RingBuffer[T]) GetBlockedReaders() int {
-	if r.err == io.EOF {
-		return 0
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return r.blockedReaders
+	return int(r.blockedReaders.Load())
 }
 
 func (r *RingBuffer[T]) GetBlockedWriters() int {
@@ -791,4 +791,18 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 	}
 
 	return part1, part2, r.readErr(true)
+}
+
+// decrement blocked readers
+func (r *RingBuffer[T]) decrementBlockedReaders() {
+	for {
+		old := r.blockedReaders.Load()
+		if old == 0 {
+			break
+		}
+
+		if r.blockedReaders.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
 }
