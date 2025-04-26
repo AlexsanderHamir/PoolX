@@ -796,14 +796,5 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 
 // decrement blocked readers
 func (r *RingBuffer[T]) decrementBlockedReaders() {
-	for {
-		old := r.blockedReaders.Load()
-		if old == 0 {
-			break
-		}
-
-		if r.blockedReaders.CompareAndSwap(old, old-1) {
-			break
-		}
-	}
+	r.blockedReaders.Add(^uint32(0))
 }
