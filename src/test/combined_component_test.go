@@ -1,29 +1,38 @@
 package test
 
 import (
-	"github.com/AlexsanderHamir/memory_context/pool"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/AlexsanderHamir/memory_context/src/pool"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPoolConcurrency(t *testing.T) {
 
-	t.Run("read blockers sync", func(t *testing.T) {
+	t.Run("Growth Blocked (read blockers accounting)", func(t *testing.T) {
 		availableItems := 500
 		numGoroutines := 1000
 		attempts := 5
 
-		config := createConfig(t, availableItems, availableItems, attempts) // doesn't grow
-		readBlockersTest(t, config, numGoroutines, availableItems, false)
+		config := createConfig(t, availableItems, availableItems, attempts, false)
+
+		t.Run("sync mode", func(t *testing.T) {
+			readBlockersTest(t, config, numGoroutines, availableItems, false)
+		})
+
+		t.Run("async mode", func(t *testing.T) {
+			readBlockersTest(t, config, numGoroutines, availableItems, true)
+		})
 	})
 
-	t.Run("read blockers async", func(t *testing.T) {
-		availableItems := 500
-		numGoroutines := 1000
+	t.Run("Growth Allowed + small Hard Limit (high contention)", func(t *testing.T) {
+		hardLimit := 150
+		numGoroutines := 300
 		attempts := 5
+		initial := 1
 
-		config := createConfig(t, availableItems, availableItems, attempts) // doesn't grow
-		readBlockersTest(t, config, numGoroutines, availableItems, true)
+		config := createConfig(t, hardLimit, initial, attempts, false)
+		hardLimitTest(t, config, numGoroutines, hardLimit, true)
 	})
 
 }

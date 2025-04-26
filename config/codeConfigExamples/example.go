@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/codeConfigExamples/configs"
-	"github.com/AlexsanderHamir/memory_context/pool"
+	"github.com/AlexsanderHamir/memory_context/config/codeConfigExamples/configs"
+	"github.com/AlexsanderHamir/memory_context/src/pool"
 )
 
 type Example struct {

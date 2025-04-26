@@ -2,13 +2,14 @@ package test
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/pool"
+	"github.com/AlexsanderHamir/memory_context/src/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -360,7 +361,7 @@ func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, avai
 		}(i)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 	expectedBlocked := numGoroutines - availableItems
 	assert.Equal(t, expectedBlocked, p.GetBlockedReaders())
 
@@ -390,14 +391,67 @@ func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, avai
 	assert.Equal(t, 0, p.GetBlockedReaders())
 }
 
-func createConfig(t *testing.T, hardLimit, initial, attempts int) *pool.PoolConfig {
+func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(initial).
 		SetMinShrinkCapacity(initial). // prevent shrinking
 		SetRingBufferBlocking(true).   // prevent nil returns
 		SetHardLimit(hardLimit).
 		SetPreReadBlockHookAttempts(attempts).
+		SetVerbose(verbose).
 		Build()
 	require.NoError(t, err)
 	return config
+}
+
+func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, availableItems int, async bool) {
+	p := createTestPool(t, config)
+
+	objects := make(chan *TestObject, availableItems)
+
+	var readers sync.WaitGroup
+	readers.Add(numGoroutines)
+	for i := range numGoroutines {
+		go func(idx int) {
+			defer readers.Done()
+			obj, err := p.Get()
+			assert.NoError(t, err)
+			assert.NotNil(t, obj)
+
+			objects <- obj
+		}(i)
+	}
+
+	go func() {
+		readers.Wait()
+		close(objects)
+	}()
+
+	time.Sleep(20 * time.Second)
+
+	log.Println("passed first timer")
+
+	var writers sync.WaitGroup
+	for obj := range objects {
+		require.NotNil(t, obj, "Object is nil")
+
+		if async {
+			writers.Add(1)
+			go func() {
+				defer writers.Done()
+				time.Sleep(time.Duration(rand.Intn(90)+10) * time.Millisecond)
+				err := p.Put(obj)
+				assert.NoError(t, err)
+			}()
+		} else {
+			err := p.Put(obj)
+			assert.NoError(t, err)
+		}
+	}
+
+	writers.Wait()
+
+	assert.Equal(t, 0, p.GetBlockedReaders())
+	poolSnapshot := p.GetPoolStatsSnapshot()
+	assert.NoError(t, poolSnapshot.Validate(numGoroutines))
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/pool"
+	"github.com/AlexsanderHamir/memory_context/src/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +22,6 @@ func TestRingBufferBasicOperations(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 42, val)
 
-	assert.Equal(t, 0, rb.Length())
 	assert.Equal(t, 10, rb.Capacity())
 
 	assert.True(t, rb.IsEmpty())

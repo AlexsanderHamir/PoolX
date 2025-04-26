@@ -3,7 +3,7 @@ package configs
 import (
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/pool"
+	"github.com/AlexsanderHamir/memory_context/src/pool"
 )
 
 // POOL STATS ON THIS CONFIG
