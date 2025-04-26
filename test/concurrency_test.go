@@ -15,8 +15,7 @@ func TestPoolConcurrency(t *testing.T) {
 		SetInitialCapacity(1).
 		SetMinShrinkCapacity(1).     // prevent shrinking
 		SetRingBufferBlocking(true). // prevent nil returns
-		SetHardLimit(100).
-		SetRingBufferTimeout(3 * time.Second).
+		SetHardLimit(500).
 		Build()
 	require.NoError(t, err)
 

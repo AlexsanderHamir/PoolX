@@ -103,7 +103,7 @@ func Benchmark_SlowPath(b *testing.B) {
 	poolObj := setupPool(b, config)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			obj, err := poolObj.slowPath()
+			obj, err := poolObj.SlowPath()
 			if err != nil {
 				b.Fatalf("Failed to get object from slow path: %v", err)
 			}
