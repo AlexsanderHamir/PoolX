@@ -226,7 +226,9 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 	defer func() { r.blockedWriters = r.blockedWriters - 1 }()
 
 	if r.rTimeout <= 0 {
+		fmt.Println("waiting for read")
 		r.readCond.Wait()
+		fmt.Println("read done")
 		return true
 	}
 
@@ -250,7 +252,6 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 	r.blockedReaders.Add(1)
 
 	defer func() {
-		fmt.Println("decrement blocked readers", r.blockedReaders.Load())
 		r.decrementBlockedReaders()
 	}()
 
@@ -260,16 +261,14 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 	}
 
 	start := time.Now()
+
+	// broadcast instead of signal because timeout is being used.
 	defer time.AfterFunc(r.wTimeout, r.writeCond.Broadcast).Stop()
 
 	r.writeCond.Wait()
 	if time.Since(start) >= r.wTimeout {
 		r.setErr(context.DeadlineExceeded, true)
 		return false
-	}
-
-	if r.block && r.blockedReaders.Load() > 0 {
-		r.writeCond.Broadcast()
 	}
 
 	return true
@@ -310,7 +309,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 	}
 
 	if r.block && r.blockedReaders.Load() > 0 {
-		r.writeCond.Broadcast()
+		r.writeCond.Signal()
 	}
 
 	return nil
@@ -356,7 +355,7 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 	}
 
 	if r.block && n > 0 {
-		r.writeCond.Broadcast()
+		r.writeCond.Signal()
 	}
 
 	return n, nil
@@ -548,7 +547,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	r.isFull = false
 
 	if r.block && r.blockedWriters > 0 {
-		r.readCond.Broadcast()
+		r.readCond.Signal()
 	}
 
 	r.mu.Unlock()
@@ -634,6 +633,8 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 	if source.wTimeout > 0 {
 		r.WithWriteTimeout(source.wTimeout)
 	}
+
+	r.WithPreReadBlockHook(source.preReadBlockHook)
 
 	return r
 }

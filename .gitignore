@@ -27,23 +27,20 @@ go.work
 .DS_Store
 Thumbs.db
 
-BigFutureTasks.md
-problem.md
-pool/usefulcommands
-pool/cpu.prof
-pool/mem.prof
-pool/allocs.prof
-pool/pool.test
-profiling_commands.md
-pool/trace.out
-pool/cpu.out
-pool/mem.out
-pool/allocs.out
-pool/pool.out
-pool/pool.test.out
-pool/pool.test.out
-performance-report.md
-code_examples/simple/performance.md
-notes.md
-optimizations
-dailyTasks.md
+# Project specific files
+docs/BigFutureTasks.md
+docs/dailyTasks.md
+docs/profiling_commands.md
+docs/performance-report.md
+docs/notes.md
+docs/optimizations
+
+# Profiling and test outputs
+src/pool/*.prof
+src/pool/*.out
+src/pool/*.test
+src/pool/usefulcommands
+
+# Temporary files
+*.tmp
+*.log
