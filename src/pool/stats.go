@@ -237,6 +237,10 @@ func (s *PoolStatsSnapshot) Validate(reqNum int) error {
 		return fmt.Errorf("total gets (%d) does not match request number (%d)", s.TotalGets, reqNum)
 	}
 
+	if s.ObjectsInUse != 0 {
+		return fmt.Errorf("objects in use (%d) is not 0", s.ObjectsInUse)
+	}
+
 	if s.AvailableObjects != s.CurrentCapacity {
 		return fmt.Errorf("available objects (%d) does not match current capacity (%d)", s.AvailableObjects, s.CurrentCapacity)
 	}
