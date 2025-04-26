@@ -8,32 +8,6 @@ import (
 	"time"
 )
 
-type AggressivenessLevel int
-
-const (
-	defaultAggressiveness             AggressivenessLevel = AggressivenessBalanced
-	AggressivenessDisabled            AggressivenessLevel = 0
-	AggressivenessConservative        AggressivenessLevel = 1
-	AggressivenessBalanced            AggressivenessLevel = 2
-	AggressivenessAggressive          AggressivenessLevel = 3
-	AggressivenessVeryAggressive      AggressivenessLevel = 4
-	AggressivenessExtreme             AggressivenessLevel = 5
-	defaultExponentialThresholdFactor                     = 100.0
-	defaultGrowthPercent                                  = 0.5
-	defaultFixedGrowthFactor                              = 1.5
-	defaultfillAggressiveness                             = 0.8
-	fillAggressivenessExtreme                             = 1.0
-	defaultRefillPercent                                  = 0.2
-	defaultMinCapacity                                    = 32
-	defaultPoolCapacity                                   = 64
-	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
-	defaultHardLimit                                      = 10_000
-	defaultGrowthEventsTrigger                            = 3
-	defaultShrinkEventsTrigger                            = 3
-	defaultEnableChannelGrowth                            = true
-	defaultEnableStats                                    = false
-)
-
 const (
 	// if any of these happens, we likely can't get from L1.
 	growthFailed    = "growth failed"
@@ -97,7 +71,7 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	obj, err := p.slowPath()
+	obj, err := p.SlowPath()
 	if err != nil {
 		return zero, err
 	}
@@ -125,8 +99,9 @@ func (p *Pool[T]) Put(obj T) error {
 		err := p.slowPathPut(obj)
 		if err != nil {
 			p.logIfVerbose("[PUT] Error in slowPathPut: %v", err)
+			return err
 		}
-		return err
+		return nil
 	}
 
 	if p.tryFastPathPut(obj) {
@@ -211,7 +186,7 @@ func (p *Pool[T]) grow(now time.Time) bool {
 		p.updateGrowthStats(now)
 	}
 
-	//	p.tryL1ResizeIfTriggered() // DROPPING
+	// p.tryL1ResizeIfTriggered() // POSSIBLE BUG: DROPPING
 	p.logGrowthState(newCapacity, objectsInUse)
 	return true
 }
@@ -230,15 +205,30 @@ func (p *Pool[T]) Close() error {
 
 // Hook to Attempt to get an object from L1
 func (p *Pool[T]) preReadBlockHook() bool {
-	select {
-	case obj := <-p.cacheL1:
-		err := p.pool.Write(obj)
-		if err != nil {
-			p.logIfVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)
-			return false
-		}
-		return true
-	default:
-		return false
+	attempts := p.config.fastPath.preReadBlockHookAttempts
+	if attempts <= 0 {
+		attempts = 1 // Fallback to 1 attempt if not configured
 	}
+
+	for i := range attempts {
+		select {
+		case obj := <-p.cacheL1:
+			err := p.pool.Write(obj)
+			if err != nil {
+				p.logIfVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)
+				continue
+			}
+			return true
+		default:
+			if i == attempts-1 {
+				return false
+			}
+		}
+	}
+	return false
+}
+
+// GetBlockedReaders returns the number of readers currently blocked waiting for objects
+func (p *Pool[T]) GetBlockedReaders() int {
+	return p.pool.GetBlockedReaders()
 }

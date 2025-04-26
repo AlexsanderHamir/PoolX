@@ -17,9 +17,9 @@ type Pool[T any] struct {
 	cacheL1 chan T         // Fast path channel for quick object access
 	pool    *RingBuffer[T] // Main pool storage using a ring buffer
 
-	mu    sync.RWMutex // Protects pool state modifications
-	shrinkCond  *sync.Cond   // Condition variable for blocking operations
-	stats *poolStats   // Tracks pool usage statistics
+	mu         sync.RWMutex // Protects pool state modifications
+	shrinkCond *sync.Cond   // Condition variable for blocking operations
+	stats      *poolStats   // Tracks pool usage statistics
 
 	isShrinkBlocked bool         // Prevents shrinking when true
 	isGrowthBlocked bool         // Prevents growth when true
@@ -226,6 +226,9 @@ type fastPathParameters struct {
 	// refillPercent triggers refill when occupancy drops below this threshold
 	refillPercent float64
 
+	// preReadBlockHookAttempts controls how many times to attempt getting an object from L1 in preReadBlockHook
+	preReadBlockHookAttempts int
+
 	// growth controls how the fast path expands
 	growth *growthParameters
 
@@ -267,6 +270,10 @@ func (f *fastPathParameters) GetGrowth() *growthParameters {
 
 func (f *fastPathParameters) GetShrink() *shrinkParameters {
 	return f.shrink
+}
+
+func (f *fastPathParameters) GetPreReadBlockHookAttempts() int {
+	return f.preReadBlockHookAttempts
 }
 
 // refillResult reports the outcome of a fast path refill operation

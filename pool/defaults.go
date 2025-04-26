@@ -2,7 +2,32 @@ package pool
 
 import "time"
 
+type AggressivenessLevel int
 
+const (
+	defaultAggressiveness             AggressivenessLevel = AggressivenessBalanced
+	AggressivenessDisabled            AggressivenessLevel = 0
+	AggressivenessConservative        AggressivenessLevel = 1
+	AggressivenessBalanced            AggressivenessLevel = 2
+	AggressivenessAggressive          AggressivenessLevel = 3
+	AggressivenessVeryAggressive      AggressivenessLevel = 4
+	AggressivenessExtreme             AggressivenessLevel = 5
+	defaultExponentialThresholdFactor                     = 100.0
+	defaultGrowthPercent                                  = 0.5
+	defaultFixedGrowthFactor                              = 1.5
+	defaultfillAggressiveness                             = 0.8
+	fillAggressivenessExtreme                             = 1.0
+	defaultRefillPercent                                  = 0.2
+	defaultMinCapacity                                    = 32
+	defaultPoolCapacity                                   = 64
+	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
+	defaultHardLimit                                      = 10_000
+	defaultGrowthEventsTrigger                            = 3
+	defaultShrinkEventsTrigger                            = 3
+	defaultPreReadBlockHookAttempts                       = 3
+	defaultEnableChannelGrowth                            = true
+	defaultEnableStats                                    = false
+)
 
 var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
 	AggressivenessDisabled: {
@@ -36,14 +61,15 @@ var defaultShrinkParameters = &shrinkParameters{
 }
 
 var defaultFastPath = &fastPathParameters{
-	initialSize:         defaultPoolCapacity,
-	fillAggressiveness:  defaultfillAggressiveness,
-	refillPercent:       defaultRefillPercent,
-	enableChannelGrowth: defaultEnableChannelGrowth,
-	growthEventsTrigger: defaultGrowthEventsTrigger,
-	shrinkEventsTrigger: defaultShrinkEventsTrigger,
-	growth:              defaultGrowthParameters,
-	shrink:              defaultShrinkParameters,
+	initialSize:              defaultPoolCapacity,
+	fillAggressiveness:       defaultfillAggressiveness,
+	refillPercent:            defaultRefillPercent,
+	enableChannelGrowth:      defaultEnableChannelGrowth,
+	growthEventsTrigger:      defaultGrowthEventsTrigger,
+	shrinkEventsTrigger:      defaultShrinkEventsTrigger,
+	preReadBlockHookAttempts: defaultPreReadBlockHookAttempts,
+	growth:                   defaultGrowthParameters,
+	shrink:                   defaultShrinkParameters,
 }
 
 var defaultRingBufferConfig = &ringBufferConfig{

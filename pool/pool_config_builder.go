@@ -195,6 +195,14 @@ func (b *poolConfigBuilder) SetFastPathShrinkMinCapacity(minCap int) *poolConfig
 	return b
 }
 
+// SetPreReadBlockHookAttempts sets the number of attempts to get an object from L1 in preReadBlockHook.
+func (b *poolConfigBuilder) SetPreReadBlockHookAttempts(attempts int) *poolConfigBuilder {
+	if attempts > 0 {
+		b.config.fastPath.preReadBlockHookAttempts = attempts
+	}
+	return b
+}
+
 // SetRingBufferBlocking sets whether the ring buffer operates in blocking mode.
 func (b *poolConfigBuilder) SetRingBufferBlocking(block bool) *poolConfigBuilder {
 	b.config.ringBufferConfig.block = block
