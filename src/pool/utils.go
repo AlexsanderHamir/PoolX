@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"errors"
 	"log"
 	"reflect"
 	"time"
@@ -31,6 +32,9 @@ func (p *Pool[T]) logPut(message string) {
 }
 
 func (p *Pool[T]) handleShrinkBlocked() {
+	p.stats.mu.Lock()
+	defer p.stats.mu.Unlock()
+
 	if p.isShrinkBlocked {
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
@@ -38,30 +42,26 @@ func (p *Pool[T]) handleShrinkBlocked() {
 		p.shrinkCond.Broadcast()
 	}
 
-	p.stats.mu.Lock()
-
 	p.stats.lastTimeCalledGet = time.Now()
 	if p.stats.consecutiveShrinks > 0 {
 		p.stats.consecutiveShrinks--
 	}
-
-	p.stats.mu.Unlock()
 }
 
-func (p *Pool[T]) handleRefillFailure(refillReason string) (T, bool) {
+func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 	if p.closed.Load() {
 		var zero T
 		return zero, false
 	}
 
 	if p.config.verbose {
-		log.Printf("[GET] Unable to refill — reason: %s", refillReason)
+		log.Printf("[GET] Unable to refill — reason: %s", refillError)
 	}
 
 	var zero T
-	if refillReason == growthFailed || refillReason == ringBufferError {
+	if errors.Is(refillError, errRingBufferFailed) {
 		if p.config.verbose {
-			log.Printf("[GET] Warning: unable to refill — reason: %s, returning nil", refillReason)
+			log.Printf("[GET] Warning: unable to refill — reason: %s, returning nil", refillError)
 		}
 		return zero, false
 	}
@@ -70,10 +70,11 @@ func (p *Pool[T]) handleRefillFailure(refillReason string) (T, bool) {
 }
 
 func (p *Pool[T]) recordSlowPathStats() {
+	p.updateUsageStats()
+
 	if p.config.enableStats {
 		p.stats.l2HitCount.Add(1)
 	}
-	p.updateUsageStats()
 }
 
 func (p *Pool[T]) IsShrunk() bool {
@@ -90,7 +91,7 @@ func (p *Pool[T]) Cleaner() func(T) {
 
 func (p *Pool[T]) releaseObj(obj T) {
 	if reflect.ValueOf(obj).IsNil() {
-		log.Println("[RELEASEOBJ] Object is nil")
+		p.logIfVerbose("[RELEASEOBJ] Object is nil")
 		return
 	}
 

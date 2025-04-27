@@ -3,21 +3,16 @@ package pool
 import (
 	"context"
 	"errors"
-	"log"
 	"reflect"
 	"time"
 )
 
-const (
-	// if any of these happens, we likely can't get from L1.
-	growthFailed    = "growth failed"
-	ringBufferError = "error getting items from ring buffer"
-
-	// if any of the these happens, we can try to get from L1.
-	growthBlocked   = "growth is blocked"
-	refillSucceeded = "refill succeeded"
-	noRefillNeeded  = "no refill needed"
-	noItemsToMove   = "no items to move"
+var (
+	errPoolClosed       = errors.New("pool is closed")
+	errGrowthBlocked    = errors.New("growth is blocked")
+	errRingBufferFailed = errors.New("ring buffer failed core operation")
+	errNoItemsToMove    = errors.New("no items to move")
+	errNilObject        = errors.New("object is nil")
 )
 
 // Creates a new pool with the given config, allocator, cleaner, and pool type, only pointers can be stored.
@@ -58,7 +53,7 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poo
 // Get returns an object from the pool, either from L1 or the ring buffer, preferring L1.
 func (p *Pool[T]) Get() (zero T, err error) {
 	if p.closed.Load() {
-		return zero, errors.New("pool is closed")
+		return zero, errPoolClosed
 	}
 
 	p.handleShrinkBlocked()
@@ -73,26 +68,25 @@ func (p *Pool[T]) Get() (zero T, err error) {
 
 	obj, err := p.SlowPath()
 	if err != nil {
-		return zero, err
+		return obj, err
 	}
 
-	p.warningIfZero(obj, "slowPath")
+	if p.config.ringBufferConfig.block && isZero(obj) {
+		return zero, errNilObject
+	}
+
 	p.recordSlowPathStats()
 	return obj, nil
 }
 
-// Put returns an object to the pool, either to L1 or the ring buffer, preferring L1.
-// CLOSED, doesn't acquire mutex
 func (p *Pool[T]) Put(obj T) error {
 	if p.closed.Load() {
-		return errors.New("pool is closed")
+		return errPoolClosed
 	}
 
 	p.releaseObj(obj)
 
-	if p.config.verbose {
-		log.Printf("[PUT] Releasing object")
-	}
+	p.logIfVerbose("[PUT] Releasing object")
 
 	blockedReaders := p.pool.GetBlockedReaders()
 	if blockedReaders > 0 {
@@ -160,25 +154,24 @@ func (p *Pool[T]) shrink() {
 }
 
 // grow is called when the demand for objects exceeds the current capacity, if enabled.
-func (p *Pool[T]) grow(now time.Time) bool {
+func (p *Pool[T]) grow(now time.Time) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.closed.Load() {
-		return false
+		return errPoolClosed
 	}
 
-	p.mu.Lock()
-	if uint64(p.config.hardLimit) == p.stats.currentCapacity {
-		p.isGrowthBlocked = true
-		p.mu.Unlock()
-		return false
+	if p.isGrowthBlocked {
+		return errGrowthBlocked
 	}
-	defer p.mu.Unlock()
 
 	currentCap, objectsInUse, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth)
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
 		p.logIfVerbose("[GROW] Error in updatePoolCapacity: %v", err)
-		return false
+		return err
 	}
 
 	p.stats.totalGrowthEvents.Add(1)
@@ -188,7 +181,7 @@ func (p *Pool[T]) grow(now time.Time) bool {
 
 	// p.tryL1ResizeIfTriggered() // POSSIBLE BUG: DROPPING
 	p.logGrowthState(newCapacity, objectsInUse)
-	return true
+	return nil
 }
 
 func (p *Pool[T]) Close() error {
