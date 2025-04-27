@@ -7,6 +7,7 @@ import (
 )
 
 func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint64, cfg *growthParameters) uint64 {
+
 	if currentCap < threshold {
 		growth := maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
 		newCap := currentCap + growth
@@ -312,12 +313,16 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 		p.isGrowthBlocked = true
 	}
 
+	if newCapacity == uint64(p.config.hardLimit) {
+		p.isGrowthBlocked = true
+	}
+
 	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)
 	if err != nil {
 		if p.config.verbose {
 			log.Printf("[GROW] Failed to create and populate buffer: %v", err)
 		}
-		return err
+		return errRingBufferFailed
 	}
 
 	p.pool = newRingBuffer

@@ -278,12 +278,10 @@ func (f *fastPathParameters) GetPreReadBlockHookAttempts() int {
 
 // refillResult reports the outcome of a fast path refill operation
 type refillResult struct {
-	Success       bool   // Whether the refill was successful
-	Reason        string // Explanation if refill failed
-	ItemsMoved    int    // Number of items moved to fast path
-	ItemsFailed   int    // Number of items that failed to move
-	GrowthNeeded  bool   // Whether fast path needs to grow
-	GrowthBlocked bool   // Whether growth is currently blocked
+	Error       error
+	Success     bool // Whether the refill was successful
+	ItemsMoved  int  // Number of items moved to fast path
+	ItemsFailed int  // Number of items that failed to move
 }
 
 // shrinkDefaults provides default values for shrink parameters
