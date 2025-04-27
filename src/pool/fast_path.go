@@ -46,9 +46,7 @@ done:
 func (p *Pool[T]) tryGetFromL1() (T, bool) {
 	select {
 	case obj := <-p.cacheL1:
-		if p.config.verbose {
-			log.Println("[GET] L1 hit")
-		}
+		p.logIfVerbose("[GET] L1 hit")
 		if p.config.enableStats {
 			p.stats.l1HitCount.Add(1)
 		}
@@ -73,12 +71,10 @@ func (p *Pool[T]) tryFastPathPut(obj T) bool {
 		return false
 	case p.cacheL1 <- obj:
 		p.stats.FastReturnHit.Add(1)
-		p.logPut("Fast return hit")
+		p.logIfVerbose("[PUT] Fast return hit")
 		return true
 	default:
-		if p.config.verbose {
-			p.logPut("L1 return miss — falling back to slow path")
-		}
+		p.logIfVerbose("[PUT] L1 return miss — falling back to slow path")
 		return false
 	}
 }
