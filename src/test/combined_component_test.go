@@ -1,7 +1,9 @@
 package test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/AlexsanderHamir/memory_context/src/pool"
 	"github.com/stretchr/testify/require"
@@ -26,13 +28,30 @@ func TestPoolConcurrency(t *testing.T) {
 	})
 
 	t.Run("Growth Allowed + small Hard Limit (high contention)", func(t *testing.T) {
-		hardLimit := 150
-		numGoroutines := 300
-		attempts := 5
-		initial := 1
+		runs := 100
+		for i := range runs {
+			t.Run(fmt.Sprintf("run-%d", i+1), func(t *testing.T) {
+				t.Parallel()
 
-		config := createConfig(t, hardLimit, initial, attempts, false)
-		hardLimitTest(t, config, numGoroutines, hardLimit, true)
+				done := make(chan struct{})
+				go func() {
+					hardLimit := 1000
+					numGoroutines := 2000
+					attempts := 5
+					initial := 1
+
+					config := createConfig(t, hardLimit, initial, attempts, false)
+					hardLimitTest(t, config, numGoroutines, true)
+					close(done)
+				}()
+
+				select {
+				case <-done:
+				case <-time.After(10 * time.Second):
+					t.Fatal("subtest timed out, possible deadlock")
+				}
+			})
+		}
 	})
 
 }

@@ -2,7 +2,6 @@ package test
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"reflect"
 	"sync"
@@ -355,6 +354,7 @@ func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, avai
 			defer wg.Done()
 			obj, err := p.Get()
 			assert.NoError(t, err)
+			assert.NotNil(t, obj)
 
 			objects <- obj
 			completed[idx] = true
@@ -404,10 +404,10 @@ func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) 
 	return config
 }
 
-func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, availableItems int, async bool) {
+func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines int, async bool) {
 	p := createTestPool(t, config)
 
-	objects := make(chan *TestObject, availableItems)
+	objects := make(chan *TestObject, 1000)
 
 	var readers sync.WaitGroup
 	readers.Add(numGoroutines)
@@ -426,10 +426,6 @@ func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, availab
 		readers.Wait()
 		close(objects)
 	}()
-
-	time.Sleep(20 * time.Second)
-
-	log.Println("passed first timer")
 
 	var writers sync.WaitGroup
 	for obj := range objects {
