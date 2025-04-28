@@ -262,7 +262,6 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 
 	start := time.Now()
 
-	// broadcast instead of signal because timeout is being used.
 	defer time.AfterFunc(r.wTimeout, r.writeCond.Broadcast).Stop()
 
 	r.writeCond.Wait()
@@ -515,9 +514,9 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	// by using a loop we make sure that only one goroutine will read the item
 	// and the others will check if the buffer is empty again.
 
-	attempts := 1
+	attempts := 2
 	for r.w == r.r && !r.isFull {
-		// for a write to happen we need to let go of the lock.
+
 		r.mu.Unlock()
 		tryAgain := r.preReadBlockHook()
 		r.mu.Lock()
@@ -540,6 +539,8 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 			r.mu.Unlock()
 			return item, err
 		}
+
+		attempts--
 	}
 
 	item = r.buf[r.r]
@@ -787,8 +788,8 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 	r.r = (r.r + count) % r.size
 	r.isFull = false
 
-	if r.block {
-		r.readCond.Broadcast()
+	if r.block && r.blockedWriters > 0 {
+		r.readCond.Signal()
 	}
 
 	return part1, part2, r.readErr(true)

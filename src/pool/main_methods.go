@@ -155,9 +155,6 @@ func (p *Pool[T]) shrink() {
 
 // grow is called when the demand for objects exceeds the current capacity, if enabled.
 func (p *Pool[T]) grow(now time.Time) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if p.closed.Load() {
 		return errPoolClosed
 	}
@@ -200,7 +197,7 @@ func (p *Pool[T]) Close() error {
 func (p *Pool[T]) preReadBlockHook() bool {
 	attempts := p.config.fastPath.preReadBlockHookAttempts
 	if attempts <= 0 {
-		attempts = 1 // Fallback to 1 attempt if not configured
+		attempts = 1
 	}
 
 	for i := range attempts {

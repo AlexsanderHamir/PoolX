@@ -261,15 +261,6 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, par
 	return nil
 }
 
-// currentCapacity = 436
-// newCapacity = 505
-// l1 length = 64
-// ring buffer length = 436 - L1 = 372
-// should not fill the 64 slots with new objects in the ring buffer.
-
-// toAdd = newCapacity - currentCapacity - l1 length = 505 - 436 - 64 = 5
-//
-
 func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacity uint64) error {
 	currentCapacity := p.stats.currentCapacity
 
