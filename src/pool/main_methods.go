@@ -60,10 +60,6 @@ func (p *Pool[T]) Get() (zero T, err error) {
 	p.handleShrinkBlocked()
 
 	if obj, found := p.tryGetFromL1(); found {
-		if isNil(obj) {
-			return zero, fmt.Errorf("from L1: %w", errNilObject)
-		}
-
 		return obj, nil
 	}
 
@@ -74,10 +70,6 @@ func (p *Pool[T]) Get() (zero T, err error) {
 	obj, err := p.SlowPath()
 	if err != nil {
 		return obj, err
-	}
-
-	if p.config.ringBufferConfig.block && isNil(obj) {
-		return zero, fmt.Errorf("from SlowPath: %w", errNilObject)
 	}
 
 	p.recordSlowPathStats()
