@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"time"
 )
@@ -59,10 +60,14 @@ func (p *Pool[T]) Get() (zero T, err error) {
 	p.handleShrinkBlocked()
 
 	if obj, found := p.tryGetFromL1(); found {
+		if isNil(obj) {
+			return zero, fmt.Errorf("from L1: %w", errNilObject)
+		}
+
 		return obj, nil
 	}
 
-	if obj := p.tryRefillAndGetL1(); !isZero(obj) { // HEAVY OPERATION
+	if obj := p.tryRefillAndGetL1(); !isNil(obj) {
 		return obj, nil
 	}
 
@@ -71,8 +76,8 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, err
 	}
 
-	if p.config.ringBufferConfig.block && isZero(obj) {
-		return zero, errNilObject
+	if p.config.ringBufferConfig.block && isNil(obj) {
+		return zero, fmt.Errorf("from SlowPath: %w", errNilObject)
 	}
 
 	p.recordSlowPathStats()
@@ -80,6 +85,10 @@ func (p *Pool[T]) Get() (zero T, err error) {
 }
 
 func (p *Pool[T]) Put(obj T) error {
+	if isNil(obj) {
+		return fmt.Errorf("from Put: %w", errNilObject)
+	}
+
 	if p.closed.Load() {
 		return errPoolClosed
 	}
@@ -98,7 +107,7 @@ func (p *Pool[T]) Put(obj T) error {
 		return nil
 	}
 
-	if p.tryFastPathPut(obj) {
+	if ok := p.tryFastPathPut(obj); ok {
 		return nil
 	}
 
@@ -168,7 +177,7 @@ func (p *Pool[T]) grow(now time.Time) error {
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
 		p.logIfVerbose("[GROW] Error in updatePoolCapacity: %v", err)
-		return err
+		return fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
 
 	p.stats.totalGrowthEvents.Add(1)
@@ -176,7 +185,11 @@ func (p *Pool[T]) grow(now time.Time) error {
 		p.updateGrowthStats(now)
 	}
 
-	// p.tryL1ResizeIfTriggered() // POSSIBLE BUG: DROPPING
+	err := p.tryL1ResizeIfTriggered()
+	if err != nil {
+		p.logIfVerbose("[GROW] Error in tryL1ResizeIfTriggered: %v", err)
+		return err
+	}
 	p.logGrowthState(newCapacity, objectsInUse)
 	return nil
 }
@@ -200,9 +213,18 @@ func (p *Pool[T]) preReadBlockHook() bool {
 		attempts = 1
 	}
 
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return false
+	}
+	ch := *chPtr
+
 	for i := range attempts {
 		select {
-		case obj := <-p.cacheL1:
+		case obj, ok := <-ch:
+			if !ok {
+				return false
+			}
 			err := p.pool.Write(obj)
 			if err != nil {
 				p.logIfVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)

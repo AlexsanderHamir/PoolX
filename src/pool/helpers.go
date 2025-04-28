@@ -18,9 +18,15 @@ func (p *Pool[T]) logIfVerbose(format string, args ...any) {
 }
 
 func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return fastPathRemaining, fmt.Errorf("cacheL1 is nil")
+	}
+	ch := *chPtr
+
 	if fastPathRemaining > 0 {
 		select {
-		case p.cacheL1 <- obj:
+		case ch <- obj:
 			fastPathRemaining--
 			return fastPathRemaining, nil
 		default:
@@ -61,8 +67,14 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 // calculateUtilization calculates the current utilization percentage of the pool.
 // Returns 0 if there are no objects in the pool.
 func (p *Pool[T]) calculateUtilization() float64 {
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return 0
+	}
+	ch := *chPtr
+
 	inUse := p.stats.objectsInUse.Load()
-	available := p.pool.Length() + len(p.cacheL1)
+	available := p.pool.Length() + len(ch)
 	total := inUse + uint64(available)
 
 	if total == 0 {
@@ -168,16 +180,11 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 	p.maxConsecutiveShrinks = def.maxShrinks
 	p.minCapacity = defaultMinCapacity
 }
-func (p *Pool[T]) isGrowthNeeded(fillTarget *int) bool {
+func (p *Pool[T]) isGrowthNeeded(fillTarget int) bool {
 	poolLength := p.pool.Length()
 	noObjsAvailable := poolLength == 0
 
-	biggerRequestThanAvailable := *fillTarget > poolLength
-	if biggerRequestThanAvailable {
-		*fillTarget = poolLength
-	}
-
-	return noObjsAvailable
+	return noObjsAvailable || fillTarget > poolLength
 }
 
 func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, *refillResult) {
@@ -188,7 +195,7 @@ func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, *refillResult) {
 		return false, &result
 	}
 
-	if p.isGrowthNeeded(&fillTarget) {
+	if p.isGrowthNeeded(fillTarget) {
 		now := time.Now()
 		err := p.grow(now)
 		if err != nil {
@@ -220,21 +227,35 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 	return part1, part2, nil
 }
 
-func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) error {
+func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.logIfVerbose("[PUT] panic on fast path put — channel closed")
+			result.Error = fmt.Errorf("panic on fast path put — channel closed")
+		}
+	}()
+
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		result.Error = fmt.Errorf("cacheL1 is nil")
+		return
+	}
+	ch := *chPtr
+
 	for _, item := range items {
 		select {
-		case p.cacheL1 <- item:
+		case ch <- item:
 			result.ItemsMoved++
-			p.logIfVerbose("[REFILL] Moved object to L1 | Remaining: %d", p.pool.Length())
+			p.logIfVerbose("[REFILL] Moved object to L1 | Remaining: %d", len(ch))
 		default:
 			result.ItemsFailed++
 			if err := p.pool.Write(item); err != nil {
 				p.logIfVerbose("[REFILL] Error putting object back in ring buffer: %v", err)
-				return fmt.Errorf("%w: %w", errRingBufferFailed, err)
+				result.Error = fmt.Errorf("%w: %w", errRingBufferFailed, err)
+				return
 			}
 		}
 	}
-	return nil
 }
 
 // refill attempts to refill the L1 cache with objects from the pool.
@@ -255,16 +276,13 @@ func (p *Pool[T]) refill(fillTarget int) *refillResult {
 		return result
 	}
 
-	err = p.moveItemsToL1(part1, result)
-	if err != nil {
-		result.Success = false
-		result.Error = err
+	p.moveItemsToL1(part1, result)
+	if result.Error != nil {
 		return result
 	}
 
-	err = p.moveItemsToL1(part2, result)
-	if err != nil {
-		result.Success = false
+	p.moveItemsToL1(part2, result)
+	if result.Error != nil {
 		return result
 	}
 
@@ -366,7 +384,7 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 }
 
 func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
-	currentLength, currentCap, currentPercent := p.calculateL1Usage()
+	currentLength, currentCap, currentPercent := p.calculateL1Usage() // holds lock
 	p.logL1Usage(currentLength, currentCap, currentPercent)
 
 	if currentPercent > p.config.fastPath.refillPercent {
@@ -455,5 +473,10 @@ func (p *Pool[T]) performClosure() {
 }
 
 func (p *Pool[T]) L1Length() int {
-	return len(p.cacheL1)
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return 0
+	}
+	ch := *chPtr
+	return len(ch)
 }

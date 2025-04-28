@@ -14,7 +14,7 @@ import (
 //
 // Type parameter T must be a pointer type. Non-pointer types will cause an error.
 type Pool[T any] struct {
-	cacheL1 chan T         // Fast path channel for quick object access
+	cacheL1 atomic.Pointer[chan T]
 	pool    *RingBuffer[T] // Main pool storage using a ring buffer
 
 	mu         sync.RWMutex // Protects pool state modifications

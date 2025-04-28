@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 )
 
 func createDefaultConfig() *PoolConfig {
@@ -46,8 +47,10 @@ func validateAllocator[T any](allocator func() T) error {
 }
 
 func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T], poolType reflect.Type) (*Pool[T], error) {
+	ch := make(chan T, config.fastPath.initialSize)
+
 	poolObj := &Pool[T]{
-		cacheL1:   make(chan T, config.fastPath.initialSize),
+		cacheL1:   atomic.Pointer[chan T]{},
 		allocator: allocator,
 		cleaner:   cleaner,
 		mu:        sync.RWMutex{},
@@ -56,6 +59,8 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 		pool:      ringBuffer,
 		poolType:  poolType,
 	}
+
+	poolObj.cacheL1.Store(&ch)
 
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
 	return poolObj, nil
@@ -67,6 +72,9 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 
 	for range poolObj.config.initialCapacity {
 		obj := poolObj.allocator()
+		if isNil(obj) {
+			return fmt.Errorf("from allocator: %w", errNilObject)
+		}
 		var err error
 		fastPathRemaining, err = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
 		if err != nil {
@@ -78,9 +86,15 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 
 func (p *Pool[T]) cleanupCacheL1() {
 	var zero T
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return
+	}
+	ch := *chPtr
+
 	for {
 		select {
-		case obj, ok := <-p.cacheL1:
+		case obj, ok := <-ch:
 			if !ok {
 				return
 			}
@@ -88,7 +102,7 @@ func (p *Pool[T]) cleanupCacheL1() {
 			obj = zero
 			_ = obj
 		default:
-			close(p.cacheL1)
+			close(ch)
 			return
 		}
 	}

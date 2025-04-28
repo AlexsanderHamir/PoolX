@@ -104,8 +104,14 @@ func (p *Pool[T]) updateDerivedStats() {
 	initialCapacity := p.stats.initialCapacity
 	totalCreated := currentCapacity - uint64(initialCapacity)
 
+	chPtr := p.cacheL1.Load()
+	var l1Len int
+	if chPtr != nil {
+		l1Len = len(*chPtr)
+	}
+
 	p.stats.mu.Lock()
-	availableObjects := p.pool.Length() + len(p.cacheL1)
+	availableObjects := p.pool.Length() + l1Len
 	if totalCreated > 0 {
 		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
 	}
@@ -132,7 +138,12 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Println("---------- Fast Path Resize Stats ----------")
 	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastL1ResizeAtGrowthNum)
 	fmt.Printf("Current L1 Capacity      : %d\n", p.stats.currentL1Capacity)
-	fmt.Printf("L1 Length                : %d\n", len(p.cacheL1))
+	chPtr := p.cacheL1.Load()
+	var l1Len int
+	if chPtr != nil {
+		l1Len = len(*chPtr)
+	}
+	fmt.Printf("L1 Length                : %d\n", l1Len)
 	fmt.Println("---------------------------------------")
 	fmt.Println()
 
@@ -188,11 +199,17 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		l2SpillRate = float64(fastReturnMiss) / float64(totalReturns)
 	}
 
+	chPtr := p.cacheL1.Load()
+	var l1Len int
+	if chPtr != nil {
+		l1Len = len(*chPtr)
+	}
+
 	// p.updateDerivedStats()
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		ObjectsInUse:       p.stats.objectsInUse.Load(),
-		AvailableObjects:   uint64(p.pool.Length() + len(p.cacheL1)),
+		AvailableObjects:   uint64(p.pool.Length() + l1Len),
 		CurrentCapacity:    p.stats.currentCapacity,
 		RingBufferLength:   uint64(p.pool.Length()),
 		PeakInUse:          p.stats.peakInUse,
@@ -204,7 +221,7 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		// Fast Path Resize Stats
 		LastResizeAtGrowthNum: p.stats.lastL1ResizeAtGrowthNum,
 		CurrentL1Capacity:     p.stats.currentL1Capacity,
-		L1Length:              uint64(len(p.cacheL1)),
+		L1Length:              uint64(l1Len),
 
 		// Fast Get Stats
 		L1HitCount:  p.stats.l1HitCount.Load(),

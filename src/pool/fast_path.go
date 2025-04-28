@@ -1,22 +1,28 @@
 package pool
 
 import (
+	"fmt"
 	"log"
+	"reflect"
 )
 
-func (p *Pool[T]) tryL1ResizeIfTriggered() {
+func isNil[T any](v T) bool {
+	return reflect.ValueOf(v).IsNil()
+}
+
+func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 	trigger := uint64(p.config.fastPath.growthEventsTrigger)
 	if !p.config.fastPath.enableChannelGrowth {
-		return
+		return nil
 	}
 
 	sinceLastResize := p.stats.totalGrowthEvents.Load() - p.stats.lastL1ResizeAtGrowthNum
 	if sinceLastResize < trigger {
-		return
+		return nil
 	}
 
-	cfg := p.config.fastPath.growth
 	currentCap := p.stats.currentL1Capacity
+	cfg := p.config.fastPath.growth
 	threshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
 	step := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
 
@@ -27,25 +33,53 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() {
 		newCap = currentCap + step
 	}
 
-	newL1 := make(chan T, newCap)
+	if p.config.verbose {
+		log.Printf("[RESIZE] Starting L1 resize from %d to %d capacity", currentCap, newCap)
+	}
+
+	oldChPtr := p.cacheL1.Load()
+	if oldChPtr == nil {
+		return fmt.Errorf("cacheL1 is nil")
+	}
+
+	oldCh := *oldChPtr
+	newCh := make(chan T, newCap)
+
+drainLoop:
 	for {
 		select {
-		case obj := <-p.cacheL1:
-			newL1 <- obj
+		case obj, ok := <-oldCh:
+			if !ok {
+				break drainLoop
+			}
+			if isNil(obj) {
+				return fmt.Errorf("from channel transfer: %w", errNilObject)
+			}
+			newCh <- obj
 		default:
-			goto done
+			break drainLoop
 		}
 	}
 
-done:
-	p.cacheL1 = newL1
+	close(oldCh)
+	p.cacheL1.Store(&newCh)
 	p.stats.currentL1Capacity = newCap
 	p.stats.lastL1ResizeAtGrowthNum = p.stats.totalGrowthEvents.Load()
+	return nil
 }
 
-func (p *Pool[T]) tryGetFromL1() (T, bool) {
+func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return zero, found
+	}
+	ch := *chPtr
+
 	select {
-	case obj := <-p.cacheL1:
+	case obj, ok := <-ch:
+		if !ok {
+			return zero, false
+		}
 		p.logIfVerbose("[GET] L1 hit")
 		if p.config.enableStats {
 			p.stats.l1HitCount.Add(1)
@@ -56,32 +90,51 @@ func (p *Pool[T]) tryGetFromL1() (T, bool) {
 		if p.config.verbose {
 			log.Println("[GET] L1 miss — falling back to slow path")
 		}
-		var zero T
-		return zero, false
+
+		return zero, found
 	}
 }
 
-func (p *Pool[T]) tryFastPathPut(obj T) bool {
+func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.logIfVerbose("[PUT] panic on fast path put — channel closed")
+		}
+	}()
+
 	if p.closed.Load() {
+		return
+	}
+
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
 		return false
 	}
 
+	ch := *chPtr
+
 	select {
 	case <-p.ctx.Done():
-		return false
-	case p.cacheL1 <- obj:
+		return
+	case ch <- obj:
 		p.stats.FastReturnHit.Add(1)
 		p.logIfVerbose("[PUT] Fast return hit")
-		return true
+		ok = true
+		return
 	default:
 		p.logIfVerbose("[PUT] L1 return miss — falling back to slow path")
-		return false
+		return
 	}
 }
 
 func (p *Pool[T]) calculateL1Usage() (int, int, float64) {
 	currentCap := p.stats.currentL1Capacity
-	currentLength := len(p.cacheL1)
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return 0, 0, 0
+	}
+	ch := *chPtr
+	currentLength := len(ch)
 
 	var currentPercent float64
 	if currentCap > 0 {
@@ -103,7 +156,13 @@ func (p *Pool[T]) calculateFillTarget(currentCap int) int {
 
 	targetFill := int(float64(currentCap) * p.config.fastPath.fillAggressiveness)
 
-	currentLength := len(p.cacheL1)
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return 0
+	}
+	ch := *chPtr
+
+	currentLength := len(ch)
 
 	itemsNeeded := targetFill - currentLength
 
@@ -152,12 +211,21 @@ func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 		return
 	}
 
-	copyCount := min(availableObjsToCopy, len(p.cacheL1))
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return
+	}
+	ch := *chPtr
+
+	copyCount := min(availableObjsToCopy, len(ch))
 	newL1 := make(chan T, newCapacity)
 
 	for range copyCount {
 		select {
-		case obj := <-p.cacheL1:
+		case obj, ok := <-ch:
+			if !ok {
+				return
+			}
 			newL1 <- obj
 		default:
 			if p.config.verbose {
@@ -166,7 +234,8 @@ func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 		}
 	}
 
-	p.cacheL1 = newL1
+	close(ch)
+	p.cacheL1.Store(&newL1)
 	p.stats.lastResizeAtShrinkNum = p.stats.totalShrinkEvents
 	p.stats.currentL1Capacity = uint64(newCapacity)
 }
@@ -179,6 +248,12 @@ func (p *Pool[T]) logFastPathShrink(currentCap uint64, newCap int, inUse int) {
 		log.Printf("[SHRINK | FAST PATH] Requested new capacity  : %d", newCap)
 		log.Printf("[SHRINK | FAST PATH] Minimum allowed         : %d", p.config.fastPath.shrink.minCapacity)
 		log.Printf("[SHRINK | FAST PATH] Currently in use        : %d", inUse)
-		log.Printf("[SHRINK | FAST PATH] Channel length (cached) : %d", len(p.cacheL1))
+		chPtr := p.cacheL1.Load()
+		if chPtr == nil {
+			log.Printf("[SHRINK | FAST PATH] Channel length (cached) : nil")
+		} else {
+			ch := *chPtr
+			log.Printf("[SHRINK | FAST PATH] Channel length (cached) : %d", len(ch))
+		}
 	}
 }

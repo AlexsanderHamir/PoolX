@@ -155,7 +155,12 @@ func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int)
 		return false
 	}
 
-	l1Available := len(p.cacheL1)
+	chPtr := p.cacheL1.Load()
+	if chPtr == nil {
+		return false
+	}
+	ch := *chPtr
+	l1Available := len(ch)
 	totalAvailable := p.pool.Length() + l1Available
 	if totalAvailable == 0 {
 		if p.config.verbose {
@@ -273,7 +278,13 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacit
 	}
 
 	for range toAdd {
-		if err := newRingBuffer.Write(p.allocator()); err != nil {
+		obj := p.allocator()
+
+		if isNil(obj) {
+			return fmt.Errorf("from fillRemainingCapacity(allocator): %w", errNilObject)
+		}
+
+		if err := newRingBuffer.Write(obj); err != nil {
 			if p.config.verbose {
 				log.Printf("[GROW] Error writing new item to ring buffer: %v", err)
 			}
@@ -313,9 +324,10 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 		if p.config.verbose {
 			log.Printf("[GROW] Failed to create and populate buffer: %v", err)
 		}
-		return errRingBufferFailed
+		return err
 	}
 
+	p.pool.Close() // Close the old pool
 	p.pool = newRingBuffer
 	p.stats.currentCapacity = newCapacity
 	return nil
@@ -331,7 +343,14 @@ func (p *Pool[T]) updateGrowthStats(now time.Time) {
 // logGrowthState logs the final state of the pool after growth
 func (p *Pool[T]) logGrowthState(newCapacity, objectsInUse uint64) {
 	if p.config.verbose {
-		log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
-			newCapacity, p.pool.Length(), len(p.cacheL1), objectsInUse)
+		chPtr := p.cacheL1.Load()
+		if chPtr == nil {
+			log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: nil | Objects in use: %d",
+				newCapacity, p.pool.Length(), objectsInUse)
+		} else {
+			ch := *chPtr
+			log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
+				newCapacity, p.pool.Length(), len(ch), objectsInUse)
+		}
 	}
 }
