@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -404,10 +405,10 @@ func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) 
 	return config
 }
 
-func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines int, async bool) {
+func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, hardLimit int, async bool) {
 	p := createTestPool(t, config)
 
-	objects := make(chan *TestObject, 1000)
+	objects := make(chan *TestObject, hardLimit)
 
 	var readers sync.WaitGroup
 	readers.Add(numGoroutines)
@@ -446,8 +447,34 @@ func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines int, asy
 	}
 
 	writers.Wait()
+	p.PrintPoolStats()
 
 	assert.Equal(t, 0, p.GetBlockedReaders())
 	poolSnapshot := p.GetPoolStatsSnapshot()
 	assert.NoError(t, poolSnapshot.Validate(numGoroutines))
+}
+
+func testGrowth(t *testing.T, runs int, hardLimit, initial, attempts, numGoroutines int) {
+	for i := range runs {
+		t.Run(fmt.Sprintf("run-%d", i+1), func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+			defer cancel()
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+
+				config := createConfig(t, hardLimit, initial, attempts, false)
+				hardLimitTest(t, config, numGoroutines, hardLimit, true)
+			}()
+
+			select {
+			case <-done:
+			case <-ctx.Done():
+				t.Fatal("subtest timed out, possible deadlock")
+			}
+		})
+	}
 }
