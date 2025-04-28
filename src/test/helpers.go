@@ -435,7 +435,7 @@ func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines int, asy
 			writers.Add(1)
 			go func() {
 				defer writers.Done()
-				time.Sleep(time.Duration(rand.Intn(90)+10) * time.Millisecond)
+				time.Sleep(time.Duration(rand.Intn(5)+1) * time.Millisecond)
 				err := p.Put(obj)
 				assert.NoError(t, err)
 			}()

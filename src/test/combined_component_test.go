@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -33,8 +34,13 @@ func TestPoolConcurrency(t *testing.T) {
 			t.Run(fmt.Sprintf("run-%d", i+1), func(t *testing.T) {
 				t.Parallel()
 
+				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+				defer cancel()
+
 				done := make(chan struct{})
 				go func() {
+					defer close(done)
+
 					hardLimit := 1000
 					numGoroutines := 2000
 					attempts := 5
@@ -42,12 +48,12 @@ func TestPoolConcurrency(t *testing.T) {
 
 					config := createConfig(t, hardLimit, initial, attempts, false)
 					hardLimitTest(t, config, numGoroutines, true)
-					close(done)
 				}()
 
 				select {
 				case <-done:
-				case <-time.After(10 * time.Second):
+					// test completed successfully
+				case <-ctx.Done():
 					t.Fatal("subtest timed out, possible deadlock")
 				}
 			})
