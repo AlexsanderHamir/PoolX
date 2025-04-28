@@ -313,7 +313,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 
 // WriteMany writes multiple items to the buffer
 func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
-	if len(items) == 0 {
+	if len(items) == 0 || isNil(items) {
 		return 0, nil
 	}
 
@@ -420,21 +420,6 @@ func (r *RingBuffer[T]) IsEmpty() bool {
 	return !r.isFull && r.w == r.r
 }
 
-// Reset resets the buffer to empty state
-func (r *RingBuffer[T]) Reset() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	var zero T
-	for i := range r.buf {
-		r.buf[i] = zero
-	}
-
-	r.r = 0
-	r.w = 0
-	r.isFull = false
-}
-
 // PeekOne returns the next item without removing it from the buffer
 func (r *RingBuffer[T]) PeekOne() (item T, err error) {
 	r.mu.Lock()
@@ -511,20 +496,22 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	// by using a loop we make sure that only one goroutine will read the item
 	// and the others will check if the buffer is empty again.
 
-	attempts := 1
+	rblockAttempts := 1
 	for r.w == r.r && !r.isFull {
-
-		r.mu.Unlock()
-		tryAgain := r.preReadBlockHook()
-		r.mu.Lock()
-
-		if tryAgain && attempts > 0 {
-			attempts--
-			continue
+		if !r.block {
+			r.mu.Unlock()
+			return item, errIsEmpty
 		}
 
-		if !r.block {
-			return item, errIsEmpty
+		if r.preReadBlockHook != nil {
+			r.mu.Unlock()
+			tryAgain := r.preReadBlockHook()
+			r.mu.Lock()
+
+			if tryAgain && rblockAttempts > 0 {
+				rblockAttempts--
+				continue
+			}
 		}
 
 		if !r.waitWrite() {
@@ -536,8 +523,6 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 			r.mu.Unlock()
 			return item, err
 		}
-
-		attempts--
 	}
 
 	item = r.buf[r.r]
@@ -549,10 +534,6 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	}
 
 	r.mu.Unlock()
-	if isNil(item) {
-		return item, fmt.Errorf("from GetOne: %w", errNilObject)
-	}
-
 	return item, r.readErr(true)
 }
 
@@ -640,8 +621,8 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 }
 
 // ClearBuffer clears all remaining items in the buffer and sets them to nil.
-// This is useful when shrinking the buffer and we need to clean up items that won't fit.
-func (r *RingBuffer[T]) clearBuffer() {
+// This is useful when shrinking the buffer and we need to clean up.
+func (r *RingBuffer[T]) ClearBuffer() {
 	if r.w == r.r && !r.isFull {
 		return
 	}
@@ -677,7 +658,7 @@ func (r *RingBuffer[T]) Close() error {
 	}
 
 	r.setErr(io.EOF, true)
-	r.clearBuffer()
+	r.ClearBuffer()
 
 	if r.block {
 		r.readCond.Broadcast()
