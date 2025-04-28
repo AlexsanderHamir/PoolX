@@ -29,9 +29,6 @@ var (
 
 	// ErrInvalidLength is returned when the length of the buffer is invalid.
 	errInvalidLength = errors.New("invalid length")
-
-	// ErrNilValue is returned when a nil value is written to the ring buffer.
-	errNilValue = errors.New("cannot write nil value to ring buffer")
 )
 
 // RingBuffer is a circular buffer that implements io.ReaderWriter interface.
@@ -276,15 +273,15 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 // Write writes a single item to the buffer.
 // Blocks if the buffer is full and the ring buffer is in blocking mode, only a read will unblock it.
 func (r *RingBuffer[T]) Write(item T) error {
+	if isNil(item) {
+		return fmt.Errorf("from Write: %w", errNilObject)
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if err := r.readErr(true); err != nil {
 		return err
-	}
-
-	if any(item) == nil {
-		return errNilValue
 	}
 
 	if r.isFull {
@@ -328,8 +325,8 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 	}
 
 	for i := range items {
-		if any(items[i]) == nil {
-			return 0, errNilValue
+		if isNil(items[i]) {
+			return 0, fmt.Errorf("from WriteMany: %w", errNilObject)
 		}
 
 		if r.isFull {
@@ -514,7 +511,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	// by using a loop we make sure that only one goroutine will read the item
 	// and the others will check if the buffer is empty again.
 
-	attempts := 2
+	attempts := 1
 	for r.w == r.r && !r.isFull {
 
 		r.mu.Unlock()
@@ -552,6 +549,10 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	}
 
 	r.mu.Unlock()
+	if isNil(item) {
+		return item, fmt.Errorf("from GetOne: %w", errNilObject)
+	}
+
 	return item, r.readErr(true)
 }
 
@@ -576,8 +577,6 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		if !r.block {
 			return nil, errIsEmpty
 		}
-
-		// attempt to get from L1 cache
 
 		if !r.waitWrite() {
 			return nil, context.DeadlineExceeded

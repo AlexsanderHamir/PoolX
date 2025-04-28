@@ -3,7 +3,7 @@ package pool
 import (
 	"errors"
 	"log"
-	"reflect"
+
 	"time"
 )
 
@@ -12,23 +12,6 @@ func maxUint64(a, b uint64) uint64 {
 		return a
 	}
 	return b
-}
-
-func isZero[T any](obj T) bool {
-	var zero T
-	return reflect.DeepEqual(obj, zero)
-}
-
-func (p *Pool[T]) warningIfZero(obj T, source string) {
-	if isZero(obj) && p.config.verbose {
-		log.Printf("[GET] Warning: %s returned zero value", source)
-	}
-}
-
-func (p *Pool[T]) logPut(message string) {
-	if p.config.verbose {
-		log.Printf("[PUT] %s", message)
-	}
 }
 
 func (p *Pool[T]) handleShrinkBlocked() {
@@ -59,7 +42,7 @@ func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 	}
 
 	var zero T
-	if errors.Is(refillError, errRingBufferFailed) {
+	if errors.Is(refillError, errRingBufferFailed) || errors.Is(refillError, errNilObject) {
 		if p.config.verbose {
 			log.Printf("[GET] Warning: unable to refill — reason: %s, returning nil", refillError)
 		}
@@ -90,11 +73,6 @@ func (p *Pool[T]) Cleaner() func(T) {
 }
 
 func (p *Pool[T]) releaseObj(obj T) {
-	if reflect.ValueOf(obj).IsNil() {
-		p.logIfVerbose("[RELEASEOBJ] Object is nil")
-		return
-	}
-
 	p.cleaner(obj)
 	p.reduceObjectsInUse()
 }
