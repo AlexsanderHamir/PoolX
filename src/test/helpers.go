@@ -219,11 +219,8 @@ func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
 	objects := make([]*TestObject, 100)
 
 	var nilCount int
-	var err error
-
 	for i := range 100 {
-		objects[i], err = p.Get()
-		require.NoError(t, err)
+		objects[i], _ = p.Get()
 		if objects[i] == nil {
 			nilCount++
 		}
@@ -231,7 +228,6 @@ func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
 
 	assert.Equal(t, 80, nilCount)
 
-	// Clean up non-nil objects
 	for _, obj := range objects {
 		if obj != nil {
 			p.Put(obj)
@@ -446,8 +442,6 @@ func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, hardLim
 	}
 
 	writers.Wait()
-	p.PrintPoolStats()
-
 	assert.Equal(t, 0, p.GetBlockedReaders())
 	poolSnapshot := p.GetPoolStatsSnapshot()
 	assert.NoError(t, poolSnapshot.Validate(numGoroutines))

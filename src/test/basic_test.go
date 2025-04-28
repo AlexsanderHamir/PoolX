@@ -115,7 +115,7 @@ func TestHardLimit(t *testing.T) {
 		runBlockingTest(t, p)
 	})
 
-	t.Run("blocking (concurrent)", func(t *testing.T) {
+	t.Run("blocking-concurrent", func(t *testing.T) {
 		config := createHardLimitTestConfig(t, true)
 		p := createTestPool(t, config)
 		defer func() {
