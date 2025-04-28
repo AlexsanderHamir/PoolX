@@ -32,14 +32,14 @@ func (p *Pool[T]) logPut(message string) {
 }
 
 func (p *Pool[T]) handleShrinkBlocked() {
-	p.stats.mu.Lock()
-	defer p.stats.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if p.isShrinkBlocked {
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
 		}
-		p.shrinkCond.Broadcast()
+		p.shrinkCond.Signal()
 	}
 
 	p.stats.lastTimeCalledGet = time.Now()

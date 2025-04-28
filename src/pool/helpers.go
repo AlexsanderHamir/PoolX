@@ -168,31 +168,35 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 	p.maxConsecutiveShrinks = def.maxShrinks
 	p.minCapacity = defaultMinCapacity
 }
+func (p *Pool[T]) isGrowthNeeded(fillTarget *int) bool {
+	poolLength := p.pool.Length()
+	noObjsAvailable := poolLength == 0
+	biggerRequestThanAvailable := *fillTarget > poolLength
+	if biggerRequestThanAvailable {
+		*fillTarget = poolLength
+	}
 
-func (p *Pool[T]) checkGrowthNeeded(fillTarget int) (bool, *refillResult) {
+	return noObjsAvailable
+}
+
+func (p *Pool[T]) poolGrowth() *refillResult {
 	var result refillResult
-	noObjsAvailable := p.pool.Length() == 0
-	biggerRequestThanAvailable := fillTarget > p.pool.Length()
 
-	// This doesn't hold any locks, we it will filter most of the time,
-	// but checking on the grow method is still necessary.
 	if p.isGrowthBlocked {
 		result.Error = errGrowthBlocked
-		return false, &result
+		return &result
 	}
 
-	if noObjsAvailable || biggerRequestThanAvailable {
-		now := time.Now()
-		err := p.grow(now)
-		if err != nil {
-			result.Error = err
-			return false, &result
-		}
-
-		result.Success = true
+	now := time.Now()
+	err := p.grow(now)
+	if err != nil {
+		result.Error = err
+		return &result
 	}
 
-	return true, &result
+	result.Success = true
+
+	return &result
 }
 
 func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
@@ -234,9 +238,14 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) error {
 // It returns a refillResult containing information about the refill operation.
 func (p *Pool[T]) refill(fillTarget int) *refillResult {
 	var result *refillResult
+	var growthResult *refillResult
 
-	shouldContinue, growthResult := p.checkGrowthNeeded(fillTarget)
-	if !shouldContinue {
+	growthNeeded := p.isGrowthNeeded(&fillTarget)
+	if growthNeeded {
+		growthResult = p.poolGrowth()
+	}
+
+	if growthResult.Error != nil {
 		return growthResult
 	}
 
@@ -340,6 +349,9 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 }
 
 func (p *Pool[T]) tryRefillAndGetL1() T {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	ableToRefill, refillResult := p.tryRefillIfNeeded()
 	if !ableToRefill && refillResult.Error != nil {
 		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
@@ -383,6 +395,7 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the ring buffer before calling the slow path.
 func (p *Pool[T]) SlowPath() (obj T, err error) {
+	p.logIfVerbose("[SLOWPATH] Getting object from ring buffer")
 	obj, err = p.pool.GetOne()
 	if err != nil {
 		return obj, fmt.Errorf("%w: %w", errRingBufferFailed, err)

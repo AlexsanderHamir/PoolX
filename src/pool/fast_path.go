@@ -80,10 +80,8 @@ func (p *Pool[T]) tryFastPathPut(obj T) bool {
 }
 
 func (p *Pool[T]) calculateL1Usage() (int, int, float64) {
-	p.mu.RLock()
 	currentCap := p.stats.currentL1Capacity
 	currentLength := len(p.cacheL1)
-	p.mu.RUnlock()
 
 	var currentPercent float64
 	if currentCap > 0 {
@@ -105,9 +103,7 @@ func (p *Pool[T]) calculateFillTarget(currentCap int) int {
 
 	targetFill := int(float64(currentCap) * p.config.fastPath.fillAggressiveness)
 
-	p.mu.RLock()
 	currentLength := len(p.cacheL1)
-	p.mu.RUnlock()
 
 	itemsNeeded := targetFill - currentLength
 
