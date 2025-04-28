@@ -16,20 +16,30 @@ func TestPoolConcurrency(t *testing.T) {
 	})
 
 	t.Run("Growth Allowed", func(t *testing.T) {
-		runs := 3
+		runs := 30
+		initial := 64
 		hardLimit := 1000
 		numGoroutines := 2000
 		attempts := 5
-		initial := 1
 
 		testGrowth(t, runs, hardLimit, initial, attempts, numGoroutines)
 	})
 
 	t.Run("Growth Allowed + High Contention", func(t *testing.T) {
-		runs := 3
+		runs := 30
 		initial := 1
 		hardLimit := 1
 		attempts := 1
+		numGoroutines := 2000
+
+		testGrowth(t, runs, hardLimit, initial, attempts, numGoroutines)
+	})
+
+	t.Run("Growth Allowed + High hard limit", func(t *testing.T) {
+		runs := 30
+		initial := 1
+		hardLimit := 10000
+		attempts := 3
 		numGoroutines := 2000
 
 		testGrowth(t, runs, hardLimit, initial, attempts, numGoroutines)
