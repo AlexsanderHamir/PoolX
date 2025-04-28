@@ -62,7 +62,7 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	if obj := p.tryRefillAndGetL1(); !isZero(obj) {
+	if obj := p.tryRefillAndGetL1(); !isZero(obj) { // HEAVY OPERATION
 		return obj, nil
 	}
 

@@ -171,6 +171,7 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 func (p *Pool[T]) isGrowthNeeded(fillTarget *int) bool {
 	poolLength := p.pool.Length()
 	noObjsAvailable := poolLength == 0
+
 	biggerRequestThanAvailable := *fillTarget > poolLength
 	if biggerRequestThanAvailable {
 		*fillTarget = poolLength
@@ -179,24 +180,26 @@ func (p *Pool[T]) isGrowthNeeded(fillTarget *int) bool {
 	return noObjsAvailable
 }
 
-func (p *Pool[T]) poolGrowth() *refillResult {
+func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, *refillResult) {
 	var result refillResult
 
 	if p.isGrowthBlocked {
 		result.Error = errGrowthBlocked
-		return &result
+		return false, &result
 	}
 
-	now := time.Now()
-	err := p.grow(now)
-	if err != nil {
-		result.Error = err
-		return &result
+	if p.isGrowthNeeded(&fillTarget) {
+		now := time.Now()
+		err := p.grow(now)
+		if err != nil {
+			result.Error = err
+			return false, &result
+		}
+
+		result.Success = true
 	}
 
-	result.Success = true
-
-	return &result
+	return true, &result
 }
 
 func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
@@ -238,14 +241,9 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) error {
 // It returns a refillResult containing information about the refill operation.
 func (p *Pool[T]) refill(fillTarget int) *refillResult {
 	var result *refillResult
-	var growthResult *refillResult
 
-	growthNeeded := p.isGrowthNeeded(&fillTarget)
-	if growthNeeded {
-		growthResult = p.poolGrowth()
-	}
-
-	if growthResult.Error != nil {
+	shouldContinue, growthResult := p.poolGrowthNeeded(fillTarget)
+	if !shouldContinue {
 		return growthResult
 	}
 
