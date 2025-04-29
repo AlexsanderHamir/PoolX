@@ -87,13 +87,17 @@ func (p *Pool[T]) Put(obj T) error {
 
 	p.releaseObj(obj)
 
-	p.logIfVerbose("[PUT] Releasing object")
+	if p.config.verbose {
+		p.logVerbose("[PUT] Releasing object")
+	}
 
 	blockedReaders := p.pool.GetBlockedReaders()
 	if blockedReaders > 0 {
 		err := p.slowPathPut(obj)
 		if err != nil {
-			p.logIfVerbose("[PUT] Error in slowPathPut: %v", err)
+			if p.config.verbose {
+				p.logVerbose("[PUT] Error in slowPathPut: %v", err)
+			}
 			return err
 		}
 		return nil
@@ -168,7 +172,9 @@ func (p *Pool[T]) grow(now time.Time) error {
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth)
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
-		p.logIfVerbose("[GROW] Error in updatePoolCapacity: %v", err)
+		if p.config.verbose {
+			p.logVerbose("[GROW] Error in updatePoolCapacity: %v", err)
+		}
 		return fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
 
@@ -179,10 +185,14 @@ func (p *Pool[T]) grow(now time.Time) error {
 
 	err := p.tryL1ResizeIfTriggered()
 	if err != nil {
-		p.logIfVerbose("[GROW] Error in tryL1ResizeIfTriggered: %v", err)
+		if p.config.verbose {
+			p.logVerbose("[GROW] Error in tryL1ResizeIfTriggered: %v", err)
+		}
 		return err
 	}
-	p.logGrowthState(newCapacity, objectsInUse)
+	if p.config.verbose {
+		p.logGrowthState(newCapacity, objectsInUse)
+	}
 	return nil
 }
 
@@ -219,7 +229,9 @@ func (p *Pool[T]) preReadBlockHook() bool {
 			}
 			err := p.pool.Write(obj)
 			if err != nil {
-				p.logIfVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)
+				if p.config.verbose {
+					p.logVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)
+				}
 				continue
 			}
 			return true

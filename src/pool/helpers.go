@@ -11,10 +11,8 @@ func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
 }
 
 // logIfVerbose is a helper method to reduce logging code duplication
-func (p *Pool[T]) logIfVerbose(format string, args ...any) {
-	if p.config.verbose {
-		log.Printf(format, args...)
-	}
+func (p *Pool[T]) logVerbose(format string, args ...any) {
+	log.Printf(format, args...)
 }
 
 func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
@@ -34,7 +32,9 @@ func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 	}
 
 	if err := p.pool.Write(obj); err != nil {
-		p.logIfVerbose("[SETPOOL] Error writing to ring buffer: %v", err)
+		if p.config.verbose {
+			p.logVerbose("[SETPOOL] Error writing to ring buffer: %v", err)
+		}
 		return fastPathRemaining, fmt.Errorf("failed to write to ring buffer: %w", err)
 	}
 
@@ -215,12 +215,16 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 
 	part1, part2, err := p.pool.GetNView(toMove)
 	if err != nil && err != errIsEmpty {
-		p.logIfVerbose("[REFILL] Error getting items from ring buffer: %v", err)
+		if p.config.verbose {
+			p.logVerbose("[REFILL] Error getting items from ring buffer: %v", err)
+		}
 		return nil, nil, errRingBufferFailed
 	}
 
 	if part1 == nil && part2 == nil && err == nil || len(part1) == 0 && len(part2) == 0 {
-		p.logIfVerbose("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
+		if p.config.verbose {
+			p.logVerbose("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
+		}
 		return nil, nil, errNoItemsToMove
 	}
 
@@ -230,7 +234,9 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
 	defer func() {
 		if r := recover(); r != nil {
-			p.logIfVerbose("[PUT] panic on fast path put — channel closed")
+			if p.config.verbose {
+				p.logVerbose("[PUT] panic on fast path put — channel closed")
+			}
 			result.Error = fmt.Errorf("panic on fast path put — channel closed")
 		}
 	}()
@@ -246,11 +252,15 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
 		select {
 		case ch <- item:
 			result.ItemsMoved++
-			p.logIfVerbose("[REFILL] Moved object to L1 | Remaining: %d", len(ch))
+			if p.config.verbose {
+				p.logVerbose("[REFILL] Moved object to L1 | Remaining: %d", len(ch))
+			}
 		default:
 			result.ItemsFailed++
 			if err := p.pool.Write(item); err != nil {
-				p.logIfVerbose("[REFILL] Error putting object back in ring buffer: %v", err)
+				if p.config.verbose {
+					p.logVerbose("[REFILL] Error putting object back in ring buffer: %v", err)
+				}
 				result.Error = fmt.Errorf("%w: %w", errRingBufferFailed, err)
 				return
 			}
@@ -297,7 +307,9 @@ func (p *Pool[T]) slowPathPut(obj T) error {
 
 	p.stats.FastReturnMiss.Add(1)
 
-	p.logIfVerbose("[PUT] slow path put unblocked")
+	if p.config.verbose {
+		p.logVerbose("[PUT] slow path put unblocked")
+	}
 	return nil
 }
 
@@ -364,6 +376,7 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 	*idleOK, *utilOK = false, false
 }
 
+// Not locking here will cause race conditions, including tryGetFromL1.
 func (p *Pool[T]) tryRefillAndGetL1() T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -411,13 +424,17 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the ring buffer before calling the slow path.
 func (p *Pool[T]) SlowPath() (obj T, err error) {
-	p.logIfVerbose("[SLOWPATH] Getting object from ring buffer")
+	if p.config.verbose {
+		p.logVerbose("[SLOWPATH] Getting object from ring buffer")
+	}
 	obj, err = p.pool.GetOne()
 	if err != nil {
 		return obj, fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
 
-	p.logIfVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
+	if p.config.verbose {
+		p.logVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
+	}
 
 	return obj, nil
 }
@@ -455,7 +472,9 @@ func (p *Pool[T]) waitAndClose() {
 		attempts++
 	}
 
-	p.logIfVerbose("[CLOSE] Timed out waiting for all objects to return after %d seconds", maxAttempts)
+	if p.config.verbose {
+		p.logVerbose("[CLOSE] Timed out waiting for all objects to return after %d seconds", maxAttempts)
+	}
 	p.performClosure()
 }
 

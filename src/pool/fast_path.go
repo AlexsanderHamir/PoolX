@@ -80,7 +80,9 @@ func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
 		if !ok {
 			return zero, false
 		}
-		p.logIfVerbose("[GET] L1 hit")
+		if p.config.verbose {
+			p.logVerbose("[GET] L1 hit")
+		}
 		if p.config.enableStats {
 			p.stats.l1HitCount.Add(1)
 		}
@@ -98,7 +100,9 @@ func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
 func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			p.logIfVerbose("[PUT] panic on fast path put — channel closed")
+			if p.config.verbose {
+				p.logVerbose("[PUT] panic on fast path put — channel closed")
+			}
 		}
 	}()
 
@@ -118,11 +122,15 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 		return
 	case ch <- obj:
 		p.stats.FastReturnHit.Add(1)
-		p.logIfVerbose("[PUT] Fast return hit")
+		if p.config.verbose {
+			p.logVerbose("[PUT] Fast return hit")
+		}
 		ok = true
 		return
 	default:
-		p.logIfVerbose("[PUT] L1 return miss — falling back to slow path")
+		if p.config.verbose {
+			p.logVerbose("[PUT] L1 return miss — falling back to slow path")
+		}
 		return
 	}
 }
