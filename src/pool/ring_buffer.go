@@ -196,7 +196,7 @@ func (r *RingBuffer[T]) setErr(err error, locked bool) error {
 	return err
 }
 
-func (r *RingBuffer[T]) readErr(locked bool) error {
+func (r *RingBuffer[T]) readErr(locked bool, log bool, location string) error {
 	if !locked {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -205,6 +205,9 @@ func (r *RingBuffer[T]) readErr(locked bool) error {
 	if r.err != nil {
 		if r.err == io.EOF {
 			if r.w == r.r && !r.isFull {
+				if log {
+					fmt.Println("readErr EOF: ", location)
+				}
 				return io.EOF
 			}
 			return nil
@@ -278,7 +281,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
+	if err := r.readErr(true, false, "Write"); err != nil {
 		return err
 	}
 
@@ -423,7 +426,7 @@ func (r *RingBuffer[T]) PeekOne() (item T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
+	if err := r.readErr(true, false, "PeekOne"); err != nil {
 		return item, err
 	}
 
@@ -443,7 +446,7 @@ func (r *RingBuffer[T]) PeekN(n int) (items []T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
+	if err := r.readErr(true, false, "PeekN"); err != nil {
 		return nil, err
 	}
 
@@ -483,9 +486,9 @@ func (r *RingBuffer[T]) PeekN(n int) (items []T, err error) {
 // Blocks if the buffer is empty and the ring buffer is in blocking mode, only a write will unblock it.
 func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
-		r.mu.Unlock()
+	if err := r.readErr(true, true, "GetOne_First"); err != nil {
 		return item, err
 	}
 
@@ -497,7 +500,6 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	rblockAttempts := 1
 	for r.w == r.r && !r.isFull {
 		if !r.block {
-			r.mu.Unlock()
 			return item, errIsEmpty
 		}
 
@@ -505,7 +507,6 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 			r.mu.Unlock()
 			tryAgain := r.preReadBlockHook()
 			r.mu.Lock()
-
 			if tryAgain && rblockAttempts > 0 {
 				rblockAttempts--
 				continue
@@ -513,12 +514,10 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		}
 
 		if !r.waitWrite() {
-			r.mu.Unlock()
 			return item, context.DeadlineExceeded
 		}
 
-		if err := r.readErr(true); err != nil {
-			r.mu.Unlock()
+		if err := r.readErr(true, true, "GetOne_InnerBlock"); err != nil {
 			return item, err
 		}
 	}
@@ -531,8 +530,7 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 		r.readCond.Signal()
 	}
 
-	r.mu.Unlock()
-	return item, r.readErr(true)
+	return item, r.readErr(true, false, "GetOne_Second")
 }
 
 // GetN returns up to n items from the buffer.
@@ -547,7 +545,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
+	if err := r.readErr(true, false, "GetN"); err != nil {
 		return nil, err
 	}
 
@@ -561,7 +559,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 			return nil, context.DeadlineExceeded
 		}
 
-		if err := r.readErr(true); err != nil {
+		if err := r.readErr(true, false, "GetN"); err != nil {
 			return nil, err
 		}
 	}
@@ -597,7 +595,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		r.readCond.Broadcast()
 	}
 
-	return items, r.readErr(true)
+	return items, r.readErr(true, false, "GetN")
 }
 
 // CopyConfig copies the configuration settings from the source buffer to the target buffer.
@@ -681,7 +679,7 @@ func (r *RingBuffer[T]) getAllView() (part1, part2 []T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
+	if err := r.readErr(true, false, "getAllView"); err != nil {
 		return nil, nil, err
 	}
 
@@ -703,7 +701,7 @@ func (r *RingBuffer[T]) getAllView() (part1, part2 []T, err error) {
 		r.readCond.Broadcast()
 	}
 
-	return part1, part2, r.readErr(true)
+	return part1, part2, r.readErr(true, false, "getAllView")
 }
 
 func (r *RingBuffer[T]) GetBlockedReaders() int {
@@ -729,7 +727,7 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.readErr(true); err != nil {
+	if err := r.readErr(true, false, "GetNView"); err != nil {
 		return nil, nil, err
 	}
 
@@ -740,7 +738,7 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 		if !r.waitWrite() {
 			return nil, nil, context.DeadlineExceeded
 		}
-		if err := r.readErr(true); err != nil {
+		if err := r.readErr(true, false, "GetNView"); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -770,7 +768,7 @@ func (r *RingBuffer[T]) GetNView(n int) (part1, part2 []T, err error) {
 		r.readCond.Signal()
 	}
 
-	return part1, part2, r.readErr(true)
+	return part1, part2, r.readErr(true, false, "GetNView")
 }
 
 // decrement blocked readers
