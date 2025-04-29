@@ -26,10 +26,10 @@ type poolStats struct {
 
 	peakInUse          uint64
 	totalShrinkEvents  uint64
-	consecutiveShrinks int
+	consecutiveShrinks atomic.Int32
 	l3MissCount        uint64
 
-	lastTimeCalledGet time.Time
+	lastTimeCalledGet atomic.Int64
 	lastShrinkTime    time.Time
 	lastGrowTime      time.Time
 
@@ -52,7 +52,7 @@ type PoolStatsSnapshot struct {
 	TotalGets          uint64
 	TotalGrowthEvents  uint64
 	TotalShrinkEvents  uint64
-	ConsecutiveShrinks int
+	ConsecutiveShrinks int32
 
 	// Fast Path Resize Stats
 	LastResizeAtGrowthNum uint64
@@ -132,7 +132,7 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Printf("Total Gets           			 : %d\n", p.stats.totalGets.Load())
 	fmt.Printf("Total Growth Events  			 : %d\n", p.stats.totalGrowthEvents.Load())
 	fmt.Printf("Total Shrink Events  			 : %d\n", p.stats.totalShrinkEvents)
-	fmt.Printf("Consecutive Shrinks  			 : %d\n", p.stats.consecutiveShrinks)
+	fmt.Printf("Consecutive Shrinks  			 : %d\n", p.stats.consecutiveShrinks.Load())
 
 	fmt.Println()
 	fmt.Println("---------- Fast Path Resize Stats ----------")
@@ -179,7 +179,7 @@ func (p *Pool[T]) PrintPoolStats() {
 	fmt.Println("---------------------------------------")
 
 	fmt.Println("---------- Time Stats ----------")
-	fmt.Printf("Last Get Time        : %s\n", p.stats.lastTimeCalledGet.Format(time.RFC3339))
+	fmt.Printf("Last Get Time        : %s\n", time.Unix(p.stats.lastTimeCalledGet.Load(), 0).Format(time.RFC3339))
 	fmt.Printf("Last Shrink Time     : %s\n", p.stats.lastShrinkTime.Format(time.RFC3339))
 	fmt.Printf("Last Grow Time       : %s\n", p.stats.lastGrowTime.Format(time.RFC3339))
 	fmt.Println("=================================")
@@ -187,8 +187,6 @@ func (p *Pool[T]) PrintPoolStats() {
 
 // GetPoolStatsSnapshot returns a snapshot of the current pool statistics
 func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
-	p.stats.mu.RLock()
-	defer p.stats.mu.RUnlock()
 
 	fastReturnHit := p.stats.FastReturnHit.Load()
 	fastReturnMiss := p.stats.FastReturnMiss.Load()
@@ -216,7 +214,7 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		TotalGets:          p.stats.totalGets.Load(),
 		TotalGrowthEvents:  p.stats.totalGrowthEvents.Load(),
 		TotalShrinkEvents:  p.stats.totalShrinkEvents,
-		ConsecutiveShrinks: p.stats.consecutiveShrinks,
+		ConsecutiveShrinks: p.stats.consecutiveShrinks.Load(),
 
 		// Fast Path Resize Stats
 		LastResizeAtGrowthNum: p.stats.lastL1ResizeAtGrowthNum,
@@ -238,7 +236,7 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		Utilization:      p.stats.utilization,
 
 		// Time Stats
-		LastGetTime:    p.stats.lastTimeCalledGet,
+		LastGetTime:    time.Unix(p.stats.lastTimeCalledGet.Load(), 0),
 		LastShrinkTime: p.stats.lastShrinkTime,
 		LastGrowTime:   p.stats.lastGrowTime,
 	}

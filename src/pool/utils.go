@@ -15,20 +15,25 @@ func maxUint64(a, b uint64) uint64 {
 }
 
 func (p *Pool[T]) handleShrinkBlocked() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	if p.stats.consecutiveShrinks.Load() > 0 {
+		p.reduceConsecutiveShrinks()
+	}
 
-	if p.isShrinkBlocked {
+	if p.isShrinkBlocked.CompareAndSwap(true, false) {
+		p.shrinkCond.Signal()
+
 		if p.config.verbose {
 			log.Println("[GET] Shrink is blocked — broadcasting to cond")
 		}
-		p.shrinkCond.Signal()
 	}
 
-	p.stats.lastTimeCalledGet = time.Now()
-	if p.stats.consecutiveShrinks > 0 {
-		p.stats.consecutiveShrinks--
-	}
+	now := time.Now().UnixNano()
+	p.stats.lastTimeCalledGet.Store(now)
+}
+
+func (p *Pool[T]) locktheory() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 }
 
 func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
@@ -98,6 +103,19 @@ func (p *Pool[T]) reduceL1Hit() {
 		}
 
 		if p.stats.l1HitCount.CompareAndSwap(old, old-1) {
+			break
+		}
+	}
+}
+
+func (p *Pool[T]) reduceConsecutiveShrinks() {
+	for {
+		old := p.stats.consecutiveShrinks.Load()
+		if old == 0 {
+			break
+		}
+
+		if p.stats.consecutiveShrinks.CompareAndSwap(old, old-1) {
 			break
 		}
 	}

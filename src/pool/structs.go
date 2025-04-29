@@ -21,7 +21,7 @@ type Pool[T any] struct {
 	shrinkCond *sync.Cond   // Condition variable for blocking operations
 	stats      *poolStats   // Tracks pool usage statistics
 
-	isShrinkBlocked bool         // Prevents shrinking when true
+	isShrinkBlocked atomic.Bool  // Prevents shrinking when true
 	isGrowthBlocked bool         // Prevents growth when true
 	poolType        reflect.Type // Type information for validation
 
