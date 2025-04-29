@@ -39,10 +39,14 @@ func initializePoolStats(config *PoolConfig) *poolStats {
 }
 
 func validateAllocator[T any](allocator func() T) error {
+	var zero T
 	obj := allocator()
 	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
 		return fmt.Errorf("allocator must return a pointer, got %T", obj)
 	}
+
+	obj = zero
+	_ = obj
 	return nil
 }
 
