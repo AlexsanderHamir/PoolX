@@ -2,6 +2,7 @@ package test
 
 import (
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -314,4 +315,48 @@ func TestNilConfig(t *testing.T) {
 	p, err := pool.NewPool(nil, allocator, cleaner, reflect.TypeOf(&TestObject{}))
 	require.NoError(t, err)
 	assert.NotNil(t, p)
+}
+
+func TestResourceCleanup(t *testing.T) {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(100).
+		SetMinShrinkCapacity(100).
+		SetHardLimit(100).
+		SetFastPathInitialSize(64).
+		Build()
+	require.NoError(t, err)
+
+	var created, cleaned atomic.Int64
+	allocator := func() *TestObject {
+		created.Add(1)
+		return &TestObject{Value: 42}
+	}
+	cleaner := func(obj *TestObject) {
+		cleaned.Add(1)
+		obj.Value = 0
+	}
+
+	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	require.NoError(t, err)
+
+	objNum := 100
+	objects := make([]*TestObject, objNum)
+	for i := range objects {
+		objects[i], err = p.Get()
+		require.NoError(t, err)
+		require.NotNil(t, objects[i])
+	}
+
+	for _, obj := range objects {
+		err := p.Put(obj)
+		require.NoError(t, err)
+	}
+
+	err = p.Close()
+	require.NoError(t, err)
+
+	validation := 1
+	movedToL1 := 64
+	assert.Equal(t, int64(objNum+validation), created.Load())
+	assert.Equal(t, int64(objNum+movedToL1), cleaned.Load())
 }
