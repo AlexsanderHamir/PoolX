@@ -16,7 +16,7 @@ func TestPoolConcurrency(t *testing.T) {
 	})
 
 	t.Run("Growth Allowed", func(t *testing.T) {
-		runs := 30
+		runs := 40
 		initial := 64
 		hardLimit := 1000
 		numGoroutines := 2000
@@ -26,7 +26,7 @@ func TestPoolConcurrency(t *testing.T) {
 	})
 
 	t.Run("Growth Allowed + High Contention", func(t *testing.T) {
-		runs := 30
+		runs := 40
 		initial := 1
 		hardLimit := 1
 		attempts := 1
@@ -36,7 +36,7 @@ func TestPoolConcurrency(t *testing.T) {
 	})
 
 	t.Run("Growth Allowed + High hard limit", func(t *testing.T) {
-		runs := 30
+		runs := 40
 		initial := 1
 		hardLimit := 10000
 		attempts := 3

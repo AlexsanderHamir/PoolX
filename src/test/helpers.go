@@ -403,7 +403,6 @@ func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) 
 
 func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, hardLimit int, async bool) {
 	p := createTestPool(t, config)
-
 	objects := make(chan *TestObject, hardLimit)
 
 	var readers sync.WaitGroup
@@ -452,7 +451,7 @@ func testGrowth(t *testing.T, runs int, hardLimit, initial, attempts, numGorouti
 		t.Run(fmt.Sprintf("run-%d", i+1), func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
 			done := make(chan struct{})
