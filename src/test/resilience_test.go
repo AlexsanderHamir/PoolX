@@ -1,195 +1,187 @@
 package test
 
-// import (
-// 	"context"
-// 	"sync"
-// 	"testing"
-// 	"time"
+import (
+	"sync"
+	"testing"
+	"time"
 
-// 	"github.com/AlexsanderHamir/memory_context/pool"
-// 	"github.com/stretchr/testify/assert"
-// 	"github.com/stretchr/testify/require"
-// )
+	"github.com/AlexsanderHamir/memory_context/src/pool"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
-// func TestErrorRecovery(t *testing.T) {
-// 	config, err := pool.NewPoolConfigBuilder().
-// 		SetInitialCapacity(100).
-// 		SetHardLimit(1000).
-// 		Build()
-// 	require.NoError(t, err)
+func TestOperationsOnNewPoolAfterClose(t *testing.T) {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(100).
+		SetHardLimit(1000).
+		Build()
+	require.NoError(t, err)
 
-// 	p := createTestPool(t, config)
-// 	defer func() {
-// 		require.NoError(t, p.Close())
-// 	}()
+	p := createTestPool(t, config)
 
-// 	// Simulate error by closing pool
-// 	err = p.Close()
-// 	require.NoError(t, err)
+	err = p.Close()
+	require.NoError(t, err)
 
-// 	// Try to use closed pool
-// 	obj := p.Get()
-// 	assert.Nil(t, obj)
+	obj, err := p.Get()
+	assert.Nil(t, obj)
+	assert.Error(t, err)
 
-// 	// Create new pool
-// 	p = createTestPool(t, config)
-// 	defer func() {
-// 		require.NoError(t, p.Close())
-// 	}()
+	newPool := createTestPool(t, config)
+	defer func() {
+		require.NoError(t, newPool.Close())
+	}()
 
-// 	// Verify new pool works
-// 	obj = p.Get()
-// 	require.NotNil(t, obj)
-// 	err = p.Put(obj)
-// 	require.NoError(t, err)
-// }
+	obj, err = newPool.Get()
+	require.NoError(t, err)
+	require.NotNil(t, obj)
 
-// func TestContextCancellation(t *testing.T) {
-// 	config, err := pool.NewPoolConfigBuilder().
-// 		SetInitialCapacity(100).
-// 		SetHardLimit(1000).
-// 		Build()
-// 	require.NoError(t, err)
+	err = newPool.Put(obj)
+	require.NoError(t, err)
+}
 
-// 	p := createTestPool(t, config)
-// 	defer func() {
-// 		require.NoError(t, p.Close())
-// 	}()
+func TestResourceExhaustion(t *testing.T) {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(10).
+		SetHardLimit(20).
+		SetMinShrinkCapacity(10).
+		Build()
+	require.NoError(t, err)
 
-// 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-// 	defer cancel()
+	p := createTestPool(t, config)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
 
-// 	// Get objects until context is cancelled
-// 	objects := make([]*TestObject, 0)
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			goto done
-// 		default:
-// 			obj := p.Get()
-// 			if obj != nil {
-// 				objects = append(objects, obj)
-// 			}
-// 		}
-// 	}
-// done:
+	objects := make([]*TestObject, 20)
+	for i := range objects {
+		objects[i], err = p.Get()
+		require.NoError(t, err)
+		require.NotNil(t, objects[i])
+	}
 
-// 	// Verify we got some objects
-// 	assert.Greater(t, len(objects), 0)
+	obj, _ := p.Get()
+	assert.Nil(t, obj)
 
-// 	// Return objects
-// 	for _, obj := range objects {
-// 		err := p.Put(obj)
-// 		require.NoError(t, err)
-// 	}
-// }
+	for i := range 10 {
+		err := p.Put(objects[i])
+		require.NoError(t, err)
+	}
 
-// func TestConcurrentErrorHandling(t *testing.T) {
-// 	config, err := pool.NewPoolConfigBuilder().
-// 		SetInitialCapacity(100).
-// 		SetHardLimit(1000).
-// 		Build()
-// 	require.NoError(t, err)
+	obj, err = p.Get()
+	require.NoError(t, err)
+	require.NotNil(t, obj)
+	err = p.Put(obj)
+	require.NoError(t, err)
 
-// 	p := createTestPool(t, config)
-// 	defer func() {
-// 		require.NoError(t, p.Close())
-// 	}()
+	for i := 10; i < 20; i++ {
+		err := p.Put(objects[i])
+		require.NoError(t, err)
+	}
+}
 
-// 	numGoroutines := 50
-// 	var wg sync.WaitGroup
-// 	wg.Add(numGoroutines)
+func TestInvalidObjectHandling(t *testing.T) {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(100).
+		SetHardLimit(1000).
+		Build()
+	require.NoError(t, err)
 
-// 	// Simulate concurrent errors
-// 	for i := 0; i < numGoroutines; i++ {
-// 		go func() {
-// 			defer wg.Done()
-// 			for j := 0; j < 100; j++ {
-// 				obj := p.Get()
-// 				if obj != nil {
-// 					time.Sleep(time.Millisecond)
-// 					_ = p.Put(obj)
-// 				}
-// 			}
-// 		}()
-// 	}
+	p := createTestPool(t, config)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
 
-// 	wg.Wait()
+	var nilObj *TestObject
+	err = p.Put(nilObj)
+	assert.Error(t, err)
 
-// 	// Verify pool is still functioning
-// 	obj := p.Get()
-// 	require.NotNil(t, obj)
-// 	err = p.Put(obj)
-// 	require.NoError(t, err)
-// }
+	obj, err := p.Get()
+	require.NoError(t, err)
+	require.NotNil(t, obj)
+	err = p.Put(obj)
+	require.NoError(t, err)
+}
 
-// func TestResourceExhaustion(t *testing.T) {
-// 	config, err := pool.NewPoolConfigBuilder().
-// 		SetInitialCapacity(10).
-// 		SetHardLimit(20).
-// 		Build()
-// 	require.NoError(t, err)
+func TestErrorHandlingScenarios(t *testing.T) {
+	t.Run("closed pool operations", func(t *testing.T) {
+		config, err := pool.NewPoolConfigBuilder().
+			SetInitialCapacity(10).
+			SetHardLimit(20).
+			SetMinShrinkCapacity(10).
+			Build()
+		require.NoError(t, err)
 
-// 	p := createTestPool(t, config)
-// 	defer func() {
-// 		require.NoError(t, p.Close())
-// 	}()
+		p := createTestPool(t, config)
+		err = p.Close()
+		require.NoError(t, err)
 
-// 	// Exhaust pool
-// 	objects := make([]*TestObject, 20)
-// 	for i := range objects {
-// 		objects[i] = p.Get()
-// 		require.NotNil(t, objects[i])
-// 	}
+		obj, err := p.Get()
+		require.Nil(t, obj)
+		require.Error(t, err)
+		require.Equal(t, "pool is closed", err.Error())
 
-// 	// Try to get more objects
-// 	obj := p.Get()
-// 	assert.Nil(t, obj)
+		err = p.Put(&TestObject{Value: 42})
+		require.Error(t, err)
+		require.Equal(t, "pool is closed", err.Error())
+	})
 
-// 	// Return some objects
-// 	for i := 0; i < 10; i++ {
-// 		err := p.Put(objects[i])
-// 		require.NoError(t, err)
-// 	}
+	t.Run("invalid object handling", func(t *testing.T) {
+		config, err := pool.NewPoolConfigBuilder().
+			SetInitialCapacity(10).
+			SetMinShrinkCapacity(10).
+			SetHardLimit(20).
+			Build()
+		require.NoError(t, err)
 
-// 	// Verify pool is still functioning
-// 	obj = p.Get()
-// 	require.NotNil(t, obj)
-// 	err = p.Put(obj)
-// 	require.NoError(t, err)
+		p := createTestPool(t, config)
+		defer func() {
+			require.NoError(t, p.Close())
+		}()
 
-// 	// Return remaining objects
-// 	for i := 10; i < 20; i++ {
-// 		err := p.Put(objects[i])
-// 		require.NoError(t, err)
-// 	}
-// }
+		err = p.Put(nil)
+		require.Error(t, err)
+		require.Equal(t, "from Put: object is nil", err.Error())
+	})
 
-// func TestInvalidObjectHandling(t *testing.T) {
-// 	config, err := pool.NewPoolConfigBuilder().
-// 		SetInitialCapacity(100).
-// 		SetHardLimit(1000).
-// 		Build()
-// 	require.NoError(t, err)
+	t.Run("concurrent error recovery", func(t *testing.T) {
+		config, err := pool.NewPoolConfigBuilder().
+			SetInitialCapacity(10).
+			SetMinShrinkCapacity(10).
+			SetHardLimit(20).
+			Build()
+		require.NoError(t, err)
 
-// 	p := createTestPool(t, config)
-// 	defer func() {
-// 		require.NoError(t, p.Close())
-// 	}()
+		p := createTestPool(t, config)
+		defer func() {
+			require.NoError(t, p.Close())
+		}()
 
-// 	// Try to put nil object
-// 	var nilObj *TestObject
-// 	err = p.Put(nilObj)
-// 	assert.Error(t, err)
+		numGoroutines := 10
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
 
-// 	// Try to put object of wrong type
-// 	wrongObj := &struct{}{}
-// 	err = p.Put(any(wrongObj).(*TestObject))
-// 	assert.Error(t, err)
+		for range numGoroutines {
+			go func() {
+				defer wg.Done()
+				for range 5 {
+					obj, err := p.Get()
+					if err != nil {
+						continue
+					}
+					if obj != nil {
+						time.Sleep(time.Millisecond)
+						_ = p.Put(obj)
+					}
+				}
+			}()
+		}
 
-// 	// Verify pool is still functioning
-// 	obj := p.Get()
-// 	require.NotNil(t, obj)
-// 	err = p.Put(obj)
-// 	require.NoError(t, err)
-// }
+		wg.Wait()
+
+		obj, err := p.Get()
+		require.NoError(t, err)
+		require.NotNil(t, obj)
+		err = p.Put(obj)
+		require.NoError(t, err)
+	})
+}
