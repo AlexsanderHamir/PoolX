@@ -59,9 +59,12 @@ func (p *Pool[T]) Get() (zero T, err error) {
 
 	p.handleShrinkBlocked()
 
-	if obj, found := p.tryGetFromL1(); found {
+	p.mu.RLock()
+	if obj, found := p.tryGetFromL1(); found { // potential race condition
+		p.mu.RUnlock()
 		return obj, nil
 	}
+	p.mu.RUnlock()
 
 	if obj := p.tryRefillAndGetL1(); !isNil(obj) {
 		return obj, nil
@@ -103,7 +106,7 @@ func (p *Pool[T]) Put(obj T) error {
 		return nil
 	}
 
-	if ok := p.tryFastPathPut(obj); ok {
+	if ok := p.tryFastPathPut(obj); ok { // potential race condition
 		return nil
 	}
 

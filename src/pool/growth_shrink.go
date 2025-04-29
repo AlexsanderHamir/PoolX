@@ -107,11 +107,10 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 	}
 
 	p.pool = newRingBuffer
-
 	p.stats.currentCapacity = uint64(newCapacity)
 	p.stats.totalShrinkEvents++
 	p.stats.lastShrinkTime = time.Now()
-	p.stats.consecutiveShrinks++
+	p.stats.consecutiveShrinks.Add(1)
 
 	if p.config.verbose {
 		log.Printf("[SHRINK] Shrinking pool → From: %d → To: %d | Preserved: %d | In-use: %d",
@@ -213,6 +212,8 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 	if err := p.validateAndWriteItems(newRingBuffer, part1, part2, newCapacity); err != nil {
 		return nil, fmt.Errorf("failed to write items to new buffer: %w", err)
 	}
+
+	// p.pool.Close() // EOF ERROR
 
 	if err := p.fillRemainingCapacity(newRingBuffer, newCapacity); err != nil {
 		return nil, fmt.Errorf("failed to fill remaining capacity: %w", err)
@@ -327,7 +328,6 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 		return err
 	}
 
-	p.pool.Close() // Close the old pool
 	p.pool = newRingBuffer
 	p.stats.currentCapacity = newCapacity
 	return nil

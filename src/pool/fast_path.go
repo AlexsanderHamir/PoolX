@@ -55,7 +55,14 @@ drainLoop:
 			if isNil(obj) {
 				return fmt.Errorf("from channel transfer: %w", errNilObject)
 			}
-			newCh <- obj
+
+			if len(newCh) != cap(newCh) {
+				newCh <- obj
+			} else {
+				if err := p.pool.Write(obj); err != nil {
+					return fmt.Errorf("from channel transfer: %w", err)
+				}
+			}
 		default:
 			break drainLoop
 		}
@@ -77,9 +84,10 @@ func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
 
 	select {
 	case obj, ok := <-ch:
-		if !ok {
+		if isNil(obj) || !ok {
 			return zero, false
 		}
+
 		if p.config.verbose {
 			p.logVerbose("[GET] L1 hit")
 		}
@@ -112,7 +120,7 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
-		return false
+		return
 	}
 
 	ch := *chPtr

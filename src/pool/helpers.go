@@ -42,7 +42,9 @@ func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 }
 
 func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
-	idleDuration := time.Since(p.stats.lastTimeCalledGet)
+	last := p.stats.lastTimeCalledGet.Load()
+	idleDuration := time.Since(time.Unix(0, last))
+
 	threshold := p.config.shrink.idleThreshold
 	required := p.config.shrink.minIdleBeforeShrink
 
@@ -325,14 +327,12 @@ func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotS
 		return false
 	}
 
-	if p.stats.consecutiveShrinks == params.maxConsecutiveShrinks {
+	for p.stats.consecutiveShrinks.Load() == int32(params.maxConsecutiveShrinks) {
 		if p.config.verbose {
 			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
 		}
-		p.isShrinkBlocked = true
+		p.isShrinkBlocked.Store(true)
 		p.shrinkCond.Wait()
-		p.isShrinkBlocked = false
-		return true
 	}
 
 	return false
@@ -380,7 +380,6 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 func (p *Pool[T]) tryRefillAndGetL1() T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
 	ableToRefill, refillResult := p.tryRefillIfNeeded()
 	if !ableToRefill && refillResult.Error != nil {
 		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
