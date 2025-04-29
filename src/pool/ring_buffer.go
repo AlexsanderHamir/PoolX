@@ -223,9 +223,7 @@ func (r *RingBuffer[T]) waitRead() (ok bool) {
 	defer func() { r.blockedWriters = r.blockedWriters - 1 }()
 
 	if r.rTimeout <= 0 {
-		fmt.Println("waiting for read")
 		r.readCond.Wait()
-		fmt.Println("read done")
 		return true
 	}
 
