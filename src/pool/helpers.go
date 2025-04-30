@@ -377,12 +377,6 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 	*idleOK, *utilOK = false, false
 }
 
-func (p *Pool[T]) isL1UsageBelowThreshold() bool {
-	currentLength, currentCap, currentPercent := p.calculateL1Usage()
-	p.logL1Usage(currentLength, currentCap, currentPercent)
-	return currentPercent <= p.config.fastPath.refillPercent
-}
-
 func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 	currentLength, currentCap, currentPercent := p.calculateL1Usage()
 	p.logL1Usage(currentLength, currentCap, currentPercent)

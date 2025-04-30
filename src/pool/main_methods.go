@@ -63,7 +63,7 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	if obj, found := p.tryRefillAndGetL1(); found {
+	if obj, found := p.tryRefillAndGetL1(); found { // heavy operation.
 		return obj, nil
 	}
 
@@ -127,8 +127,7 @@ func (p *Pool[T]) shrink() {
 				return
 			}
 
-			cannotShrink := p.handleMaxConsecutiveShrinks(params)
-			if cannotShrink {
+			if p.handleMaxConsecutiveShrinks(params) {
 				p.mu.Unlock()
 				continue
 			}
