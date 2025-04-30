@@ -360,12 +360,12 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 
 // Length returns the number of items that can be read
 func (r *RingBuffer[T]) Length() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.err == io.EOF {
 		return 0
 	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if r.w == r.r {
 		if r.isFull {

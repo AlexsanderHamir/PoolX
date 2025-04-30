@@ -31,11 +31,6 @@ func (p *Pool[T]) handleShrinkBlocked() {
 	p.stats.lastTimeCalledGet.Store(now)
 }
 
-func (p *Pool[T]) locktheory() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-}
-
 func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 	if p.closed.Load() {
 		var zero T
