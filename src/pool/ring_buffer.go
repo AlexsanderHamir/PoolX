@@ -274,10 +274,6 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 // Write writes a single item to the buffer.
 // Blocks if the buffer is full and the ring buffer is in blocking mode, only a read will unblock it.
 func (r *RingBuffer[T]) Write(item T) error {
-	if isNil(item) {
-		return fmt.Errorf("from Write: %w", errNilObject)
-	}
-
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -314,7 +310,7 @@ func (r *RingBuffer[T]) Write(item T) error {
 
 // WriteMany writes multiple items to the buffer
 func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
-	if len(items) == 0 || isNil(items) {
+	if len(items) == 0 {
 		return 0, nil
 	}
 
@@ -325,30 +321,71 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 		return 0, r.err
 	}
 
-	for i := range items {
-		if isNil(items[i]) {
-			return 0, fmt.Errorf("from WriteMany: %w", errNilObject)
+	// Calculate available space
+	var available int
+	if r.isFull {
+		available = 0
+	} else if r.w >= r.r {
+		available = r.size - r.w + r.r
+	} else {
+		available = r.r - r.w
+	}
+
+	// If we need to block, handle that first
+	if len(items) > available {
+		if !r.block {
+			return 0, errIsFull
 		}
 
-		if r.isFull {
-			if r.block {
-				if !r.waitRead() {
-					return n, context.DeadlineExceeded
-				}
-				if r.isFull {
-					return n, errIsFull
-				}
+		// Write what we can first
+		if available > 0 {
+			n = available
+			if r.w+available <= r.size {
+				copy(r.buf[r.w:], items[:available])
 			} else {
-				return n, errIsFull
+				firstPart := r.size - r.w
+				copy(r.buf[r.w:], items[:firstPart])
+				copy(r.buf[0:], items[firstPart:available])
 			}
+			r.w = (r.w + available) % r.size
+			r.isFull = r.w == r.r
+			items = items[available:]
 		}
 
-		r.buf[r.w] = items[i]
-		r.w = (r.w + 1) % r.size
-		if r.w == r.r {
-			r.isFull = true
+		if !r.waitRead() {
+			return n, context.DeadlineExceeded
 		}
-		n++
+
+		// Recalculate available space after being woken up
+		if r.isFull {
+			available = 0
+		} else if r.w >= r.r {
+			available = r.size - r.w + r.r
+		} else {
+			available = r.r - r.w
+		}
+
+		// if after being woken up, we still don't have enough space, return an error
+		if len(items) > available {
+			return n, errIsFull
+		}
+	}
+
+	// Write remaining items
+	remaining := len(items)
+	if remaining > 0 {
+		if r.w+remaining <= r.size {
+			// Can write in one go
+			copy(r.buf[r.w:], items)
+		} else {
+			// Need to wrap around
+			firstPart := r.size - r.w
+			copy(r.buf[r.w:], items[:firstPart])
+			copy(r.buf[0:], items[firstPart:])
+		}
+		r.w = (r.w + remaining) % r.size
+		r.isFull = r.w == r.r
+		n += remaining
 	}
 
 	if r.block && n > 0 {
@@ -367,17 +404,13 @@ func (r *RingBuffer[T]) Length() int {
 		return 0
 	}
 
-	if r.w == r.r {
-		if r.isFull {
-			return r.size
-		}
-		return 0
+	if r.isFull {
+		return r.size
 	}
 
-	if r.w > r.r {
+	if r.w >= r.r {
 		return r.w - r.r
 	}
-
 	return r.size - r.r + r.w
 }
 
@@ -391,18 +424,14 @@ func (r *RingBuffer[T]) Free() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.w == r.r {
-		if r.isFull {
-			return 0
-		}
-		return r.size
+	if r.isFull {
+		return 0
 	}
 
-	if r.w < r.r {
-		return r.r - r.w
+	if r.w >= r.r {
+		return r.size - r.w + r.r
 	}
-
-	return r.size - r.w + r.r
+	return r.r - r.w
 }
 
 // IsFull returns true when the ringbuffer is full.
@@ -564,6 +593,7 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		}
 	}
 
+	// Calculate how many items we can read
 	var count int
 	if r.w > r.r {
 		count = r.w - r.r
@@ -575,24 +605,23 @@ func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 		count = n
 	}
 
+	// Create result slice and copy data
 	items = make([]T, count)
-	if r.w > r.r {
+	if r.w > r.r || count <= r.size-r.r {
+		// Can read in one go
 		copy(items, r.buf[r.r:r.r+count])
 	} else {
-		c1 := r.size - r.r
-		if c1 >= count {
-			copy(items, r.buf[r.r:r.r+count])
-		} else {
-			copy(items, r.buf[r.r:r.size])
-			copy(items[c1:], r.buf[0:count-c1])
-		}
+		// Need to wrap around
+		firstPart := r.size - r.r
+		copy(items, r.buf[r.r:r.size])
+		copy(items[firstPart:], r.buf[0:count-firstPart])
 	}
 
 	r.r = (r.r + count) % r.size
 	r.isFull = false
 
-	if r.block {
-		r.readCond.Broadcast()
+	if r.block && r.blockedWriters > 0 {
+		r.readCond.Signal()
 	}
 
 	return items, r.readErr(true, false, "GetN")
