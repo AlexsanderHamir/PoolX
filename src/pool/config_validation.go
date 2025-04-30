@@ -27,8 +27,8 @@ func (b *poolConfigBuilder) validateBasicConfig() error {
 func (b *poolConfigBuilder) validateShrinkConfig() error {
 	sp := b.config.shrink
 
-	if sp.maxConsecutiveShrinks <= 0 {
-		return fmt.Errorf("maxConsecutiveShrinks must be greater than 0, got %d", sp.maxConsecutiveShrinks)
+	if sp.maxConsecutiveShrinks < 0 {
+		return fmt.Errorf("maxConsecutiveShrinks must be >= 0, got %d", sp.maxConsecutiveShrinks)
 	}
 
 	if sp.checkInterval <= 0 {
