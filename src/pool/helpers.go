@@ -324,7 +324,7 @@ func (p *Pool[T]) logRefillResult(result *refillResult) {
 
 func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotShrink bool) {
 	if params == nil {
-		return false
+		return cannotShrink
 	}
 
 	for p.stats.consecutiveShrinks.Load() == int32(params.maxConsecutiveShrinks) {
@@ -335,12 +335,12 @@ func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotS
 		p.shrinkCond.Wait()
 	}
 
-	return false
+	return cannotShrink
 }
 
 func (p *Pool[T]) handleShrinkCooldown(params *shrinkParameters) (cooldownActive bool) {
 	if params == nil {
-		return false
+		return cooldownActive
 	}
 
 	timeSinceLastShrink := time.Since(p.stats.lastShrinkTime)
@@ -348,10 +348,11 @@ func (p *Pool[T]) handleShrinkCooldown(params *shrinkParameters) (cooldownActive
 		if p.config.verbose {
 			log.Printf("[SHRINK] Cooldown active: %v remaining", params.shrinkCooldown-timeSinceLastShrink)
 		}
-		return true
+		cooldownActive = true
+		return cooldownActive
 	}
 
-	return false
+	return cooldownActive
 }
 
 func (p *Pool[T]) performShrinkChecks(params *shrinkParameters, idleCount, underutilCount *int, idleOK, utilOK *bool) {
@@ -376,28 +377,12 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 	*idleOK, *utilOK = false, false
 }
 
-// Not locking here will cause race conditions, including tryGetFromL1.
-func (p *Pool[T]) tryRefillAndGetL1() (zero T, refillFailed bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	ableToRefill, refillResult := p.tryRefillIfNeeded()
-	if !ableToRefill && refillResult.Error != nil {
-		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
-			refillFailed = true
-			return obj, refillFailed
-		}
-	}
-
-	if obj, found := p.tryGetFromL1(true); found {
-		return obj, refillFailed
-	}
-
-	refillFailed = true
-	return zero, refillFailed
+func (p *Pool[T]) isL1UsageBelowThreshold() bool {
+	currentLength, currentCap, currentPercent := p.calculateL1Usage()
+	p.logL1Usage(currentLength, currentCap, currentPercent)
+	return currentPercent <= p.config.fastPath.refillPercent
 }
 
-// could put everybody that uses rlock together instead of calling it multiple times
 func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 	currentLength, currentCap, currentPercent := p.calculateL1Usage()
 	p.logL1Usage(currentLength, currentCap, currentPercent)
@@ -407,10 +392,6 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 	}
 
 	fillTarget := p.calculateFillTarget(currentCap)
-	if fillTarget == 0 {
-		return true, nil
-	}
-
 	if p.config.verbose {
 		log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 	}
@@ -502,4 +483,28 @@ func (p *Pool[T]) performClosure() {
 	p.shrinkCond.Broadcast()
 	p.pool.Close()
 	p.cleanupCacheL1()
+}
+
+// GetBlockedReaders returns the number of readers currently blocked waiting for objects
+func (p *Pool[T]) GetBlockedReaders() int {
+	return p.pool.GetBlockedReaders()
+}
+
+func (p *Pool[T]) tryRefillAndGetL1() (T, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	ableToRefill, refillResult := p.tryRefillIfNeeded()
+	if !ableToRefill && refillResult.Error != nil {
+		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
+			return obj, false
+		}
+	}
+
+	if obj, found := p.tryGetFromL1(true); found {
+		return obj, true
+	}
+
+	var zero T
+	return zero, false
 }

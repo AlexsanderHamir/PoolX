@@ -69,8 +69,8 @@ drainLoop:
 	return nil
 }
 
-func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
-	if !locked {
+func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
+	if !lock {
 		p.mu.RLock()
 		defer p.mu.RUnlock()
 	}
@@ -146,7 +146,7 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 	}
 }
 
-func (p *Pool[T]) calculateL1Usage() (int, int, float64) {
+func (p *Pool[T]) calculateL1Usage() (int, uint64, float64) {
 	currentCap := p.stats.currentL1Capacity
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
@@ -159,16 +159,16 @@ func (p *Pool[T]) calculateL1Usage() (int, int, float64) {
 	if currentCap > 0 {
 		currentPercent = float64(currentLength) / float64(currentCap)
 	}
-	return currentLength, int(currentCap), currentPercent
+	return currentLength, currentCap, currentPercent
 }
 
-func (p *Pool[T]) logL1Usage(currentLength, currentCap int, currentPercent float64) {
+func (p *Pool[T]) logL1Usage(currentLength int, currentCap uint64, currentPercent float64) {
 	if p.config.verbose {
 		log.Printf("[REFILL] L1 usage: %d/%d (%.2f%%), refill threshold: %.2f%%", currentLength, currentCap, currentPercent*100, p.config.fastPath.refillPercent*100)
 	}
 }
 
-func (p *Pool[T]) calculateFillTarget(currentCap int) int {
+func (p *Pool[T]) calculateFillTarget(currentCap uint64) int {
 	if currentCap <= 0 {
 		return 0
 	}
