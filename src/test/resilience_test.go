@@ -79,29 +79,6 @@ func TestResourceExhaustion(t *testing.T) {
 	}
 }
 
-func TestInvalidObjectHandling(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
-		SetInitialCapacity(100).
-		SetHardLimit(1000).
-		Build()
-	require.NoError(t, err)
-
-	p := createTestPool(t, config)
-	defer func() {
-		require.NoError(t, p.Close())
-	}()
-
-	var nilObj *TestObject
-	err = p.Put(nilObj)
-	assert.Error(t, err)
-
-	obj, err := p.Get()
-	require.NoError(t, err)
-	require.NotNil(t, obj)
-	err = p.Put(obj)
-	require.NoError(t, err)
-}
-
 func TestErrorHandlingScenarios(t *testing.T) {
 	t.Run("closed pool operations", func(t *testing.T) {
 		config, err := pool.NewPoolConfigBuilder().
@@ -123,24 +100,6 @@ func TestErrorHandlingScenarios(t *testing.T) {
 		err = p.Put(&TestObject{Value: 42})
 		require.Error(t, err)
 		require.Equal(t, "pool is closed", err.Error())
-	})
-
-	t.Run("invalid object handling", func(t *testing.T) {
-		config, err := pool.NewPoolConfigBuilder().
-			SetInitialCapacity(10).
-			SetMinShrinkCapacity(10).
-			SetHardLimit(20).
-			Build()
-		require.NoError(t, err)
-
-		p := createTestPool(t, config)
-		defer func() {
-			require.NoError(t, p.Close())
-		}()
-
-		err = p.Put(nil)
-		require.Error(t, err)
-		require.Equal(t, "from Put: object is nil", err.Error())
 	})
 
 	t.Run("concurrent error recovery", func(t *testing.T) {

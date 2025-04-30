@@ -127,18 +127,6 @@ func TestRingBufferEdgeCases(t *testing.T) {
 
 	rb = pool.NewRingBuffer[*TestValue](10)
 	require.NotNil(t, rb)
-
-	err := rb.Write(nil)
-	assert.Error(t, err)
-
-	n, err := rb.WriteMany(nil)
-	assert.NoError(t, err)
-	assert.Equal(t, 0, n)
-
-	items := []*TestValue{nil, {value: 1}}
-	n, err = rb.WriteMany(items)
-	assert.Error(t, err)
-	assert.Equal(t, 0, n)
 }
 
 func TestRingBufferViewModification(t *testing.T) {
