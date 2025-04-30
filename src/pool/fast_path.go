@@ -5,6 +5,9 @@ import (
 	"log"
 )
 
+// tryL1ResizeIfTriggered attempts to resize the L1 cache channel if growth events have exceeded
+// the configured trigger threshold. It implements an adaptive growth strategy that uses either
+// exponential or fixed growth based on the current capacity relative to a threshold.
 func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 	trigger := uint64(p.config.fastPath.growthEventsTrigger)
 	if !p.config.fastPath.enableChannelGrowth {
@@ -69,6 +72,9 @@ drainLoop:
 	return nil
 }
 
+// tryGetFromL1 attempts to retrieve an object from the L1 cache channel using a non-blocking
+// select operation. If successful, it updates hit statistics and returns the object.
+// If the channel is empty, it returns false to indicate a miss.
 func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 	if !lock {
 		p.mu.RLock()
@@ -88,11 +94,12 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 		}
 
 		if p.config.verbose {
-			p.logVerbose("[GET] L1 hit")
+			fmt.Printf("[GET] L1 hit")
 		}
 		if p.config.enableStats {
 			p.stats.l1HitCount.Add(1)
 		}
+
 		p.updateUsageStats()
 		found = true
 		return obj, found
@@ -105,6 +112,9 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 	}
 }
 
+// tryFastPathPut attempts to quickly return an object to the L1 cache channel using a non-blocking
+// select operation. If successful, it updates hit statistics and returns true.
+// If the channel is full, it returns false to indicate a miss.
 func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -112,7 +122,7 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			if p.config.verbose {
-				p.logVerbose("[PUT] panic on fast path put — channel closed")
+				fmt.Printf("[PUT] panic on fast path put — channel closed")
 			}
 		}
 	}()
@@ -134,18 +144,20 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 	case ch <- obj:
 		p.stats.FastReturnHit.Add(1)
 		if p.config.verbose {
-			p.logVerbose("[PUT] Fast return hit")
+			fmt.Printf("[PUT] Fast return hit")
 		}
 		ok = true
 		return
 	default:
 		if p.config.verbose {
-			p.logVerbose("[PUT] L1 return miss — falling back to slow path")
+			fmt.Printf("[PUT] L1 return miss — falling back to slow path")
 		}
 		return
 	}
 }
 
+// calculateL1Usage computes the current usage statistics of the L1 cache channel,
+// returning the current length, capacity, and usage percentage.
 func (p *Pool[T]) calculateL1Usage() (int, uint64, float64) {
 	currentCap := p.stats.currentL1Capacity
 	chPtr := p.cacheL1.Load()
@@ -168,6 +180,9 @@ func (p *Pool[T]) logL1Usage(currentLength int, currentCap uint64, currentPercen
 	}
 }
 
+// calculateFillTarget determines how many items need to be added to the L1 cache
+// to reach the target fill level based on the configured fill aggressiveness.
+// Returns 0 if no items are needed or if the target is already met.
 func (p *Pool[T]) calculateFillTarget(currentCap uint64) int {
 	if currentCap <= 0 {
 		return 0
@@ -192,6 +207,8 @@ func (p *Pool[T]) calculateFillTarget(currentCap uint64) int {
 	return itemsNeeded
 }
 
+// shouldShrinkFastPath determines if the L1 cache should be shrunk based on
+// the number of shrink events since the last resize operation.
 func (p *Pool[T]) shouldShrinkFastPath() bool {
 	sinceLast := p.stats.totalShrinkEvents - p.stats.lastResizeAtShrinkNum
 	trigger := uint64(p.config.fastPath.shrinkEventsTrigger)
@@ -199,6 +216,8 @@ func (p *Pool[T]) shouldShrinkFastPath() bool {
 	return sinceLast >= trigger
 }
 
+// adjustFastPathShrinkTarget calculates the new target capacity for the L1 cache
+// when shrinking, ensuring it doesn't go below the minimum capacity or current in-use count.
 func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap uint64) int {
 	cfg := p.config.fastPath.shrink
 	newCap := int(float64(currentCap) * (1.0 - cfg.shrinkPercent))
@@ -221,6 +240,8 @@ func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap uint64) int {
 	return newCap
 }
 
+// shrinkFastPath performs the actual shrinking of the L1 cache channel to the specified
+// new capacity, copying available objects to the new channel and updating statistics.
 func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	availableObjsToCopy := newCapacity - inUse
 	if availableObjsToCopy <= 0 {
@@ -250,7 +271,9 @@ func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 			if p.config.verbose {
 				log.Println("[SHRINK] - cacheL1 is empty, or newL1 is full")
 			}
+
 		}
+
 	}
 
 	close(ch)

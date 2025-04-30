@@ -70,10 +70,6 @@ func (p *Pool[T]) IsGrowth() bool {
 	return p.stats.currentCapacity > uint64(p.config.initialCapacity)
 }
 
-func (p *Pool[T]) Cleaner() func(T) {
-	return p.cleaner
-}
-
 func (p *Pool[T]) releaseObj(obj T) {
 	p.cleaner(obj)
 	p.reduceObjectsInUse()

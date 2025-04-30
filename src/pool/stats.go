@@ -41,7 +41,7 @@ type poolStats struct {
 	utilization float64
 }
 
-// PoolStats represents a snapshot of the pool's statistics at a given moment
+// PoolStatsSnapshot represents a snapshot of the pool's statistics at a given moment
 type PoolStatsSnapshot struct {
 	// Basic Pool Stats
 	ObjectsInUse       uint64
@@ -123,71 +123,39 @@ func (p *Pool[T]) updateDerivedStats() {
 	p.stats.mu.Unlock()
 }
 
+// PrintPoolStats prints the current statistics of the pool to stdout.
+// This includes information about pool capacity, object usage, hit rates,
+// and performance metrics.
 func (p *Pool[T]) PrintPoolStats() {
-	fmt.Println("========== Pool Stats ==========")
-	fmt.Printf("Objects In Use					 : %d\n", p.stats.objectsInUse.Load())
-	fmt.Printf("Current Ring Buffer Capacity	 : %d\n", p.stats.currentCapacity)
-	fmt.Printf("Ring Buffer Length   			 : %d\n", p.pool.Length())
-	fmt.Printf("Peak In Use          			 : %d\n", p.stats.peakInUse)
-	fmt.Printf("Total Gets           			 : %d\n", p.stats.totalGets.Load())
-	fmt.Printf("Total Growth Events  			 : %d\n", p.stats.totalGrowthEvents.Load())
-	fmt.Printf("Total Shrink Events  			 : %d\n", p.stats.totalShrinkEvents)
-	fmt.Printf("Consecutive Shrinks  			 : %d\n", p.stats.consecutiveShrinks.Load())
-
-	fmt.Println()
-	fmt.Println("---------- Fast Path Resize Stats ----------")
-	fmt.Printf("Last Resize At Growth Num: %d\n", p.stats.lastL1ResizeAtGrowthNum)
-	fmt.Printf("Current L1 Capacity      : %d\n", p.stats.currentL1Capacity)
-	chPtr := p.cacheL1.Load()
-	var l1Len int
-	if chPtr != nil {
-		l1Len = len(*chPtr)
-	}
-	fmt.Printf("L1 Length                : %d\n", l1Len)
-	fmt.Println("---------------------------------------")
-	fmt.Println()
-
-	fmt.Println()
-	fmt.Println("---------- Fast Get Stats ----------")
-	fmt.Printf("Fast Path (L1) Hits  : %d\n", p.stats.l1HitCount.Load())
-	fmt.Printf("Slow Path (L2) Hits  : %d\n", p.stats.l2HitCount.Load())
-	fmt.Printf("Allocator Misses (L3): %d\n", p.stats.l3MissCount)
-	fmt.Println("---------------------------------------")
-	fmt.Println()
-
-	fastReturnHit := p.stats.FastReturnHit.Load()
-	fastReturnMiss := p.stats.FastReturnMiss.Load()
-	totalReturns := fastReturnHit + fastReturnMiss
-
-	var l2SpillRate float64
-	if totalReturns > 0 {
-		l2SpillRate = float64(fastReturnMiss) / float64(totalReturns)
-	}
-
-	fmt.Println("---------- Fast Return Stats ----------")
-	fmt.Printf("Fast Return Hit   : %d\n", fastReturnHit)
-	fmt.Printf("Fast Return Miss  : %d\n", fastReturnMiss)
-	fmt.Printf("L2 Spill Rate     : %.2f%%\n", l2SpillRate*100)
-	fmt.Println("---------------------------------------")
-	fmt.Println()
-
-	p.updateDerivedStats()
-	fmt.Println("---------- Usage Stats ----------")
-	fmt.Println()
-	fmt.Printf("Request Per Object   : %.2f\n", p.stats.reqPerObj)
-	fmt.Printf("Utilization %%       : %.2f%%\n", p.stats.utilization)
-	fmt.Println("---------------------------------------")
-
-	fmt.Println("---------- Time Stats ----------")
-	fmt.Printf("Last Get Time        : %s\n", time.Unix(p.stats.lastTimeCalledGet.Load(), 0).Format(time.RFC3339))
-	fmt.Printf("Last Shrink Time     : %s\n", p.stats.lastShrinkTime.Format(time.RFC3339))
-	fmt.Printf("Last Grow Time       : %s\n", p.stats.lastGrowTime.Format(time.RFC3339))
-	fmt.Println("=================================")
+	stats := p.GetPoolStatsSnapshot()
+	fmt.Printf("\n=== Pool Statistics ===\n")
+	fmt.Printf("Objects in use: %d\n", stats.ObjectsInUse)
+	fmt.Printf("Available objects: %d\n", stats.AvailableObjects)
+	fmt.Printf("Current capacity: %d\n", stats.CurrentCapacity)
+	fmt.Printf("Ring buffer length: %d\n", stats.RingBufferLength)
+	fmt.Printf("Peak objects in use: %d\n", stats.PeakInUse)
+	fmt.Printf("Total gets: %d\n", stats.TotalGets)
+	fmt.Printf("Total growth events: %d\n", stats.TotalGrowthEvents)
+	fmt.Printf("Total shrink events: %d\n", stats.TotalShrinkEvents)
+	fmt.Printf("Consecutive shrinks: %d\n", stats.ConsecutiveShrinks)
+	fmt.Printf("L1 cache capacity: %d\n", stats.CurrentL1Capacity)
+	fmt.Printf("L1 cache length: %d\n", stats.L1Length)
+	fmt.Printf("L1 hit count: %d\n", stats.L1HitCount)
+	fmt.Printf("L2 hit count: %d\n", stats.L2HitCount)
+	fmt.Printf("L3 miss count: %d\n", stats.L3MissCount)
+	fmt.Printf("Fast return hit: %d\n", stats.FastReturnHit)
+	fmt.Printf("Fast return miss: %d\n", stats.FastReturnMiss)
+	fmt.Printf("L2 spill rate: %.2f%%\n", stats.L2SpillRate*100)
+	fmt.Printf("Request per object: %.2f\n", stats.RequestPerObject)
+	fmt.Printf("Utilization: %.2f%%\n", stats.Utilization)
+	fmt.Printf("Last get time: %v\n", stats.LastGetTime)
+	fmt.Printf("Last shrink time: %v\n", stats.LastShrinkTime)
+	fmt.Printf("Last growth time: %v\n", stats.LastGrowTime)
+	fmt.Println("===================")
 }
 
 // GetPoolStatsSnapshot returns a snapshot of the current pool statistics
 func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
-
 	fastReturnHit := p.stats.FastReturnHit.Load()
 	fastReturnMiss := p.stats.FastReturnMiss.Load()
 	totalReturns := fastReturnHit + fastReturnMiss
@@ -203,7 +171,6 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		l1Len = len(*chPtr)
 	}
 
-	// p.updateDerivedStats()
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		ObjectsInUse:       p.stats.objectsInUse.Load(),

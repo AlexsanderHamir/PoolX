@@ -10,9 +10,14 @@ import (
 // ============================================================================
 
 // SetPoolBasicConfigs sets the basic configuration parameters for the pool.
-// Zero or negative values are ignored, the default values will be used.
+// Parameters:
+//   - initialCapacity: Initial size of both ring buffer and fast path (can be overridden)
+//   - hardLimit: Maximum number of objects the pool can grow to
+//   - verbose: Enable detailed logging of pool operations
+//   - enableChannelGrowth: Enable dynamic growth of the fast path channel
+//   - enableStats: Enable collection of non-essential pool statistics
 //
-// WARNING: The initial capacity apply to both ring buffer and fast path, which you can override.
+// Note: Zero or negative values are ignored, default values will be used instead.
 func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit int, verbose, enableChannelGrowth, enableStats bool) *poolConfigBuilder {
 	if initialCapacity > 0 {
 		b.config.initialCapacity = initialCapacity
@@ -38,7 +43,12 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 // ============================================================================
 
 // SetRingBufferGrowthConfigs sets the growth configuration parameters for the ring buffer.
-// Zero or negative values are ignored, the default values will be used.
+// Parameters:
+//   - exponentialThresholdFactor: Threshold for switching from exponential to fixed growth
+//   - growthPercent: Percentage growth rate when below threshold
+//   - fixedGrowthFactor: Fixed step size for growth when above threshold
+//
+// Note: Zero or negative values are ignored, default values will be used instead.
 func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFactor float64, growthPercent float64, fixedGrowthFactor float64) *poolConfigBuilder {
 	if exponentialThresholdFactor > 0 {
 		b.config.growth.exponentialThresholdFactor = exponentialThresholdFactor
@@ -58,7 +68,21 @@ func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFacto
 // Shrink Configuration Methods
 // ============================================================================
 
-// SetShrinkAggressiveness sets the auto-shrink level (1-5) with preset defaults for both ring buffer and fast path.
+// SetShrinkAggressiveness sets the auto-shrink level (1-5) with preset defaults for both
+// ring buffer and fast path. Each level represents a different balance between
+// memory efficiency and performance.
+//
+// Levels:
+//
+//	1: Conservative - Minimal shrinking, prioritizes performance
+//	2: Moderate - Balanced approach
+//	3: Aggressive - More aggressive shrinking
+//	4: Very Aggressive - Heavy shrinking
+//	5: Extreme - Maximum shrinking
+//
+// Returns an error if:
+//   - Custom configuration is enforced
+//   - Level is out of valid range
 func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) (*poolConfigBuilder, error) {
 	if b.config.shrink.enforceCustomConfig {
 		return nil, fmt.Errorf("cannot set AggressivenessLevel when EnforceCustomConfig is active")
@@ -79,7 +103,9 @@ func (b *poolConfigBuilder) SetShrinkAggressiveness(level AggressivenessLevel) (
 	return b, nil
 }
 
-// EnforceCustomConfig disables default shrink configuration, requiring manual setting of all shrink parameters.
+// EnforceCustomConfig disables default shrink configuration, requiring manual setting
+// of all shrink parameters. This is useful when you need precise control over
+// the shrinking behavior and don't want to use the preset aggressiveness levels.
 func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
 	newBuilder := *b
 	copiedShrink := *b.config.shrink
@@ -93,8 +119,19 @@ func (b *poolConfigBuilder) EnforceCustomConfig() *poolConfigBuilder {
 	return &newBuilder
 }
 
-// SetRingBufferShrinkParams sets custom shrink parameters.
-// Zero or negative values are ignored, the default values will be used.
+// SetRingBufferShrinkConfigs sets custom shrink parameters for the ring buffer.
+// Parameters:
+//   - checkInterval: Time between shrink eligibility checks
+//   - idleThreshold: Minimum idle duration before shrinking
+//   - shrinkCooldown: Minimum time between shrink operations
+//   - minIdleBeforeShrink: Required consecutive idle checks
+//   - stableUnderutilizationRounds: Required stable underutilization rounds
+//   - minCapacity: Minimum capacity after shrinking
+//   - maxConsecutiveShrinks: Maximum consecutive shrink operations
+//   - minUtilizationBeforeShrink: Utilization threshold for shrinking
+//   - shrinkPercent: Percentage by which to shrink
+//
+// Note: Zero or negative values are ignored, default values will be used instead.
 func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent float64) *poolConfigBuilder {
 	if checkInterval > 0 {
 		b.config.shrink.checkInterval = checkInterval
@@ -139,7 +176,13 @@ func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThresh
 // Fast Path Configuration Methods
 // ============================================================================
 
-// SetFastPathBasicConfigs sets the basic configuration parameters for the fast path.
+// SetFastPathBasicConfigs sets the basic configuration parameters for the fast path (L1 cache).
+// Parameters:
+//   - initialSize: Initial capacity of the fast path buffer
+//   - growthEventsTrigger: Number of growth events before fast path grows
+//   - shrinkEventsTrigger: Number of shrink events before fast path shrinks
+//   - fillAggressiveness: How aggressively to fill the fast path initially
+//   - refillPercent: Threshold for refilling the fast path
 func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize int, growthEventsTrigger int, shrinkEventsTrigger int, fillAggressiveness, refillPercent float64) *poolConfigBuilder {
 	if initialSize > 0 {
 		b.config.fastPath.initialSize = initialSize
@@ -165,6 +208,10 @@ func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize int, growthEvent
 }
 
 // SetFastPathGrowthConfigs sets the growth configuration parameters for the fast path.
+// Parameters:
+//   - exponentialThresholdFactor: Threshold for switching growth modes
+//   - fixedGrowthFactor: Fixed step size for growth above threshold
+//   - growthPercent: Percentage growth rate below threshold
 func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor float64, fixedGrowthFactor float64, growthPercent float64) *poolConfigBuilder {
 	if exponentialThresholdFactor > 0 {
 		b.config.fastPath.growth.exponentialThresholdFactor = exponentialThresholdFactor
@@ -182,6 +229,9 @@ func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor 
 }
 
 // SetFastPathShrinkConfigs sets the shrink configuration parameters for the fast path.
+// Parameters:
+//   - shrinkPercent: Percentage by which to shrink the fast path
+//   - minCapacity: Minimum capacity after shrinking
 func (b *poolConfigBuilder) SetFastPathShrinkConfigs(shrinkPercent float64, minCapacity int) *poolConfigBuilder {
 	if shrinkPercent > 0 {
 		b.config.fastPath.shrink.shrinkPercent = shrinkPercent
@@ -194,7 +244,11 @@ func (b *poolConfigBuilder) SetFastPathShrinkConfigs(shrinkPercent float64, minC
 	return b
 }
 
-// SetFastPathShrinkAggressiveness sets the shrink aggressiveness for the fast path.
+// SetFastPathShrinkAggressiveness sets the shrink aggressiveness level for the fast path.
+// Uses the same aggressiveness levels as the main pool (1-5).
+// Panics if:
+//   - Custom configuration is enforced
+//   - Level is out of valid range
 func (b *poolConfigBuilder) SetFastPathShrinkAggressiveness(level AggressivenessLevel) *poolConfigBuilder {
 	if b.config.fastPath.shrink.enforceCustomConfig {
 		panic("cannot set AggressivenessLevel if EnforceCustomConfig is active")
@@ -214,6 +268,13 @@ func (b *poolConfigBuilder) SetFastPathShrinkAggressiveness(level Aggressiveness
 // ============================================================================
 
 // SetRingBufferBasicConfigs sets the basic configuration parameters for the ring buffer.
+// Parameters:
+//   - block: Whether operations should block when buffer is full/empty
+//   - rTimeout: Read operation timeout
+//   - wTimeout: Write operation timeout
+//   - bothTimeout: Sets both read and write timeouts to the same value
+//
+// Note: Timeout values must be positive to take effect.
 func (b *poolConfigBuilder) SetRingBufferBasicConfigs(block bool, rTimeout, wTimeout, bothTimeout time.Duration) *poolConfigBuilder {
 	b.config.ringBufferConfig.block = block
 

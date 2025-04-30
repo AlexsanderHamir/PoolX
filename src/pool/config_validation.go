@@ -4,6 +4,11 @@ import (
 	"fmt"
 )
 
+// validateBasicConfig performs validation of the core pool configuration parameters:
+// - initialCapacity must be positive
+// - hardLimit must be positive and greater than initialCapacity
+// - hardLimit must be greater than or equal to minCapacity
+// Returns an error if any validation fails.
 func (b *poolConfigBuilder) validateBasicConfig() error {
 	if b.config.initialCapacity <= 0 {
 		return fmt.Errorf("initialCapacity must be greater than 0, got %d", b.config.initialCapacity)
@@ -24,6 +29,17 @@ func (b *poolConfigBuilder) validateBasicConfig() error {
 	return nil
 }
 
+// validateShrinkConfig validates all shrink-related configuration parameters:
+// - maxConsecutiveShrinks must be non-negative
+// - checkInterval and idleThreshold must be positive
+// - minIdleBeforeShrink must be positive
+// - idleThreshold must be greater than checkInterval
+// - minCapacity must be less than or equal to initialCapacity
+// - shrinkCooldown must be positive
+// - minUtilizationBeforeShrink must be between 0 and 1.0
+// - stableUnderutilizationRounds must be positive
+// - shrinkPercent must be between 0 and 1.0
+// Returns an error if any validation fails.
 func (b *poolConfigBuilder) validateShrinkConfig() error {
 	sp := b.config.shrink
 
@@ -74,6 +90,11 @@ func (b *poolConfigBuilder) validateShrinkConfig() error {
 	return nil
 }
 
+// validateGrowthConfig validates all growth-related configuration parameters:
+// - exponentialThresholdFactor must be positive
+// - growthPercent must be positive
+// - fixedGrowthFactor must be positive
+// Returns an error if any validation fails.
 func (b *poolConfigBuilder) validateGrowthConfig() error {
 	gp := b.config.growth
 
@@ -92,6 +113,15 @@ func (b *poolConfigBuilder) validateGrowthConfig() error {
 	return nil
 }
 
+// validateFastPathConfig validates all fast path (L1 cache) configuration parameters:
+// - initialSize must be positive
+// - fillAggressiveness must be between 0 and 1.0
+// - refillPercent must be between 0 and 0.99
+// - growthEventsTrigger must be positive
+// - growth parameters (exponentialThresholdFactor, growthPercent, fixedGrowthFactor) must be positive
+// - shrinkEventsTrigger must be positive
+// - shrink parameters (minCapacity, shrinkPercent) must be positive
+// Returns an error if any validation fails.
 func (b *poolConfigBuilder) validateFastPathConfig() error {
 	fp := b.config.fastPath
 

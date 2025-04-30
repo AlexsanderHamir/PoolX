@@ -6,15 +6,13 @@ import (
 	"time"
 )
 
+// shrinkDefaultsMap returns the default shrink configuration map based on aggressiveness levels
 func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
 	return defaultShrinkMap
 }
 
-// logIfVerbose is a helper method to reduce logging code duplication
-func (p *Pool[T]) logVerbose(format string, args ...any) {
-	log.Printf(format, args...)
-}
-
+// setPoolAndBuffer attempts to store an object in either the L1 cache or the main pool.
+// It returns the remaining fast path capacity and any error that occurred.
 func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
@@ -28,12 +26,14 @@ func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 			fastPathRemaining--
 			return fastPathRemaining, nil
 		default:
+			// L1 cache is full, continue to main pool
 		}
 	}
 
+	// Store in main pool
 	if err := p.pool.Write(obj); err != nil {
 		if p.config.verbose {
-			p.logVerbose("[SETPOOL] Error writing to ring buffer: %v", err)
+			fmt.Printf("[SETPOOL] Error writing to ring buffer: %v", err)
 		}
 		return fastPathRemaining, fmt.Errorf("failed to write to ring buffer: %w", err)
 	}
@@ -41,6 +41,8 @@ func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 	return fastPathRemaining, nil
 }
 
+// IdleCheck determines if the pool has been idle long enough to consider shrinking.
+// It updates the idle count and shrink permission based on the configured thresholds.
 func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 	last := p.stats.lastTimeCalledGet.Load()
 	idleDuration := time.Since(time.Unix(0, last))
@@ -49,7 +51,7 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 	required := p.config.shrink.minIdleBeforeShrink
 
 	if idleDuration >= threshold {
-		*idles += 1
+		*idles++
 		if *idles >= required {
 			*shrinkPermissionIdleness = true
 		}
@@ -58,7 +60,7 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 		}
 	} else {
 		if *idles > 0 {
-			*idles -= 1
+			*idles--
 		}
 		if p.config.verbose {
 			log.Printf("[SHRINK] IdleCheck reset — recent activity detected | idles: %d/%d", *idles, required)
@@ -67,7 +69,7 @@ func (p *Pool[T]) IdleCheck(idles *int, shrinkPermissionIdleness *bool) {
 }
 
 // calculateUtilization calculates the current utilization percentage of the pool.
-// Returns 0 if there are no objects in the pool.
+// Returns 0 if there are no objects in the pool or if the L1 cache is nil.
 func (p *Pool[T]) calculateUtilization() float64 {
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
@@ -85,16 +87,16 @@ func (p *Pool[T]) calculateUtilization() float64 {
 	return (float64(inUse) / float64(total)) * 100
 }
 
-// logUtilizationStats logs the current utilization statistics if verbose mode is enabled
+// logUtilizationStats logs the current utilization statistics if verbose mode is enabled.
 func (p *Pool[T]) logUtilizationStats(utilization, minUtil float64, requiredRounds int) {
-	if !p.config.verbose {
-		return
+	if p.config.verbose {
+		fmt.Printf("[DEBUG] UtilizationCheck - current utilization: %.2f%%, minUtil: %.2f%%, requiredRounds: %d\n",
+			utilization, minUtil, requiredRounds)
 	}
-	fmt.Printf("[DEBUG] UtilizationCheck - current utilization: %.2f%%, minUtil: %.2f%%, requiredRounds: %d\n",
-		utilization, minUtil, requiredRounds)
 }
 
-// handleUnderutilization handles the case when utilization is below the minimum threshold
+// handleUnderutilization handles the case when utilization is below the minimum threshold.
+// It tracks consecutive underutilization rounds and sets shrink permission when appropriate.
 func (p *Pool[T]) handleUnderutilization(utilization, minUtil float64, underutilizationRounds *int, requiredRounds int, shrinkPermissionUtilization *bool) {
 	if p.config.verbose {
 		fmt.Println("[DEBUG] UtilizationCheck - utilization below threshold")
@@ -116,7 +118,8 @@ func (p *Pool[T]) handleUnderutilization(utilization, minUtil float64, underutil
 	}
 }
 
-// handleHealthyUtilization handles the case when utilization is above the minimum threshold
+// handleHealthyUtilization handles the case when utilization is above the minimum threshold.
+// It reduces the underutilization counter if needed and logs the healthy state.
 func (p *Pool[T]) handleHealthyUtilization(utilization, minUtil float64, underutilizationRounds *int, requiredRounds int) {
 	if p.config.verbose {
 		fmt.Println("[DEBUG] UtilizationCheck - utilization above threshold")
@@ -218,14 +221,14 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 	part1, part2, err := p.pool.GetNView(toMove)
 	if err != nil && err != errIsEmpty {
 		if p.config.verbose {
-			p.logVerbose("[REFILL] Error getting items from ring buffer: %v", err)
+			fmt.Printf("[REFILL] Error getting items from ring buffer: %v", err)
 		}
 		return nil, nil, errRingBufferFailed
 	}
 
 	if part1 == nil && part2 == nil && err == nil || len(part1) == 0 && len(part2) == 0 {
 		if p.config.verbose {
-			p.logVerbose("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
+			fmt.Printf("[REFILL] No items to move. (fillTarget == 0 || currentObjsAvailable == 0)")
 		}
 		return nil, nil, errNoItemsToMove
 	}
@@ -237,7 +240,7 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
 	defer func() {
 		if r := recover(); r != nil {
 			if p.config.verbose {
-				p.logVerbose("[PUT] panic on fast path put — channel closed")
+				fmt.Printf("[PUT] panic on fast path put — channel closed")
 			}
 			result.Error = fmt.Errorf("panic on fast path put — channel closed")
 		}
@@ -255,13 +258,13 @@ func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
 		case ch <- item:
 			result.ItemsMoved++
 			if p.config.verbose {
-				p.logVerbose("[REFILL] Moved object to L1 | Remaining: %d", len(ch))
+				fmt.Printf("[REFILL] Moved object to L1 | Remaining: %d", len(ch))
 			}
 		default:
 			result.ItemsFailed++
 			if err := p.pool.Write(item); err != nil {
 				if p.config.verbose {
-					p.logVerbose("[REFILL] Error putting object back in ring buffer: %v", err)
+					fmt.Printf("[REFILL] Error putting object back in ring buffer: %v", err)
 				}
 				result.Error = fmt.Errorf("%w: %w", errRingBufferFailed, err)
 				return
@@ -310,16 +313,9 @@ func (p *Pool[T]) slowPathPut(obj T) error {
 	p.stats.FastReturnMiss.Add(1)
 
 	if p.config.verbose {
-		p.logVerbose("[PUT] slow path put unblocked")
+		fmt.Printf("[PUT] slow path put unblocked")
 	}
 	return nil
-}
-
-func (p *Pool[T]) logRefillResult(result *refillResult) {
-	if p.config.verbose {
-		log.Printf("[REFILL] Refill succeeded: %s | Moved: %d | Failed: %d",
-			result.Error, result.ItemsMoved, result.ItemsFailed)
-	}
 }
 
 func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotShrink bool) {
@@ -327,12 +323,16 @@ func (p *Pool[T]) handleMaxConsecutiveShrinks(params *shrinkParameters) (cannotS
 		return cannotShrink
 	}
 
-	for p.stats.consecutiveShrinks.Load() == int32(params.maxConsecutiveShrinks) {
+	if p.stats.consecutiveShrinks.Load() == int32(params.maxConsecutiveShrinks) {
 		if p.config.verbose {
 			log.Println("[SHRINK] Max consecutive shrinks reached — waiting for Get() call")
 		}
 		p.isShrinkBlocked.Store(true)
+
+		// blocks until a Get() call is made, and then it still returns true so it can go and wait for the next shrink check
+		// otherwise every get call will block and wait for the shrink check to pass
 		p.shrinkCond.Wait()
+		return true
 	}
 
 	return cannotShrink
@@ -398,12 +398,16 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 		return false, refillResult
 	}
 
-	p.logRefillResult(refillResult)
+	if p.config.verbose {
+		fmt.Printf("[REFILL] Refill successful: %d items moved to L1", refillResult.ItemsMoved)
+	}
+
 	return true, refillResult
 }
 
-// It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
-// We always try to refill the ring buffer before calling the slow path.
+// SlowPath retrieves an object from the ring buffer. It blocks if the ring buffer is empty
+// and the ring buffer is in blocking mode. We always try to refill the ring buffer before
+// calling the slow path.
 func (p *Pool[T]) SlowPath() (obj T, err error) {
 	var pool *RingBuffer[T]
 
@@ -412,7 +416,7 @@ func (p *Pool[T]) SlowPath() (obj T, err error) {
 	p.mu.RUnlock()
 
 	if p.config.verbose {
-		p.logVerbose("[SLOWPATH] Getting object from ring buffer")
+		fmt.Printf("[SLOWPATH] Getting object from ring buffer")
 	}
 
 	obj, err = pool.GetOne()
@@ -421,7 +425,7 @@ func (p *Pool[T]) SlowPath() (obj T, err error) {
 	}
 
 	if p.config.verbose {
-		p.logVerbose("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
+		fmt.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
 	}
 
 	return obj, nil
@@ -441,13 +445,20 @@ func (p *Pool[T]) hasOutstandingObjects() bool {
 	return totalReturns < totalGets
 }
 
+// closeAsync attempts to close the pool asynchronously by waiting for all outstanding objects
+// to be returned before performing the actual closure. It will wait up to 3 seconds for objects
+// to be returned before forcing closure. This is the default close behavior when there are
+// outstanding objects.
 func (p *Pool[T]) closeAsync() error {
 	p.waitAndClose()
 	return nil
 }
 
+// waitAndClose implements the waiting logic for closeAsync. It will attempt to wait for all
+// outstanding objects to be returned to the pool before closing. If objects are not returned
+// within the timeout period (10 seconds), it will force close the pool anyway.
 func (p *Pool[T]) waitAndClose() {
-	maxAttempts := 3
+	maxAttempts := 10
 	attempts := 0
 
 	for attempts < maxAttempts {
@@ -461,16 +472,25 @@ func (p *Pool[T]) waitAndClose() {
 	}
 
 	if p.config.verbose {
-		p.logVerbose("[CLOSE] Timed out waiting for all objects to return after %d seconds", maxAttempts)
+		fmt.Printf("[CLOSE] Timed out waiting for all objects to return after %d seconds", maxAttempts)
 	}
 	p.performClosure()
 }
 
+// closeImmediate performs an immediate closure of the pool without waiting for outstanding
+// objects to be returned. This is used when there are no outstanding objects or when
+// immediate closure is required.
 func (p *Pool[T]) closeImmediate() error {
 	p.performClosure()
 	return nil
 }
 
+// performClosure handles the actual cleanup of pool resources. It:
+// 1. Marks the pool as closed
+// 2. Cancels the pool's context
+// 3. Broadcasts to any waiting shrink operations
+// 4. Closes the underlying ring buffer
+// 5. Cleans up the L1 cache
 func (p *Pool[T]) performClosure() {
 	p.closed.Store(true)
 	p.cancel()
@@ -484,6 +504,8 @@ func (p *Pool[T]) GetBlockedReaders() int {
 	return p.pool.GetBlockedReaders()
 }
 
+// tryRefillAndGetL1 attempts to refill the pool, and get an object from L1 cache.
+// It will grow in case it's allowed and needed.
 func (p *Pool[T]) tryRefillAndGetL1() (T, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -35,6 +35,13 @@ var (
 // It operates like a buffered pipe, where data is written to a RingBuffer
 // and can be read back from another goroutine.
 // It is safe to concurrently read and write RingBuffer.
+//
+// Key features:
+// - Thread-safe concurrent read/write operations
+// - Configurable blocking/non-blocking behavior
+// - Timeout support for read/write operations
+// - Pre-read hook for custom blocking behavior
+// - Efficient circular buffer implementation
 type RingBuffer[T any] struct {
 	buf       []T
 	size      int
@@ -110,10 +117,10 @@ func NewRingBufferWithConfig[T any](size int, config *ringBufferConfig) (*RingBu
 }
 
 // WithBlocking sets the blocking mode of the ring buffer.
-// If block is true, Read and Write will block when there is no data to read or no space to write.
-// If block is false, Read and Write will return ErrIsEmpty or ErrIsFull immediately.
-// By default, the ring buffer is not blocking.
-// This setting should be called before any Read or Write operation or after a Reset.
+// When blocking is enabled:
+// - Read operations will block when the buffer is empty
+// - Write operations will block when the buffer is full
+// - Condition variables are created for synchronization
 func (r *RingBuffer[T]) WithBlocking(block bool) *RingBuffer[T] {
 	r.block = block
 	if block {
@@ -123,10 +130,9 @@ func (r *RingBuffer[T]) WithBlocking(block bool) *RingBuffer[T] {
 	return r
 }
 
-// WithTimeout will set a blocking read/write timeout.
-// If no reads or writes occur within the timeout,
-// the ringbuffer will be closed and context.DeadlineExceeded will be returned.
-// A timeout of 0 or less will disable timeouts (default).
+// WithTimeout sets both read and write timeouts for the ring buffer.
+// When a timeout occurs, the operation returns context.DeadlineExceeded.
+// A timeout of 0 or less disables timeouts.
 func (r *RingBuffer[T]) WithTimeout(d time.Duration) *RingBuffer[T] {
 	r.mu.Lock()
 	r.rTimeout = d
@@ -135,11 +141,8 @@ func (r *RingBuffer[T]) WithTimeout(d time.Duration) *RingBuffer[T] {
 	return r
 }
 
-// WithReadTimeout will set a blocking read timeout.
-// Reads refers to any call that reads data from the buffer.
-// If no writes occur within the timeout,
-// the ringbuffer will be closed and context.DeadlineExceeded will be returned.
-// A timeout of 0 or less will disable timeouts (default).
+// WithReadTimeout sets the timeout for read operations.
+// Read operations wait for writes to complete, so this sets the write timeout.
 func (r *RingBuffer[T]) WithReadTimeout(d time.Duration) *RingBuffer[T] {
 	r.mu.Lock()
 	// Read operations wait for writes to complete,
@@ -149,11 +152,8 @@ func (r *RingBuffer[T]) WithReadTimeout(d time.Duration) *RingBuffer[T] {
 	return r
 }
 
-// WithWriteTimeout will set a blocking write timeout.
-// Write refers to any call that writes data into the buffer.
-// If no reads occur within the timeout,
-// the ringbuffer will be closed and context.DeadlineExceeded will be returned.
-// A timeout of 0 or less will disable timeouts (default).
+// WithWriteTimeout sets the timeout for write operations.
+// Write operations wait for reads to complete, so this sets the read timeout.
 func (r *RingBuffer[T]) WithWriteTimeout(d time.Duration) *RingBuffer[T] {
 	r.mu.Lock()
 	// Write operations wait for reads to complete,
@@ -163,8 +163,9 @@ func (r *RingBuffer[T]) WithWriteTimeout(d time.Duration) *RingBuffer[T] {
 	return r
 }
 
-// WithPreReadBlockHook sets a hook function that will be called before blocking on a read or hitting a deadline.
-// The hook should return true if it successfully handled the situation, false otherwise.
+// WithPreReadBlockHook sets a hook function that will be called before blocking on a read
+// or hitting a deadline. This allows for custom handling of blocking situations,
+// such as trying alternative sources for data.
 func (r *RingBuffer[T]) WithPreReadBlockHook(hook func() bool) *RingBuffer[T] {
 	r.mu.Lock()
 	r.preReadBlockHook = hook
@@ -272,7 +273,11 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 }
 
 // Write writes a single item to the buffer.
-// Blocks if the buffer is full and the ring buffer is in blocking mode, only a read will unblock it.
+// Behavior:
+// - Blocks if buffer is full and in blocking mode
+// - Returns ErrIsFull if buffer is full and not blocking
+// - Returns context.DeadlineExceeded if timeout occurs
+// - Signals waiting readers when data is written
 func (r *RingBuffer[T]) Write(item T) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -308,7 +313,12 @@ func (r *RingBuffer[T]) Write(item T) error {
 	return nil
 }
 
-// WriteMany writes multiple items to the buffer
+// WriteMany writes multiple items to the buffer.
+// Behavior:
+// - Writes as many items as possible without blocking
+// - Blocks if more space is needed and in blocking mode
+// - Returns number of items written and any error
+// - Handles wrapping around the buffer end
 func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 	if len(items) == 0 {
 		return 0, nil
@@ -395,7 +405,8 @@ func (r *RingBuffer[T]) WriteMany(items []T) (n int, err error) {
 	return n, nil
 }
 
-// Length returns the number of items that can be read
+// Length returns the number of items that can be read.
+// This is the actual number of items in the buffer.
 func (r *RingBuffer[T]) Length() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -420,6 +431,7 @@ func (r *RingBuffer[T]) Capacity() int {
 }
 
 // Free returns the number of items that can be written without blocking.
+// This is the available space in the buffer.
 func (r *RingBuffer[T]) Free() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -511,8 +523,11 @@ func (r *RingBuffer[T]) PeekN(n int) (items []T, err error) {
 }
 
 // GetOne returns a single item from the buffer.
-// Returns ErrIsEmpty if the buffer is empty.
-// Blocks if the buffer is empty and the ring buffer is in blocking mode, only a write will unblock it.
+// Behavior:
+// - Blocks if buffer is empty and in blocking mode
+// - Returns ErrIsEmpty if buffer is empty and not blocking
+// - Returns context.DeadlineExceeded if timeout occurs
+// - Signals waiting writers when data is read
 func (r *RingBuffer[T]) GetOne() (item T, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -563,9 +578,11 @@ func (r *RingBuffer[T]) GetOne() (item T, err error) {
 }
 
 // GetN returns up to n items from the buffer.
-// Returns ErrIsEmpty if the buffer is empty.
-// The returned slice will have length between 0 and n.
-// WARNING: could block if the ring buffer is empty and the ring buffer is in blocking mode
+// Behavior:
+// - Returns between 0 and n items
+// - Blocks if buffer is empty and in blocking mode
+// - Returns ErrIsEmpty if buffer is empty and not blocking
+// - Handles wrapping around the buffer end
 func (r *RingBuffer[T]) GetN(n int) (items []T, err error) {
 	if n <= 0 {
 		return nil, nil
@@ -645,8 +662,8 @@ func (r *RingBuffer[T]) CopyConfig(source *RingBuffer[T]) *RingBuffer[T] {
 	return r
 }
 
-// ClearBuffer clears all remaining items in the buffer and sets them to nil.
-// This is useful when shrinking the buffer and we need to clean up.
+// ClearBuffer clears all items in the buffer and resets read/write positions.
+// Useful when shrinking the buffer or cleaning up resources.
 func (r *RingBuffer[T]) ClearBuffer() {
 	if r.w == r.r && !r.isFull {
 		return
@@ -672,8 +689,11 @@ func (r *RingBuffer[T]) ClearBuffer() {
 }
 
 // Close closes the ring buffer and cleans up resources.
-// After closing, all subsequent operations will return io.EOF.
-// Any pending items in the buffer will be cleared.
+// Behavior:
+// - Sets error to io.EOF
+// - Clears all items in the buffer
+// - Signals all waiting readers and writers
+// - All subsequent operations will return io.EOF
 func (r *RingBuffer[T]) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

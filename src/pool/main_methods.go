@@ -16,7 +16,9 @@ var (
 	errNilObject        = errors.New("object is nil")
 )
 
-// Creates a new pool with the given config, allocator, cleaner, and pool type, only pointers can be stored.
+// NewPool creates a new object pool with the given configuration, allocator, cleaner, and pool type.
+// Only pointers can be stored in the pool. The allocator function creates new objects,
+// and the cleaner function resets objects before they are reused.
 func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poolType reflect.Type) (*Pool[T], error) {
 	if err := validateAllocator(allocator); err != nil {
 		return nil, err
@@ -51,7 +53,7 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poo
 	return poolObj, nil
 }
 
-// Get returns an object from the pool, either from L1 or the ring buffer, preferring L1.
+// Get returns an object from the pool, either from L1 cache or the ring buffer, preferring L1.
 func (p *Pool[T]) Get() (zero T, err error) {
 	if p.closed.Load() {
 		return zero, errPoolClosed
@@ -76,6 +78,8 @@ func (p *Pool[T]) Get() (zero T, err error) {
 	return obj, nil
 }
 
+// Put returns an object to the pool. The object will be cleaned using the cleaner function
+// before being made available for reuse.
 func (p *Pool[T]) Put(obj T) error {
 	if p.closed.Load() {
 		return errPoolClosed
@@ -84,14 +88,14 @@ func (p *Pool[T]) Put(obj T) error {
 	p.releaseObj(obj)
 
 	if p.config.verbose {
-		p.logVerbose("[PUT] Releasing object")
+		fmt.Printf("[PUT] Releasing object")
 	}
 
 	if p.pool.GetBlockedReaders() > 0 {
 		err := p.slowPathPut(obj)
 		if err != nil {
 			if p.config.verbose {
-				p.logVerbose("[PUT] Error in slowPathPut: %v", err)
+				fmt.Printf("[PUT] Error in slowPathPut: %v", err)
 			}
 			return err
 		}
@@ -105,7 +109,22 @@ func (p *Pool[T]) Put(obj T) error {
 	return p.slowPathPut(obj)
 }
 
-// shrink is a background goroutine that checks the pool for idle and underutilized objects, and shrinks the pool if necessary.
+// Close closes the pool and releases all resources. If there are outstanding objects,
+// it will wait for them to be returned before closing.
+func (p *Pool[T]) Close() error {
+	if p.closed.Load() {
+		return errors.New("pool is already closed")
+	}
+
+	if p.hasOutstandingObjects() {
+		return p.closeAsync()
+	}
+
+	return p.closeImmediate()
+}
+
+// shrink is a background goroutine that periodically checks the pool for idle and underutilized objects,
+// and shrinks the pool if necessary to free up memory.
 func (p *Pool[T]) shrink() {
 	params := p.config.shrink
 	ticker := time.NewTicker(params.checkInterval)
@@ -125,6 +144,11 @@ func (p *Pool[T]) shrink() {
 			if p.closed.Load() {
 				p.mu.Unlock()
 				return
+			}
+
+			if p.isShrinkBlocked.Load() {
+				p.mu.Unlock()
+				continue
 			}
 
 			if p.handleMaxConsecutiveShrinks(params) {
@@ -149,6 +173,7 @@ func (p *Pool[T]) shrink() {
 }
 
 // grow is called when the demand for objects exceeds the current capacity, if enabled.
+// It increases the pool's capacity according to the growth configuration.
 func (p *Pool[T]) grow(now time.Time) error {
 	if p.closed.Load() {
 		return errPoolClosed
@@ -163,7 +188,7 @@ func (p *Pool[T]) grow(now time.Time) error {
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
 		if p.config.verbose {
-			p.logVerbose("[GROW] Error in updatePoolCapacity: %v", err)
+			fmt.Printf("[GROW] Error in updatePoolCapacity: %v", err)
 		}
 		return fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
@@ -176,7 +201,7 @@ func (p *Pool[T]) grow(now time.Time) error {
 	err := p.tryL1ResizeIfTriggered()
 	if err != nil {
 		if p.config.verbose {
-			p.logVerbose("[GROW] Error in tryL1ResizeIfTriggered: %v", err)
+			fmt.Printf("[GROW] Error in tryL1ResizeIfTriggered: %v", err)
 		}
 		return err
 	}
@@ -186,19 +211,8 @@ func (p *Pool[T]) grow(now time.Time) error {
 	return nil
 }
 
-func (p *Pool[T]) Close() error {
-	if p.closed.Load() {
-		return errors.New("pool is already closed")
-	}
-
-	if p.hasOutstandingObjects() {
-		return p.closeAsync()
-	}
-
-	return p.closeImmediate()
-}
-
-// Hook to Attempt to get an object from L1
+// preReadBlockHook is called before a read operation blocks on the ring buffer.
+// It attempts to get an object from L1 cache to avoid blocking.
 func (p *Pool[T]) preReadBlockHook() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -223,7 +237,7 @@ func (p *Pool[T]) preReadBlockHook() bool {
 			err := p.pool.Write(obj)
 			if err != nil {
 				if p.config.verbose {
-					p.logVerbose("[PREBLOCKHOOK] Error in pool.Write: %v", err)
+					fmt.Printf("[PREBLOCKHOOK] Error in pool.Write: %v", err)
 				}
 				continue
 			}

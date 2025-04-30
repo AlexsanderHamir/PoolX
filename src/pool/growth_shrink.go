@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// calculateNewPoolCapacity determines the new capacity for the pool based on the current capacity
+// and growth strategy. It uses either exponential growth (below threshold) or fixed-step growth
+// (above threshold) to calculate the new size.
 func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint64, cfg *growthParameters) uint64 {
 	if currentCap < threshold {
 		growth := maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
@@ -29,6 +32,9 @@ func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity uint64) bool {
 	return newCapacity > uint64(p.config.hardLimit)
 }
 
+// ShrinkExecution orchestrates the complete shrinking process for both the main pool and L1 cache.
+// It handles capacity calculations, validation, and performs the actual shrinking operations
+// while maintaining proper logging and statistics.
 func (p *Pool[T]) ShrinkExecution() {
 	p.logShrinkHeader()
 
@@ -68,6 +74,9 @@ func (p *Pool[T]) ShrinkExecution() {
 	}
 }
 
+// performShrink executes the actual shrinking of the main pool by creating a new ring buffer
+// with the target capacity and copying available objects from the old buffer.
+// It preserves in-use objects and updates pool statistics.
 func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
 	availableToKeep := newCapacity - inUse
 	if availableToKeep < 0 {
@@ -124,6 +133,11 @@ func (p *Pool[T]) logShrinkHeader() {
 	}
 }
 
+// shouldShrinkMainPool determines if the main pool should be shrunk based on various conditions:
+// - Current capacity vs minimum capacity
+// - New capacity vs current capacity
+// - Available objects vs in-use objects
+// Returns false if any condition prevents shrinking.
 func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int) bool {
 	minCap := p.config.shrink.minCapacity
 
@@ -170,6 +184,9 @@ func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int)
 	return true
 }
 
+// adjustMainShrinkTarget adjusts the target capacity for shrinking to ensure it respects
+// minimum capacity limits and in-use object counts. It also handles growth blocking
+// based on hard limits.
 func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 	minCap := p.config.shrink.minCapacity
 
@@ -197,6 +214,9 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 	return newCap
 }
 
+// createAndPopulateBuffer creates a new ring buffer with the specified capacity and
+// populates it with objects from the old buffer. It handles the complete migration
+// process including validation and error handling.
 func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {
 	newRingBuffer := p.createNewBuffer(newCapacity)
 	if newRingBuffer == nil {
@@ -291,7 +311,9 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacit
 	return nil
 }
 
-// calculateGrowthParameters computes the necessary parameters for pool growth
+// calculateGrowthParameters computes all necessary parameters for pool growth including
+// current capacity, objects in use, exponential threshold, and fixed growth step.
+// These parameters are used to determine the growth strategy and new capacity.
 func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64, uint64) {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity
@@ -301,7 +323,9 @@ func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64, uint64) {
 	return currentCap, objectsInUse, exponentialThreshold, fixedStep
 }
 
-// updatePoolCapacity handles the core capacity update logic
+// updatePoolCapacity handles the core capacity update logic, including hard limit checks
+// and the creation/population of the new buffer. It's the main entry point for
+// capacity changes in the pool.
 func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 	if p.needsToShrinkToHardLimit(newCapacity) {
 		newCapacity = uint64(p.config.hardLimit)
@@ -328,7 +352,8 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 	return nil
 }
 
-// updateGrowthStats updates all statistics related to pool growth
+// updateGrowthStats updates all statistics related to pool growth, including
+// timing information and hit/miss counters.
 func (p *Pool[T]) updateGrowthStats(now time.Time) {
 	p.stats.lastGrowTime = now
 	p.stats.l3MissCount++
