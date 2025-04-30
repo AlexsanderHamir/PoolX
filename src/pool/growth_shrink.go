@@ -280,10 +280,6 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacit
 	for range toAdd {
 		obj := p.allocator()
 
-		if isNil(obj) {
-			return fmt.Errorf("from fillRemainingCapacity(allocator): %w", errNilObject)
-		}
-
 		if err := newRingBuffer.Write(obj); err != nil {
 			if p.config.verbose {
 				log.Printf("[GROW] Error writing new item to ring buffer: %v", err)

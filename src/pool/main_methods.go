@@ -57,13 +57,13 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return zero, errPoolClosed
 	}
 
-	p.handleShrinkBlocked()
+	defer p.handleShrinkBlocked()
 
 	if obj, found := p.tryGetFromL1(false); found {
 		return obj, nil
 	}
 
-	if obj := p.tryRefillAndGetL1(); !isNil(obj) {
+	if obj, refillFailed := p.tryRefillAndGetL1(); !refillFailed {
 		return obj, nil
 	}
 
@@ -77,10 +77,6 @@ func (p *Pool[T]) Get() (zero T, err error) {
 }
 
 func (p *Pool[T]) Put(obj T) error {
-	if isNil(obj) {
-		return fmt.Errorf("from Put: %w", errNilObject)
-	}
-
 	if p.closed.Load() {
 		return errPoolClosed
 	}

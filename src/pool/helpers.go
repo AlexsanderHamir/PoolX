@@ -377,23 +377,24 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 }
 
 // Not locking here will cause race conditions, including tryGetFromL1.
-func (p *Pool[T]) tryRefillAndGetL1() T {
+func (p *Pool[T]) tryRefillAndGetL1() (zero T, refillFailed bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	ableToRefill, refillResult := p.tryRefillIfNeeded()
 	if !ableToRefill && refillResult.Error != nil {
 		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
-			return obj
+			refillFailed = true
+			return obj, refillFailed
 		}
 	}
 
 	if obj, found := p.tryGetFromL1(true); found {
-		return obj
+		return obj, refillFailed
 	}
 
-	var zero T
-	return zero
+	refillFailed = true
+	return zero, refillFailed
 }
 
 // could put everybody that uses rlock together instead of calling it multiple times

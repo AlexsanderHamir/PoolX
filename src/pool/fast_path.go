@@ -3,12 +3,7 @@ package pool
 import (
 	"fmt"
 	"log"
-	"reflect"
 )
-
-func isNil[T any](v T) bool {
-	return reflect.ValueOf(v).IsNil()
-}
 
 func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 	trigger := uint64(p.config.fastPath.growthEventsTrigger)
@@ -58,9 +53,6 @@ drainLoop:
 			if !ok {
 				break drainLoop
 			}
-			if isNil(obj) {
-				return fmt.Errorf("from channel transfer: %w", errNilObject)
-			}
 
 			if len(newCh) != cap(newCh) {
 				newCh <- obj
@@ -91,7 +83,7 @@ func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
 
 	select {
 	case obj, ok := <-ch:
-		if isNil(obj) || !ok {
+		if !ok {
 			return zero, found
 		}
 

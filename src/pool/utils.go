@@ -31,23 +31,23 @@ func (p *Pool[T]) handleShrinkBlocked() {
 	p.stats.lastTimeCalledGet.Store(now)
 }
 
-func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
+func (p *Pool[T]) handleRefillFailure(refillError error) (zero T, found bool) {
 	if p.closed.Load() {
-		var zero T
-		return zero, false
+		return zero, found
 	}
 
 	if p.config.verbose {
 		log.Printf("[GET] Unable to refill — reason: %s", refillError)
 	}
 
-	var zero T
 	if errors.Is(refillError, errRingBufferFailed) || errors.Is(refillError, errNilObject) {
 		if p.config.verbose {
 			log.Printf("[GET] Warning: unable to refill — reason: %s, returning nil", refillError)
 		}
-		return zero, false
+		return zero, found
 	}
+
+	found = true
 
 	return zero, true
 }
