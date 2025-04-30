@@ -63,7 +63,7 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	if obj, refillFailed := p.tryRefillAndGetL1(); !refillFailed {
+	if obj, found := p.tryRefillAndGetL1(); found {
 		return obj, nil
 	}
 
@@ -145,10 +145,6 @@ func (p *Pool[T]) shrink() {
 			}
 
 			p.mu.Unlock()
-
-			if p.config.verbose {
-				p.PrintPoolStats()
-			}
 		}
 	}
 }
@@ -240,9 +236,4 @@ func (p *Pool[T]) preReadBlockHook() bool {
 		}
 	}
 	return false
-}
-
-// GetBlockedReaders returns the number of readers currently blocked waiting for objects
-func (p *Pool[T]) GetBlockedReaders() int {
-	return p.pool.GetBlockedReaders()
 }

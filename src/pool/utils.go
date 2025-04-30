@@ -31,23 +31,23 @@ func (p *Pool[T]) handleShrinkBlocked() {
 	p.stats.lastTimeCalledGet.Store(now)
 }
 
-func (p *Pool[T]) handleRefillFailure(refillError error) (zero T, found bool) {
+func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 	if p.closed.Load() {
-		return zero, found
+		var zero T
+		return zero, false
 	}
 
 	if p.config.verbose {
 		log.Printf("[GET] Unable to refill — reason: %s", refillError)
 	}
 
+	var zero T
 	if errors.Is(refillError, errRingBufferFailed) || errors.Is(refillError, errNilObject) {
 		if p.config.verbose {
 			log.Printf("[GET] Warning: unable to refill — reason: %s, returning nil", refillError)
 		}
-		return zero, found
+		return zero, false
 	}
-
-	found = true
 
 	return zero, true
 }
@@ -65,6 +65,8 @@ func (p *Pool[T]) IsShrunk() bool {
 }
 
 func (p *Pool[T]) IsGrowth() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.stats.currentCapacity > uint64(p.config.initialCapacity)
 }
 
