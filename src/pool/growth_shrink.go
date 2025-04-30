@@ -7,7 +7,6 @@ import (
 )
 
 func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint64, cfg *growthParameters) uint64 {
-
 	if currentCap < threshold {
 		growth := maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
 		newCap := currentCap + growth
@@ -188,11 +187,11 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 		newCap = inUse
 	}
 
-	if newCap < p.config.hardLimit && p.isGrowthBlocked {
+	if newCap < p.config.hardLimit && p.isGrowthBlocked.Load() {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Allowing growth, capacity is lower than hard limit: %d", p.config.hardLimit)
 		}
-		p.isGrowthBlocked = false
+		p.isGrowthBlocked.Store(false)
 	}
 
 	return newCap
@@ -213,7 +212,7 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 		return nil, fmt.Errorf("failed to write items to new buffer: %w", err)
 	}
 
-	// p.pool.Close() // EOF ERROR
+	p.pool.Close()
 
 	if err := p.fillRemainingCapacity(newRingBuffer, newCapacity); err != nil {
 		return nil, fmt.Errorf("failed to fill remaining capacity: %w", err)
@@ -313,11 +312,11 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
 		if p.config.verbose {
 			log.Printf("[GROW] Capacity (%d) > hard limit (%d); shrinking to fit limit", newCapacity, p.config.hardLimit)
 		}
-		p.isGrowthBlocked = true
+		p.isGrowthBlocked.Store(true)
 	}
 
 	if newCapacity == uint64(p.config.hardLimit) {
-		p.isGrowthBlocked = true
+		p.isGrowthBlocked.Store(true)
 	}
 
 	newRingBuffer, err := p.createAndPopulateBuffer(newCapacity)

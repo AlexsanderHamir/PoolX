@@ -192,7 +192,7 @@ func (p *Pool[T]) isGrowthNeeded(fillTarget int) bool {
 func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, *refillResult) {
 	var result refillResult
 
-	if p.isGrowthBlocked {
+	if p.isGrowthBlocked.Load() {
 		result.Error = errGrowthBlocked
 		return false, &result
 	}
@@ -380,6 +380,7 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 func (p *Pool[T]) tryRefillAndGetL1() T {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	ableToRefill, refillResult := p.tryRefillIfNeeded()
 	if !ableToRefill && refillResult.Error != nil {
 		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
@@ -387,7 +388,7 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 		}
 	}
 
-	if obj, found := p.tryGetFromL1(); found {
+	if obj, found := p.tryGetFromL1(true); found {
 		return obj
 	}
 
@@ -395,8 +396,9 @@ func (p *Pool[T]) tryRefillAndGetL1() T {
 	return zero
 }
 
+// could put everybody that uses rlock together instead of calling it multiple times
 func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
-	currentLength, currentCap, currentPercent := p.calculateL1Usage() // holds lock
+	currentLength, currentCap, currentPercent := p.calculateL1Usage()
 	p.logL1Usage(currentLength, currentCap, currentPercent)
 
 	if currentPercent > p.config.fastPath.refillPercent {
@@ -404,6 +406,10 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 	}
 
 	fillTarget := p.calculateFillTarget(currentCap)
+	if fillTarget == 0 {
+		return true, nil
+	}
+
 	if p.config.verbose {
 		log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 	}
@@ -423,10 +429,17 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 // It blocks if the ring buffer is empty and the ring buffer is in blocking mode.
 // We always try to refill the ring buffer before calling the slow path.
 func (p *Pool[T]) SlowPath() (obj T, err error) {
+	var pool *RingBuffer[T]
+
+	p.mu.RLock()
+	pool = p.pool
+	p.mu.RUnlock()
+
 	if p.config.verbose {
 		p.logVerbose("[SLOWPATH] Getting object from ring buffer")
 	}
-	obj, err = p.pool.GetOne()
+
+	obj, err = pool.GetOne()
 	if err != nil {
 		return obj, fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
@@ -488,13 +501,4 @@ func (p *Pool[T]) performClosure() {
 	p.shrinkCond.Broadcast()
 	p.pool.Close()
 	p.cleanupCacheL1()
-}
-
-func (p *Pool[T]) L1Length() int {
-	chPtr := p.cacheL1.Load()
-	if chPtr == nil {
-		return 0
-	}
-	ch := *chPtr
-	return len(ch)
 }

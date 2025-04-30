@@ -22,7 +22,7 @@ type Pool[T any] struct {
 	stats      *poolStats   // Tracks pool usage statistics
 
 	isShrinkBlocked atomic.Bool  // Prevents shrinking when true
-	isGrowthBlocked bool         // Prevents growth when true
+	isGrowthBlocked atomic.Bool  // Prevents growth when true
 	poolType        reflect.Type // Type information for validation
 
 	config    *PoolConfig // Pool configuration parameters
