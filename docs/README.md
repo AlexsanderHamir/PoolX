@@ -2,6 +2,8 @@
 
 A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios.
 
+![Flow](./flow.png)
+
 ## Installation
 
 ```bash
