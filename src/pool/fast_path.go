@@ -45,6 +45,12 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 	oldCh := *oldChPtr
 	newCh := make(chan T, newCap)
 
+	close(oldCh)
+	p.cacheL1.Store(&newCh)
+
+	p.stats.currentL1Capacity = newCap
+	p.stats.lastL1ResizeAtGrowthNum = p.stats.totalGrowthEvents.Load()
+
 drainLoop:
 	for {
 		select {
@@ -68,14 +74,15 @@ drainLoop:
 		}
 	}
 
-	close(oldCh)
-	p.cacheL1.Store(&newCh)
-	p.stats.currentL1Capacity = newCap
-	p.stats.lastL1ResizeAtGrowthNum = p.stats.totalGrowthEvents.Load()
 	return nil
 }
 
-func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
+func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
+	if !locked {
+		p.mu.RLock()
+		defer p.mu.RUnlock()
+	}
+
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
 		return zero, found
@@ -85,7 +92,7 @@ func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
 	select {
 	case obj, ok := <-ch:
 		if isNil(obj) || !ok {
-			return zero, false
+			return zero, found
 		}
 
 		if p.config.verbose {
@@ -95,7 +102,8 @@ func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
 			p.stats.l1HitCount.Add(1)
 		}
 		p.updateUsageStats()
-		return obj, true
+		found = true
+		return obj, found
 	default:
 		if p.config.verbose {
 			log.Println("[GET] L1 miss — falling back to slow path")
@@ -106,6 +114,9 @@ func (p *Pool[T]) tryGetFromL1() (zero T, found bool) {
 }
 
 func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	defer func() {
 		if r := recover(); r != nil {
 			if p.config.verbose {

@@ -59,12 +59,9 @@ func (p *Pool[T]) Get() (zero T, err error) {
 
 	p.handleShrinkBlocked()
 
-	p.mu.RLock()
-	if obj, found := p.tryGetFromL1(); found { // potential race condition
-		p.mu.RUnlock()
+	if obj, found := p.tryGetFromL1(false); found {
 		return obj, nil
 	}
-	p.mu.RUnlock()
 
 	if obj := p.tryRefillAndGetL1(); !isNil(obj) {
 		return obj, nil
@@ -94,8 +91,7 @@ func (p *Pool[T]) Put(obj T) error {
 		p.logVerbose("[PUT] Releasing object")
 	}
 
-	blockedReaders := p.pool.GetBlockedReaders()
-	if blockedReaders > 0 {
+	if p.pool.GetBlockedReaders() > 0 {
 		err := p.slowPathPut(obj)
 		if err != nil {
 			if p.config.verbose {
@@ -106,7 +102,7 @@ func (p *Pool[T]) Put(obj T) error {
 		return nil
 	}
 
-	if ok := p.tryFastPathPut(obj); ok { // potential race condition
+	if ok := p.tryFastPathPut(obj); ok {
 		return nil
 	}
 
@@ -167,7 +163,7 @@ func (p *Pool[T]) grow(now time.Time) error {
 		return errPoolClosed
 	}
 
-	if p.isGrowthBlocked {
+	if p.isGrowthBlocked.Load() {
 		return errGrowthBlocked
 	}
 
@@ -213,6 +209,9 @@ func (p *Pool[T]) Close() error {
 
 // Hook to Attempt to get an object from L1
 func (p *Pool[T]) preReadBlockHook() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	attempts := p.config.fastPath.preReadBlockHookAttempts
 	if attempts <= 0 {
 		attempts = 1
