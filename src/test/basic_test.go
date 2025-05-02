@@ -135,3 +135,47 @@ func TestConfigValues(t *testing.T) {
 
 	verifyCustomValuesDifferent(t, originalValues, customConfig)
 }
+
+func TestDisabledChannelGrowth(t *testing.T) {
+	config, err := pool.NewPoolConfigBuilder().
+		SetInitialCapacity(2).
+		SetGrowthPercent(0.5).
+		SetFixedGrowthFactor(1.0).
+		SetMinShrinkCapacity(2).
+		SetFastPathEnableChannelGrowth(false). // Disable channel growth
+		Build()
+	require.NoError(t, err)
+
+	allocator := func() *TestObject {
+		return &TestObject{Value: 42}
+	}
+
+	cleaner := func(obj *TestObject) {
+		obj.Value = 0
+	}
+
+	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, p.Close())
+	}()
+
+	// Verify initial state
+	assert.False(t, config.GetFastPath().IsEnableChannelGrowth())
+
+	// Get objects to trigger potential growth
+	objects := make([]*TestObject, 10)
+	for i := range 10 {
+		objects[i], err = p.Get()
+		assert.NoError(t, err)
+		assert.NotNil(t, objects[i])
+	}
+
+	// Verify pool still grew despite channel growth being disabled
+	assert.True(t, p.IsGrowth())
+
+	// Return objects
+	for _, obj := range objects {
+		p.Put(obj)
+	}
+}
