@@ -19,7 +19,7 @@ go get github.com/AlexsanderHamir/PoolX
 
 ```go
 import (
-    "github.com/AlexsanderHamir/PoolX/pool"
+    "github.com/AlexsanderHamir/PoolX/src/pool"
     "time"
 )
 
