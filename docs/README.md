@@ -1,4 +1,4 @@
-# Memory Context
+# PoolX
 
 A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios.
 
@@ -162,7 +162,7 @@ if err != nil {
 
 ## Contributing
 
-We welcome contributions to Memory Context! Here's how you can help:
+We welcome contributions to PoolX! Here's how you can help:
 
 ### Development Setup
 
@@ -224,4 +224,4 @@ When reporting issues, please include:
 - For bug reports, please open a GitHub Issue
 - For feature requests, please open a GitHub Issue with the "enhancement" label
 
-Thank you for contributing to Memory Context!
+Thank you for contributing to PoolX!
