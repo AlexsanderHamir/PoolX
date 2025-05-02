@@ -1,6 +1,6 @@
 # Pool Design Documentation
 
-![Flow](./flow.png)
+![Flow](../assets/flow.png)
 
 ## Overview
 
