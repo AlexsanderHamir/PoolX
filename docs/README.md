@@ -19,6 +19,7 @@ import (
 )
 
 // Create a new pool configuration
+// Bulk functions
 poolConfig, err := pool.NewPoolConfigBuilder().
     SetPoolBasicConfigs(128, 5000, false, true).
     SetRingBufferBasicConfigs(true, 0, 0, time.Second*5).
@@ -38,6 +39,17 @@ poolConfig, err := pool.NewPoolConfigBuilder().
     SetFastPathGrowthConfigs(100.0, 1.5, 0.85).
     SetFastPathShrinkConfigs(0.7, 5).
     Build()
+
+// Use individual setter methods if you only need to change one field
+func (b *poolConfigBuilder) SetInitialCapacity(cap int) *poolConfigBuilder {
+	b.config.initialCapacity = cap
+	return b
+}
+
+func (b *poolConfigBuilder) SetHardLimit(count int) *poolConfigBuilder {
+	b.config.hardLimit = count
+	return b
+}
 
 if err != nil {
     // handle error
@@ -157,7 +169,7 @@ We welcome contributions to Memory Context! Here's how you can help:
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/memory_context.git
+   git clone https://github.com/AlexsanderHamir/memory_context.git
    cd memory_context
    ```
 3. Create a new branch for your changes:
