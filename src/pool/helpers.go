@@ -192,26 +192,20 @@ func (p *Pool[T]) isGrowthNeeded(fillTarget int) bool {
 	return noObjsAvailable || fillTarget > poolLength
 }
 
-func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, *refillResult) {
-	var result refillResult
-
+func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, error) {
 	if p.isGrowthBlocked.Load() {
-		result.Error = errGrowthBlocked
-		return false, &result
+		return false, errGrowthBlocked
 	}
 
 	if p.isGrowthNeeded(fillTarget) {
 		now := time.Now()
 		err := p.grow(now)
 		if err != nil {
-			result.Error = err
-			return false, &result
+			return false, err
 		}
-
-		result.Success = true
 	}
 
-	return true, &result
+	return true, nil
 }
 
 func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
@@ -236,73 +230,67 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 	return part1, part2, nil
 }
 
-func (p *Pool[T]) moveItemsToL1(items []T, result *refillResult) {
+func (p *Pool[T]) moveItemsToL1(items []T) (int, int, error) {
+
+	var itemsMoved, itemsFailed int
 	defer func() {
 		if r := recover(); r != nil {
 			if p.config.verbose {
 				fmt.Printf("[PUT] panic on fast path put — channel closed")
 			}
-			result.Error = fmt.Errorf("panic on fast path put — channel closed")
 		}
 	}()
 
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
-		result.Error = fmt.Errorf("cacheL1 is nil")
-		return
+		return itemsMoved, itemsFailed, fmt.Errorf("cacheL1 is nil")
 	}
 	ch := *chPtr
 
 	for _, item := range items {
 		select {
 		case ch <- item:
-			result.ItemsMoved++
+			itemsMoved++
 			if p.config.verbose {
 				fmt.Printf("[REFILL] Moved object to L1 | Remaining: %d", len(ch))
 			}
 		default:
-			result.ItemsFailed++
+			itemsFailed++
 			if err := p.pool.Write(item); err != nil {
 				if p.config.verbose {
 					fmt.Printf("[REFILL] Error putting object back in ring buffer: %v", err)
 				}
-				result.Error = fmt.Errorf("%w: %w", errRingBufferFailed, err)
-				return
+				return itemsMoved, itemsFailed, fmt.Errorf("%w: %w", errRingBufferFailed, err)
 			}
 		}
 	}
+	return itemsMoved, itemsFailed, nil
 }
 
 // refill attempts to refill the L1 cache with objects from the pool.
-// It returns a refillResult containing information about the refill operation.
-func (p *Pool[T]) refill(fillTarget int) *refillResult {
-	var result *refillResult
-
-	shouldContinue, growthResult := p.poolGrowthNeeded(fillTarget)
+// Returns the number of items moved, number of items failed, and any error that occurred.
+func (p *Pool[T]) refill(fillTarget int) (int, int, error) {
+	shouldContinue, err := p.poolGrowthNeeded(fillTarget)
 	if !shouldContinue {
-		return growthResult
+		return 0, 0, err
 	}
 
-	result = growthResult
 	part1, part2, err := p.getItemsToMove(fillTarget)
 	if err != nil {
-		result.Success = false
-		result.Error = err
-		return result
+		return 0, 0, err
 	}
 
-	p.moveItemsToL1(part1, result)
-	if result.Error != nil {
-		return result
+	itemsMoved1, itemsFailed1, err := p.moveItemsToL1(part1)
+	if err != nil {
+		return itemsMoved1, itemsFailed1, err
 	}
 
-	p.moveItemsToL1(part2, result)
-	if result.Error != nil {
-		return result
+	itemsMoved2, itemsFailed2, err := p.moveItemsToL1(part2)
+	if err != nil {
+		return itemsMoved1 + itemsMoved2, itemsFailed1 + itemsFailed2, err
 	}
 
-	result.Success = true
-	return result
+	return itemsMoved1 + itemsMoved2, itemsFailed1 + itemsFailed2, nil
 }
 
 func (p *Pool[T]) slowPathPut(obj T) error {
@@ -377,7 +365,7 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 	*idleOK, *utilOK = false, false
 }
 
-func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
+func (p *Pool[T]) tryRefillIfNeeded() (bool, error) {
 	currentLength, currentCap, currentPercent := p.calculateL1Usage()
 	p.logL1Usage(currentLength, currentCap, currentPercent)
 
@@ -390,19 +378,19 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, *refillResult) {
 		log.Printf("[REFILL] Triggering refill — fillTarget: %d", fillTarget)
 	}
 
-	refillResult := p.refill(fillTarget)
-	if !refillResult.Success {
+	itemsMoved, _, err := p.refill(fillTarget)
+	if err != nil {
 		if p.config.verbose {
-			log.Printf("[REFILL] Refill failed: %s", refillResult.Error)
+			log.Printf("[REFILL] Refill failed: %s", err)
 		}
-		return false, refillResult
+		return false, err
 	}
 
 	if p.config.verbose {
-		fmt.Printf("[REFILL] Refill successful: %d items moved to L1", refillResult.ItemsMoved)
+		fmt.Printf("[REFILL] Refill successful: %d items moved to L1", itemsMoved)
 	}
 
-	return true, refillResult
+	return true, nil
 }
 
 // SlowPath retrieves an object from the ring buffer. It blocks if the ring buffer is empty
@@ -510,9 +498,9 @@ func (p *Pool[T]) tryRefillAndGetL1() (T, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	ableToRefill, refillResult := p.tryRefillIfNeeded()
-	if !ableToRefill && refillResult.Error != nil {
-		if obj, shouldContinue := p.handleRefillFailure(refillResult.Error); !shouldContinue {
+	ableToRefill, err := p.tryRefillIfNeeded()
+	if !ableToRefill && err != nil {
+		if obj, shouldContinue := p.handleRefillFailure(err); !shouldContinue {
 			return obj, false
 		}
 	}

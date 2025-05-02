@@ -13,7 +13,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Max capacity: 10000 objects (reasonable upper limit for most systems)
 		// - Verbose logging enabled for monitoring
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(256, 10000, true, true, false).
+		SetPoolBasicConfigs(256, 10000, false, true, false).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)

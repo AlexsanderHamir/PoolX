@@ -338,22 +338,6 @@ func (f *fastPathParameters) GetPreReadBlockHookAttempts() int {
 	return f.preReadBlockHookAttempts
 }
 
-// refillResult reports the outcome of a fast path refill operation.
-// Provides detailed information about the success or failure of refill attempts.
-type refillResult struct {
-	// Error contains any error that occurred during refill
-	Error error
-
-	// Success indicates whether the refill operation was successful
-	Success bool
-
-	// ItemsMoved reports how many items were successfully moved to the fast path
-	ItemsMoved int
-
-	// ItemsFailed reports how many items failed to move to the fast path
-	ItemsFailed int
-}
-
 // shrinkDefaults provides default values for shrink parameters.
 // These defaults are used when specific parameters are not configured.
 type shrinkDefaults struct {
