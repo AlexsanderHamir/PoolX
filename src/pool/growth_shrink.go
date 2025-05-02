@@ -35,7 +35,7 @@ func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity uint64) bool {
 // ShrinkExecution orchestrates the complete shrinking process for both the main pool and L1 cache.
 // It handles capacity calculations, validation, and performs the actual shrinking operations
 // while maintaining proper logging and statistics.
-func (p *Pool[T]) ShrinkExecution() {
+func (p *Pool[T]) shrinkExecution() {
 	p.logShrinkHeader()
 
 	currentCap := p.stats.currentCapacity
@@ -78,42 +78,90 @@ func (p *Pool[T]) ShrinkExecution() {
 // with the target capacity and copying available objects from the old buffer.
 // It preserves in-use objects and updates pool statistics.
 func (p *Pool[T]) performShrink(newCapacity, inUse int, currentCap uint64) {
+	if !p.canShrink(newCapacity, inUse) {
+		return
+	}
+
+	newRingBuffer := p.createShrinkBuffer(newCapacity)
+	itemsToKeep := p.calculateItemsToKeep(newCapacity, inUse)
+
+	if err := p.migrateItems(newRingBuffer, itemsToKeep); err != nil {
+		if p.config.verbose {
+			log.Printf("[SHRINK] Failed to migrate items: %v", err)
+		}
+		return
+	}
+
+	p.finalizeShrink(newRingBuffer, newCapacity, currentCap, itemsToKeep, inUse)
+}
+
+// canShrink checks if the pool can be shrunk based on the new capacity and in-use objects
+func (p *Pool[T]) canShrink(newCapacity, inUse int) bool {
 	availableToKeep := newCapacity - inUse
 	if availableToKeep < 0 {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
 		}
-		return
+		return false
 	}
+	return true
+}
 
-	newRingBuffer := NewRingBuffer[T](int(newCapacity))
+// createShrinkBuffer creates a new ring buffer with the specified capacity
+func (p *Pool[T]) createShrinkBuffer(newCapacity int) *RingBuffer[T] {
+	newRingBuffer := NewRingBuffer[T](newCapacity)
 	newRingBuffer.CopyConfig(p.pool)
+	return newRingBuffer
+}
 
-	itemsToKeep := min(availableToKeep, p.pool.Length())
-	if itemsToKeep > 0 {
-		part1, part2, err := p.pool.GetNView(itemsToKeep)
-		if err != nil && err != errIsEmpty {
-			if p.config.verbose {
-				log.Printf("[SHRINK] Error getting items from old ring buffer: %v", err)
-			}
-			return
-		}
+// calculateItemsToKeep determines how many items can be kept during the shrink operation
+func (p *Pool[T]) calculateItemsToKeep(newCapacity, inUse int) int {
+	availableToKeep := newCapacity - inUse
+	return min(availableToKeep, p.pool.Length())
+}
 
-		if _, err := newRingBuffer.WriteMany(part1); err != nil {
-			if p.config.verbose {
-				log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
-			}
-			return
-		}
-
-		if _, err := newRingBuffer.WriteMany(part2); err != nil {
-			if p.config.verbose {
-				log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
-			}
-			return
-		}
+// migrateItems moves items from the old buffer to the new buffer
+func (p *Pool[T]) migrateItems(newRingBuffer *RingBuffer[T], itemsToKeep int) error {
+	if itemsToKeep <= 0 {
+		return nil
 	}
 
+	part1, part2, err := p.pool.GetNView(itemsToKeep)
+	if err != nil && err != errIsEmpty {
+		if p.config.verbose {
+			log.Printf("[SHRINK] Error getting items from old ring buffer: %v", err)
+		}
+		return err
+	}
+
+	if err := p.writeItemsToNewBuffer(newRingBuffer, part1, part2); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// writeItemsToNewBuffer writes items to the new ring buffer
+func (p *Pool[T]) writeItemsToNewBuffer(newRingBuffer *RingBuffer[T], part1, part2 []T) error {
+	if _, err := newRingBuffer.WriteMany(part1); err != nil {
+		if p.config.verbose {
+			log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
+		}
+		return err
+	}
+
+	if _, err := newRingBuffer.WriteMany(part2); err != nil {
+		if p.config.verbose {
+			log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
+		}
+		return err
+	}
+
+	return nil
+}
+
+// finalizeShrink updates the pool with the new buffer and updates statistics
+func (p *Pool[T]) finalizeShrink(newRingBuffer *RingBuffer[T], newCapacity int, currentCap uint64, itemsToKeep, inUse int) {
 	p.pool = newRingBuffer
 	p.stats.currentCapacity = uint64(newCapacity)
 	p.stats.totalShrinkEvents++
@@ -189,29 +237,31 @@ func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int)
 // based on hard limits.
 func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 	minCap := p.config.shrink.minCapacity
+	adjustedCap := newCap
 
-	if newCap < minCap {
-		if p.config.verbose {
-			log.Printf("[SHRINK] Adjusting to min capacity: %d", minCap)
-		}
-		newCap = minCap
+	// Ensure we don't go below minimum capacity
+	if adjustedCap < minCap {
+		adjustedCap = minCap
 	}
 
-	if newCap <= inUse {
-		if p.config.verbose {
-			log.Printf("[SHRINK] Adjusting to match in-use objects: %d", inUse)
-		}
-		newCap = inUse
+	// Ensure we have enough capacity for in-use objects
+	if adjustedCap <= inUse {
+		adjustedCap = inUse
 	}
 
-	if newCap < p.config.hardLimit && p.isGrowthBlocked.Load() {
-		if p.config.verbose {
-			log.Printf("[SHRINK] Allowing growth, capacity is lower than hard limit: %d", p.config.hardLimit)
-		}
+	// Unblock growth if we're below hard limit
+	if adjustedCap < p.config.hardLimit && p.isGrowthBlocked.Load() {
 		p.isGrowthBlocked.Store(false)
 	}
 
-	return newCap
+	if p.config.verbose {
+		if adjustedCap != newCap {
+			log.Printf("[SHRINK] Capacity adjusted from %d to %d (min: %d, in-use: %d, hard-limit: %d)",
+				newCap, adjustedCap, minCap, inUse, p.config.hardLimit)
+		}
+	}
+
+	return adjustedCap
 }
 
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and

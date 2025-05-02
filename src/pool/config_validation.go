@@ -59,10 +59,6 @@ func (b *poolConfigBuilder) validateShrinkConfig() error {
 		return fmt.Errorf("minIdleBeforeShrink must be greater than 0, got %d", sp.minIdleBeforeShrink)
 	}
 
-	if sp.idleThreshold < sp.checkInterval {
-		return fmt.Errorf("idleThreshold (%v) must be >= checkInterval (%v)", sp.idleThreshold, sp.checkInterval)
-	}
-
 	if sp.minCapacity > b.config.initialCapacity {
 		return fmt.Errorf("minCapacity (%d) must be <= initialCapacity (%d)", sp.minCapacity, b.config.initialCapacity)
 	}

@@ -5,31 +5,55 @@ import (
 	"log"
 )
 
+// calculateNewCapacity determines the new capacity based on current capacity and growth configuration
+func (p *Pool[T]) calculateNewCapacity(currentCap uint64, cfg *growthParameters) uint64 {
+	threshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
+	step := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
+
+	if currentCap < threshold {
+		return currentCap + maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
+	}
+	return currentCap + step
+}
+
+// drainOldChannel transfers objects from the old channel to the new channel or pool
+func (p *Pool[T]) drainOldChannel(oldCh, newCh chan T) error {
+	for {
+		select {
+		case obj, ok := <-oldCh:
+			if !ok {
+				return nil
+			}
+
+			if len(newCh) != cap(newCh) {
+				newCh <- obj
+			} else {
+				if err := p.pool.Write(obj); err != nil {
+					return fmt.Errorf("from channel transfer: %w", err)
+				}
+			}
+		default:
+			return nil
+		}
+	}
+}
+
 // tryL1ResizeIfTriggered attempts to resize the L1 cache channel if growth events have exceeded
 // the configured trigger threshold. It implements an adaptive growth strategy that uses either
 // exponential or fixed growth based on the current capacity relative to a threshold.
 func (p *Pool[T]) tryL1ResizeIfTriggered() error {
-	trigger := uint64(p.config.fastPath.growthEventsTrigger)
 	if !p.config.fastPath.enableChannelGrowth {
 		return nil
 	}
 
+	trigger := uint64(p.config.fastPath.growthEventsTrigger)
 	sinceLastResize := p.stats.totalGrowthEvents.Load() - p.stats.lastL1ResizeAtGrowthNum
 	if sinceLastResize < trigger {
 		return nil
 	}
 
 	currentCap := p.stats.currentL1Capacity
-	cfg := p.config.fastPath.growth
-	threshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
-	step := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
-
-	var newCap uint64
-	if currentCap < threshold {
-		newCap = currentCap + maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
-	} else {
-		newCap = currentCap + step
-	}
+	newCap := p.calculateNewCapacity(currentCap, p.config.fastPath.growth)
 
 	if p.config.verbose {
 		log.Printf("[RESIZE] Starting L1 resize from %d to %d capacity", currentCap, newCap)
@@ -49,32 +73,12 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 	p.stats.currentL1Capacity = newCap
 	p.stats.lastL1ResizeAtGrowthNum = p.stats.totalGrowthEvents.Load()
 
-drainLoop:
-	for {
-		select {
-		case obj, ok := <-oldCh:
-			if !ok {
-				break drainLoop
-			}
-
-			if len(newCh) != cap(newCh) {
-				newCh <- obj
-			} else {
-				if err := p.pool.Write(obj); err != nil {
-					return fmt.Errorf("from channel transfer: %w", err)
-				}
-			}
-		default:
-			break drainLoop
-		}
-	}
-
-	return nil
+	return p.drainOldChannel(oldCh, newCh)
 }
 
-// tryGetFromL1 attempts to retrieve an object from the L1 cache channel using a non-blocking
-// select operation. If successful, it updates hit statistics and returns the object.
-// If the channel is empty, it returns false to indicate a miss.
+// tryGetFromL1 attempts to retrieve an object from the L1 cache channel.
+// If lock is false, it acquires a read lock before accessing the cache.
+// Returns the object and true if found, otherwise returns zero value and false.
 func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 	if !lock {
 		p.mu.RLock()
@@ -83,14 +87,13 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
-		return zero, found
+		return zero, false
 	}
-	ch := *chPtr
 
 	select {
-	case obj, ok := <-ch:
+	case obj, ok := <-*chPtr:
 		if !ok {
-			return zero, found
+			return zero, false
 		}
 
 		if p.config.verbose {
@@ -99,16 +102,15 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 		if p.config.enableStats {
 			p.stats.l1HitCount.Add(1)
 		}
-
 		p.updateUsageStats()
-		found = true
-		return obj, found
+
+		return obj, true
+
 	default:
 		if p.config.verbose {
 			log.Println("[GET] L1 miss — falling back to slow path")
 		}
-
-		return zero, found
+		return zero, false
 	}
 }
 
@@ -240,46 +242,70 @@ func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap uint64) int {
 	return newCap
 }
 
-// shrinkFastPath performs the actual shrinking of the L1 cache channel to the specified
-// new capacity, copying available objects to the new channel and updating statistics.
-func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
+// copyObjectsToNewChannel copies objects from the old channel to the new channel
+// up to the specified count. Returns the number of objects actually copied.
+func (p *Pool[T]) copyObjectsToNewChannel(oldCh, newCh chan T, count int) int {
+	copied := 0
+	for range count {
+		select {
+		case obj, ok := <-oldCh:
+			if !ok {
+				return copied
+			}
+			newCh <- obj
+			copied++
+		default:
+			if p.config.verbose {
+				log.Println("[SHRINK] - cacheL1 is empty, or newL1 is full")
+			}
+			return copied
+		}
+	}
+	return copied
+}
+
+// createNewL1Channel creates a new L1 channel with the specified capacity
+// and copies objects from the old channel if possible.
+func (p *Pool[T]) createNewL1Channel(oldCh chan T, newCapacity, inUse int) chan T {
 	availableObjsToCopy := newCapacity - inUse
 	if availableObjsToCopy <= 0 {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Skipped — no room for available objects after shrink (in-use: %d, requested: %d)", inUse, newCapacity)
 		}
-		return
+		return nil
 	}
 
+	copyCount := min(availableObjsToCopy, len(oldCh))
+	newL1 := make(chan T, newCapacity)
+
+	if copyCount > 0 {
+		p.copyObjectsToNewChannel(oldCh, newL1, copyCount)
+	}
+
+	return newL1
+}
+
+// updateShrinkStats updates the pool statistics after a shrink operation
+func (p *Pool[T]) updateShrinkStats(newCapacity int) {
+	p.stats.lastResizeAtShrinkNum = p.stats.totalShrinkEvents
+	p.stats.currentL1Capacity = uint64(newCapacity)
+}
+
+func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	chPtr := p.cacheL1.Load()
 	if chPtr == nil {
 		return
 	}
 	ch := *chPtr
+	close(ch)
 
-	copyCount := min(availableObjsToCopy, len(ch))
-	newL1 := make(chan T, newCapacity)
-
-	for range copyCount {
-		select {
-		case obj, ok := <-ch:
-			if !ok {
-				return
-			}
-			newL1 <- obj
-		default:
-			if p.config.verbose {
-				log.Println("[SHRINK] - cacheL1 is empty, or newL1 is full")
-			}
-
-		}
-
+	newL1 := p.createNewL1Channel(ch, newCapacity, inUse)
+	if newL1 == nil {
+		return
 	}
 
-	close(ch)
 	p.cacheL1.Store(&newL1)
-	p.stats.lastResizeAtShrinkNum = p.stats.totalShrinkEvents
-	p.stats.currentL1Capacity = uint64(newCapacity)
+	p.updateShrinkStats(newCapacity)
 }
 
 func (p *Pool[T]) logFastPathShrink(currentCap uint64, newCap int, inUse int) {

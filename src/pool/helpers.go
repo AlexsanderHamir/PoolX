@@ -141,7 +141,7 @@ func (p *Pool[T]) handleHealthyUtilization(utilization, minUtil float64, underut
 	}
 }
 
-func (p *Pool[T]) UtilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
+func (p *Pool[T]) utilizationCheck(underutilizationRounds *int, shrinkPermissionUtilization *bool) {
 	utilization := p.calculateUtilization()
 	minUtil := p.config.shrink.minUtilizationBeforeShrink * 100
 	requiredRounds := p.config.shrink.stableUnderutilizationRounds
@@ -361,7 +361,7 @@ func (p *Pool[T]) performShrinkChecks(params *shrinkParameters, idleCount, under
 		log.Printf("[SHRINK] IdleCheck — idles: %d / min: %d | allowed: %v", *idleCount, params.minIdleBeforeShrink, *idleOK)
 	}
 
-	p.UtilizationCheck(underutilCount, utilOK)
+	p.utilizationCheck(underutilCount, utilOK)
 	if p.config.verbose {
 		log.Printf("[SHRINK] UtilCheck — rounds: %d / required: %d | allowed: %v", *underutilCount, params.stableUnderutilizationRounds, *utilOK)
 	}
@@ -372,7 +372,7 @@ func (p *Pool[T]) executeShrink(idleCount, underutilCount *int, idleOK, utilOK *
 		log.Println("[SHRINK] Shrink conditions met — executing shrink.")
 	}
 
-	p.ShrinkExecution()
+	p.shrinkExecution()
 	*idleCount, *underutilCount = 0, 0
 	*idleOK, *utilOK = false, false
 }
