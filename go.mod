@@ -1,4 +1,4 @@
-module github.com/AlexsanderHamir/memory_context
+module github.com/AlexsanderHamir/PoolX
 
 go 1.23.4
 

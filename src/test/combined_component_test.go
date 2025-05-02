@@ -3,7 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/AlexsanderHamir/memory_context/src/pool"
+	"github.com/AlexsanderHamir/PoolX/src/pool"
 	"github.com/stretchr/testify/require"
 )
 

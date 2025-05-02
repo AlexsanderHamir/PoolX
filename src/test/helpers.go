@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/src/pool"
+	"github.com/AlexsanderHamir/PoolX/src/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

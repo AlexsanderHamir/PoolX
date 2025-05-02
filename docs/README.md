@@ -7,14 +7,14 @@ A highly configurable object pool implementation designed to control object crea
 ## Installation
 
 ```bash
-go get github.com/AlexsanderHamir/memory_context
+go get github.com/AlexsanderHamir/PoolX
 ```
 
 ## Quick Example
 
 ```go
 import (
-    "github.com/AlexsanderHamir/memory_context/pool"
+    "github.com/AlexsanderHamir/PoolX/pool"
     "time"
 )
 
@@ -169,8 +169,8 @@ We welcome contributions to Memory Context! Here's how you can help:
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/AlexsanderHamir/memory_context.git
-   cd memory_context
+   git clone https://github.com/AlexsanderHamir/PoolX.git
+   cd PoolX
    ```
 3. Create a new branch for your changes:
    ```bash

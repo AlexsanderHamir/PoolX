@@ -3,7 +3,7 @@ package configs
 import (
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/src/pool"
+	"github.com/AlexsanderHamir/PoolX/src/pool"
 )
 
 func CreateHighThroughputConfig() *pool.PoolConfig {

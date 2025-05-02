@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AlexsanderHamir/memory_context/code_examples/configs"
-	"github.com/AlexsanderHamir/memory_context/src/pool"
+	"github.com/AlexsanderHamir/PoolX/code_examples/configs"
+	"github.com/AlexsanderHamir/PoolX/src/pool"
 )
 
 type Example struct {
