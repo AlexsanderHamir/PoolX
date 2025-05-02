@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -210,7 +209,7 @@ func createTestPool(t *testing.T, config *pool.PoolConfig) *pool.Pool[*TestObjec
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 	return p
 }

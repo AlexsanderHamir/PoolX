@@ -64,7 +64,7 @@ func validateAllocator[T any](allocator func() T) error {
 // configuration, allocator, cleaner, and ring buffer. It sets up the L1 cache channel
 // and initializes all necessary synchronization primitives.
 // Returns a fully initialized Pool instance or an error if initialization fails.
-func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T], poolType reflect.Type) (*Pool[T], error) {
+func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *RingBuffer[T]) (*Pool[T], error) {
 	ch := make(chan T, config.fastPath.initialSize)
 
 	poolObj := &Pool[T]{

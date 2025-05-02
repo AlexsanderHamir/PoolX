@@ -3,8 +3,7 @@ package code_examples
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
-	"reflect"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -26,7 +25,6 @@ func RunBasicExample() error {
 			obj.ID = 0
 			obj.Name = ""
 		},
-		reflect.TypeOf(&Example{}),
 	)
 	if err != nil {
 		return err

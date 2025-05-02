@@ -1,7 +1,6 @@
 package test
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestPoolGrowth(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, p.Close())
@@ -75,7 +74,7 @@ func TestPoolShrink(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, p.Close())
@@ -154,7 +153,7 @@ func TestDisabledChannelGrowth(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, p.Close())

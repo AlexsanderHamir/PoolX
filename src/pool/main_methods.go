@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 )
 
@@ -19,7 +18,7 @@ var (
 // NewPool creates a new object pool with the given configuration, allocator, cleaner, and pool type.
 // Only pointers can be stored in the pool. The allocator function creates new objects,
 // and the cleaner function resets objects before they are reused.
-func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poolType reflect.Type) (*Pool[T], error) {
+func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (*Pool[T], error) {
 	if err := validateAllocator(allocator); err != nil {
 		return nil, err
 	}
@@ -35,7 +34,7 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T), poo
 
 	stats := initializePoolStats(config)
 
-	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer, poolType)
+	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer)
 	if err != nil {
 		return nil, err
 	}

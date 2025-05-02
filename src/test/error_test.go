@@ -1,7 +1,6 @@
 package test
 
 import (
-	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -299,7 +298,7 @@ func TestInvalidAllocator(t *testing.T) {
 	cleaner := func(obj TestObject) {
 	}
 
-	_, err = pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	_, err = pool.NewPool(config, allocator, cleaner)
 	assert.Error(t, err)
 }
 
@@ -312,7 +311,7 @@ func TestNilConfig(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(nil, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(nil, allocator, cleaner)
 	require.NoError(t, err)
 	assert.NotNil(t, p)
 }
@@ -336,7 +335,7 @@ func TestResourceCleanup(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner, reflect.TypeOf(&TestObject{}))
+	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
 
 	objNum := 100

@@ -60,9 +60,26 @@ if err != nil {
     // handle error
 }
 
+type Example struct {
+	ID   int
+	Name string
+}
+
+// Define an allocator function that creates new objects
+allocator := func() *Example {
+    // Example: Create a new object
+    return &Example{}, nil
+}
+
+// Define a cleaner function that resets objects before returning to pool
+cleaner := func(obj *Example) {
+    obj.ID = 0
+    obj.Name = ""
+    return nil
+}
+
 // Create a new pool with the configuration
-poolType := reflect.TypeOf(&Example{})
-pool, err := pool.NewPool(poolConfig, allocator, cleaner, poolType)
+pool, err := pool.NewPool(poolConfig, allocator, cleaner)
 if err != nil {
     panic(err)
 }
