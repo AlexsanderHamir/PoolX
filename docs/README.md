@@ -1,7 +1,6 @@
 # PoolX
 [![GoDoc](https://pkg.go.dev/badge/github.com/username/project)](https://pkg.go.dev/github.com/AlexsanderHamir/PoolX)
 [![Go Report Card](https://goreportcard.com/badge/github.com/username/project)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
-[![Coverage Status](https://coveralls.io/repos/github/username/project/badge.svg)](https://coveralls.io/github/AlexsanderHamir/PoolX)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 
