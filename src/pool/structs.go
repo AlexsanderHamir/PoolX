@@ -5,6 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/AlexsanderHamir/ringbuffer"
+	config "github.com/AlexsanderHamir/ringbuffer/config"
 )
 
 // Pool is a generic object pool implementation that provides efficient object reuse.
@@ -27,7 +30,7 @@ type Pool[T any] struct {
 
 	// pool is the main storage using a ring buffer.
 	// It provides efficient operations and handles the bulk of object storage.
-	pool *RingBuffer[T]
+	pool *ringbuffer.RingBuffer[T]
 
 	// mu protects pool state modifications and ensures thread safety
 	mu sync.RWMutex
@@ -97,7 +100,7 @@ type PoolConfig struct {
 
 	// ringBufferConfig configures the main pool's ring buffer.
 	// Controls blocking behavior and timeouts for the main storage.
-	ringBufferConfig *ringBufferConfig
+	ringBufferConfig *config.RingBufferConfig
 }
 
 // Getter methods for PoolConfig
@@ -121,7 +124,7 @@ func (c *PoolConfig) GetFastPath() *fastPathParameters {
 	return c.fastPath
 }
 
-func (c *PoolConfig) GetRingBufferConfig() *ringBufferConfig {
+func (c *PoolConfig) GetRingBufferConfig() *config.RingBufferConfig {
 	return c.ringBufferConfig
 }
 
