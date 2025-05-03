@@ -111,7 +111,7 @@ func (p *Pool[T]) updateDerivedStats() {
 	}
 
 	p.stats.mu.Lock()
-	availableObjects := p.pool.Length() + l1Len
+	availableObjects := p.pool.Length(false) + l1Len
 	if totalCreated > 0 {
 		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
 	}
@@ -174,9 +174,9 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		ObjectsInUse:       p.stats.objectsInUse.Load(),
-		AvailableObjects:   uint64(p.pool.Length() + l1Len),
+		AvailableObjects:   uint64(p.pool.Length(false) + l1Len),
 		CurrentCapacity:    p.stats.currentCapacity,
-		RingBufferLength:   uint64(p.pool.Length()),
+		RingBufferLength:   uint64(p.pool.Length(false)),
 		PeakInUse:          p.stats.peakInUse,
 		TotalGets:          p.stats.totalGets.Load(),
 		TotalGrowthEvents:  p.stats.totalGrowthEvents.Load(),
