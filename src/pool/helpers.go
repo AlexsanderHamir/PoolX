@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/AlexsanderHamir/ringbuffer"
+	"github.com/AlexsanderHamir/ringbuffer/errors"
 )
 
 // shrinkDefaultsMap returns the default shrink configuration map based on aggressiveness levels
@@ -78,7 +81,7 @@ func (p *Pool[T]) calculateUtilization() float64 {
 	ch := *chPtr
 
 	inUse := p.stats.objectsInUse.Load()
-	available := p.pool.Length() + len(ch)
+	available := p.pool.Length(false) + len(ch)
 	total := inUse + uint64(available)
 
 	if total == 0 {
@@ -186,7 +189,7 @@ func (p *shrinkParameters) ApplyDefaults(table map[AggressivenessLevel]*shrinkDe
 	p.minCapacity = defaultMinCapacity
 }
 func (p *Pool[T]) isGrowthNeeded(fillTarget int) bool {
-	poolLength := p.pool.Length()
+	poolLength := p.pool.Length(false)
 	noObjsAvailable := poolLength == 0
 
 	return noObjsAvailable || fillTarget > poolLength
@@ -209,11 +212,11 @@ func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, error) {
 }
 
 func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
-	currentObjsAvailable := p.pool.Length()
+	currentObjsAvailable := p.pool.Length(false)
 	toMove := min(fillTarget, currentObjsAvailable)
 
 	part1, part2, err := p.pool.GetNView(toMove)
-	if err != nil && err != errIsEmpty {
+	if err != nil && err != errors.ErrIsEmpty {
 		if p.config.verbose {
 			fmt.Printf("[REFILL] Error getting items from ring buffer: %v", err)
 		}
@@ -397,7 +400,7 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, error) {
 // and the ring buffer is in blocking mode. We always try to refill the ring buffer before
 // calling the slow path.
 func (p *Pool[T]) SlowPath() (obj T, err error) {
-	var pool *RingBuffer[T]
+	var pool *ringbuffer.RingBuffer[T]
 
 	p.mu.RLock()
 	pool = p.pool
@@ -413,7 +416,7 @@ func (p *Pool[T]) SlowPath() (obj T, err error) {
 	}
 
 	if p.config.verbose {
-		fmt.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length())
+		fmt.Printf("[SLOWPATH] Object retrieved from ring buffer | Remaining: %d", p.pool.Length(false))
 	}
 
 	return obj, nil
@@ -424,7 +427,7 @@ func (p *Pool[T]) RingBufferCapacity() int {
 }
 
 func (p *Pool[T]) RingBufferLength() int {
-	return p.pool.Length()
+	return p.pool.Length(false)
 }
 
 func (p *Pool[T]) hasOutstandingObjects() bool {

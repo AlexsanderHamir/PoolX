@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/AlexsanderHamir/ringbuffer"
 )
 
 var (
@@ -27,7 +29,7 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (*P
 		config = createDefaultConfig()
 	}
 
-	ringBuffer, err := NewRingBufferWithConfig[T](config.initialCapacity, config.ringBufferConfig)
+	ringBuffer, err := ringbuffer.NewWithConfig[T](config.initialCapacity, config.ringBufferConfig)
 	if err != nil {
 		return nil, err
 	}

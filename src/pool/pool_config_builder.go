@@ -239,7 +239,7 @@ func (b *poolConfigBuilder) SetPreReadBlockHookAttempts(attempts int) *poolConfi
 // SetRingBufferBlocking sets whether the ring buffer operates in blocking mode.
 // When enabled, operations will block when the buffer is full/empty.
 func (b *poolConfigBuilder) SetRingBufferBlocking(block bool) *poolConfigBuilder {
-	b.config.ringBufferConfig.block = block
+	b.config.ringBufferConfig.Block = block
 	return b
 }
 
@@ -247,8 +247,8 @@ func (b *poolConfigBuilder) SetRingBufferBlocking(block bool) *poolConfigBuilder
 // This determines how long operations will wait before timing out.
 func (b *poolConfigBuilder) SetRingBufferTimeout(d time.Duration) *poolConfigBuilder {
 	if d > 0 {
-		b.config.ringBufferConfig.rTimeout = d
-		b.config.ringBufferConfig.wTimeout = d
+		b.config.ringBufferConfig.RTimeout = d
+		b.config.ringBufferConfig.WTimeout = d
 	}
 	return b
 }
@@ -257,7 +257,7 @@ func (b *poolConfigBuilder) SetRingBufferTimeout(d time.Duration) *poolConfigBui
 // This determines how long read operations will wait before timing out.
 func (b *poolConfigBuilder) SetRingBufferReadTimeout(d time.Duration) *poolConfigBuilder {
 	if d > 0 {
-		b.config.ringBufferConfig.rTimeout = d
+		b.config.ringBufferConfig.RTimeout = d
 	}
 	return b
 }
@@ -266,7 +266,7 @@ func (b *poolConfigBuilder) SetRingBufferReadTimeout(d time.Duration) *poolConfi
 // This determines how long write operations will wait before timing out.
 func (b *poolConfigBuilder) SetRingBufferWriteTimeout(d time.Duration) *poolConfigBuilder {
 	if d > 0 {
-		b.config.ringBufferConfig.wTimeout = d
+		b.config.ringBufferConfig.WTimeout = d
 	}
 	return b
 }

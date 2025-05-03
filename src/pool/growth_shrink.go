@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/AlexsanderHamir/ringbuffer"
+	"github.com/AlexsanderHamir/ringbuffer/errors"
 )
 
 // calculateNewPoolCapacity determines the new capacity for the pool based on the current capacity
@@ -70,7 +73,7 @@ func (p *Pool[T]) shrinkExecution() {
 	}
 
 	if p.config.verbose {
-		log.Printf("[SHRINK] Final state | New capacity: %d | Ring buffer length: %d", newCapacity, p.pool.Length())
+		log.Printf("[SHRINK] Final state | New capacity: %d | Ring buffer length: %d", newCapacity, p.pool.Length(false))
 	}
 }
 
@@ -108,8 +111,8 @@ func (p *Pool[T]) canShrink(newCapacity, inUse int) bool {
 }
 
 // createShrinkBuffer creates a new ring buffer with the specified capacity
-func (p *Pool[T]) createShrinkBuffer(newCapacity int) *RingBuffer[T] {
-	newRingBuffer := NewRingBuffer[T](newCapacity)
+func (p *Pool[T]) createShrinkBuffer(newCapacity int) *ringbuffer.RingBuffer[T] {
+	newRingBuffer := ringbuffer.New[T](newCapacity)
 	newRingBuffer.CopyConfig(p.pool)
 	return newRingBuffer
 }
@@ -117,17 +120,17 @@ func (p *Pool[T]) createShrinkBuffer(newCapacity int) *RingBuffer[T] {
 // calculateItemsToKeep determines how many items can be kept during the shrink operation
 func (p *Pool[T]) calculateItemsToKeep(newCapacity, inUse int) int {
 	availableToKeep := newCapacity - inUse
-	return min(availableToKeep, p.pool.Length())
+	return min(availableToKeep, p.pool.Length(false))
 }
 
 // migrateItems moves items from the old buffer to the new buffer
-func (p *Pool[T]) migrateItems(newRingBuffer *RingBuffer[T], itemsToKeep int) error {
+func (p *Pool[T]) migrateItems(newRingBuffer *ringbuffer.RingBuffer[T], itemsToKeep int) error {
 	if itemsToKeep <= 0 {
 		return nil
 	}
 
 	part1, part2, err := p.pool.GetNView(itemsToKeep)
-	if err != nil && err != errIsEmpty {
+	if err != nil && err != errors.ErrIsEmpty {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Error getting items from old ring buffer: %v", err)
 		}
@@ -142,7 +145,7 @@ func (p *Pool[T]) migrateItems(newRingBuffer *RingBuffer[T], itemsToKeep int) er
 }
 
 // writeItemsToNewBuffer writes items to the new ring buffer
-func (p *Pool[T]) writeItemsToNewBuffer(newRingBuffer *RingBuffer[T], part1, part2 []T) error {
+func (p *Pool[T]) writeItemsToNewBuffer(newRingBuffer *ringbuffer.RingBuffer[T], part1, part2 []T) error {
 	if _, err := newRingBuffer.WriteMany(part1); err != nil {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Error writing items to new ring buffer: %v", err)
@@ -161,7 +164,7 @@ func (p *Pool[T]) writeItemsToNewBuffer(newRingBuffer *RingBuffer[T], part1, par
 }
 
 // finalizeShrink updates the pool with the new buffer and updates statistics
-func (p *Pool[T]) finalizeShrink(newRingBuffer *RingBuffer[T], newCapacity int, currentCap uint64, itemsToKeep, inUse int) {
+func (p *Pool[T]) finalizeShrink(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity int, currentCap uint64, itemsToKeep, inUse int) {
 	p.pool = newRingBuffer
 	p.stats.currentCapacity = uint64(newCapacity)
 	p.stats.totalShrinkEvents++
@@ -194,7 +197,7 @@ func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int)
 		log.Printf("[SHRINK] Requested new capacity : %d", newCap)
 		log.Printf("[SHRINK] Minimum allowed        : %d", minCap)
 		log.Printf("[SHRINK] Currently in use       : %d", inUse)
-		log.Printf("[SHRINK] Ring buffer length     : %d", p.pool.Length())
+		log.Printf("[SHRINK] Ring buffer length     : %d", p.pool.Length(false))
 	}
 
 	switch {
@@ -221,7 +224,7 @@ func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int, inUse int)
 	}
 	ch := *chPtr
 	l1Available := len(ch)
-	totalAvailable := p.pool.Length() + l1Available
+	totalAvailable := p.pool.Length(false) + l1Available
 	if totalAvailable == 0 {
 		if p.config.verbose {
 			log.Printf("[SHRINK] Skipped — all %d objects are currently in use, no shrink possible", inUse)
@@ -267,7 +270,7 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and
 // populates it with objects from the old buffer. It handles the complete migration
 // process including validation and error handling.
-func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], error) {
+func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*ringbuffer.RingBuffer[T], error) {
 	newRingBuffer := p.createNewBuffer(newCapacity)
 	if newRingBuffer == nil {
 		return nil, fmt.Errorf("failed to create ring buffer")
@@ -291,8 +294,8 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*RingBuffer[T], e
 	return newRingBuffer, nil
 }
 
-func (p *Pool[T]) createNewBuffer(newCapacity uint64) *RingBuffer[T] {
-	newRingBuffer := NewRingBuffer[T](int(newCapacity))
+func (p *Pool[T]) createNewBuffer(newCapacity uint64) *ringbuffer.RingBuffer[T] {
+	newRingBuffer := ringbuffer.New[T](int(newCapacity))
 	if p.pool == nil {
 		return nil
 	}
@@ -301,8 +304,8 @@ func (p *Pool[T]) createNewBuffer(newCapacity uint64) *RingBuffer[T] {
 }
 
 func (p *Pool[T]) getItemsFromOldBuffer() (part1, part2 []T, err error) {
-	part1, part2, err = p.pool.getAll()
-	if err != nil && err != errIsEmpty {
+	part1, part2, err = p.pool.GetAllView()
+	if err != nil && err != errors.ErrIsEmpty {
 		if p.config.verbose {
 			log.Printf("[GROW] Error getting items from old ring buffer: %v", err)
 		}
@@ -311,12 +314,12 @@ func (p *Pool[T]) getItemsFromOldBuffer() (part1, part2 []T, err error) {
 	return part1, part2, nil
 }
 
-func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, part2 []T, newCapacity uint64) error {
+func (p *Pool[T]) validateAndWriteItems(newRingBuffer *ringbuffer.RingBuffer[T], part1, part2 []T, newCapacity uint64) error {
 	if len(part1)+len(part2) > int(newCapacity) {
 		if p.config.verbose {
 			log.Printf("[GROW] Length mismatch | Expected: %d | Actual: %d", newCapacity, len(part1)+len(part2))
 		}
-		return errInvalidLength
+		return errors.ErrInvalidLength
 	}
 
 	if _, err := newRingBuffer.WriteMany(part1); err != nil {
@@ -336,7 +339,7 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *RingBuffer[T], part1, par
 	return nil
 }
 
-func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *RingBuffer[T], newCapacity uint64) error {
+func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity uint64) error {
 	currentCapacity := p.stats.currentCapacity
 
 	toAdd := newCapacity - currentCapacity
@@ -416,11 +419,11 @@ func (p *Pool[T]) logGrowthState(newCapacity, objectsInUse uint64) {
 		chPtr := p.cacheL1.Load()
 		if chPtr == nil {
 			log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: nil | Objects in use: %d",
-				newCapacity, p.pool.Length(), objectsInUse)
+				newCapacity, p.pool.Length(false), objectsInUse)
 		} else {
 			ch := *chPtr
 			log.Printf("[GROW] Final state | New capacity: %d | Ring buffer length: %d | L1 length: %d | Objects in use: %d",
-				newCapacity, p.pool.Length(), len(ch), objectsInUse)
+				newCapacity, p.pool.Length(false), len(ch), objectsInUse)
 		}
 	}
 }

@@ -276,19 +276,19 @@ func (b *poolConfigBuilder) SetFastPathShrinkAggressiveness(level Aggressiveness
 //
 // Note: Timeout values must be positive to take effect.
 func (b *poolConfigBuilder) SetRingBufferBasicConfigs(block bool, rTimeout, wTimeout, bothTimeout time.Duration) *poolConfigBuilder {
-	b.config.ringBufferConfig.block = block
+	b.config.ringBufferConfig.Block = block
 
 	if rTimeout > 0 {
-		b.config.ringBufferConfig.rTimeout = rTimeout
+		b.config.ringBufferConfig.RTimeout = rTimeout
 	}
 
 	if wTimeout > 0 {
-		b.config.ringBufferConfig.wTimeout = wTimeout
+		b.config.ringBufferConfig.WTimeout = wTimeout
 	}
 
 	if bothTimeout > 0 {
-		b.config.ringBufferConfig.rTimeout = bothTimeout
-		b.config.ringBufferConfig.wTimeout = bothTimeout
+		b.config.ringBufferConfig.RTimeout = bothTimeout
+		b.config.ringBufferConfig.WTimeout = bothTimeout
 	}
 
 	return b

@@ -1,6 +1,10 @@
 package pool
 
-import "time"
+import (
+	"time"
+
+	config "github.com/AlexsanderHamir/ringbuffer/config"
+)
 
 type AggressivenessLevel int
 
@@ -72,8 +76,8 @@ var defaultFastPath = &fastPathParameters{
 	shrink:                   defaultShrinkParameters,
 }
 
-var defaultRingBufferConfig = &ringBufferConfig{
-	block:    false,
-	rTimeout: 0,
-	wTimeout: 0,
+var defaultRingBufferConfig = &config.RingBufferConfig{
+	Block:    false,
+	RTimeout: 0,
+	WTimeout: 0,
 }
