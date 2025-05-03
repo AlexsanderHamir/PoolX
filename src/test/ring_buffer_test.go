@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/PoolX/src/pool"
-
+	"github.com/AlexsanderHamir/ringbuffer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +15,7 @@ type TestValue struct {
 }
 
 func TestRingBufferBasicOperations(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](10)
+	rb := ringbuffer.New[*TestValue](10)
 	require.NotNil(t, rb)
 
 	err := rb.Write(&TestValue{value: 42})
@@ -33,7 +32,7 @@ func TestRingBufferBasicOperations(t *testing.T) {
 }
 
 func TestRingBufferBlocking(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](2).WithBlocking(true)
+	rb := ringbuffer.New[*TestValue](2).WithBlocking(true)
 	require.NotNil(t, rb)
 
 	n, err := rb.WriteMany([]*TestValue{{value: 1}, {value: 2}})
@@ -56,7 +55,7 @@ func TestRingBufferBlocking(t *testing.T) {
 }
 
 func TestRingBufferTimeout(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](2).
+	rb := ringbuffer.New[*TestValue](2).
 		WithBlocking(true).
 		WithTimeout(100 * time.Millisecond)
 	require.NotNil(t, rb)
@@ -81,7 +80,7 @@ func TestRingBufferTimeout(t *testing.T) {
 }
 
 func TestRingBufferWriteMany(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](10)
+	rb := ringbuffer.New[*TestValue](10)
 	require.NotNil(t, rb)
 
 	items := []*TestValue{
@@ -101,11 +100,11 @@ func TestRingBufferWriteMany(t *testing.T) {
 	assert.Equal(t, 2, vals[1].value)
 	assert.Equal(t, 3, vals[2].value)
 
-	assert.Equal(t, 2, rb.Length())
+	assert.Equal(t, 2, rb.Length(false))
 }
 
 func TestRingBufferReset(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](10)
+	rb := ringbuffer.New[*TestValue](10)
 	require.NotNil(t, rb)
 
 	err := rb.Write(&TestValue{value: 1})
@@ -114,23 +113,23 @@ func TestRingBufferReset(t *testing.T) {
 	assert.NoError(t, err)
 
 	rb.ClearBuffer()
-	assert.Equal(t, 0, rb.Length())
+	assert.Equal(t, 0, rb.Length(false))
 	assert.True(t, rb.IsEmpty())
 }
 
 func TestRingBufferEdgeCases(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](0)
+	rb := ringbuffer.New[*TestValue](0)
 	assert.Nil(t, rb)
 
-	rb = pool.NewRingBuffer[*TestValue](-1)
+	rb = ringbuffer.New[*TestValue](-1)
 	assert.Nil(t, rb)
 
-	rb = pool.NewRingBuffer[*TestValue](10)
+	rb = ringbuffer.New[*TestValue](10)
 	require.NotNil(t, rb)
 }
 
 func TestRingBufferViewModification(t *testing.T) {
-	rb := pool.NewRingBuffer[*TestValue](10)
+	rb := ringbuffer.New[*TestValue](10)
 
 	values := []*TestValue{
 		{value: 1},

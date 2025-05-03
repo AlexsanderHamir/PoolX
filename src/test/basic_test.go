@@ -17,7 +17,7 @@ func TestPoolGrowth(t *testing.T) {
 		SetInitialCapacity(2).
 		SetGrowthPercent(0.5).
 		SetFixedGrowthFactor(1.0).
-		SetMinShrinkCapacity(1).
+		SetMinShrinkCapacity(2).
 		SetShrinkCheckInterval(1 * time.Second).
 		Build()
 	require.NoError(t, err)
