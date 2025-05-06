@@ -44,3 +44,5 @@ src/pool/usefulcommands
 # Temporary files
 *.tmp
 *.log
+
+tasks.md

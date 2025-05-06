@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/AlexsanderHamir/PoolX/code_examples/configs"
-	"github.com/AlexsanderHamir/PoolX/src/pool"
+	"github.com/AlexsanderHamir/PoolX/pool"
 )
 
 type Example struct {
