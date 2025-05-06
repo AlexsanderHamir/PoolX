@@ -36,6 +36,8 @@ func TestPoolGrowth(t *testing.T) {
 		require.NoError(t, p.Close())
 	}()
 
+	poolObj := p.(*pool.Pool[*TestObject])
+
 	objects := make([]*TestObject, 10)
 	for i := range 10 {
 		objects[i], err = p.Get()
@@ -43,7 +45,7 @@ func TestPoolGrowth(t *testing.T) {
 		assert.NotNil(t, objects[i])
 	}
 
-	assert.True(t, p.IsGrowth())
+	assert.True(t, poolObj.IsGrowth())
 
 	for _, obj := range objects {
 		p.Put(obj)
@@ -88,7 +90,9 @@ func TestPoolShrink(t *testing.T) {
 	}
 
 	time.Sleep(300 * time.Millisecond)
-	assert.True(t, p.IsShrunk())
+	poolObj := p.(*pool.Pool[*TestObject])
+
+	assert.True(t, poolObj.IsShrunk())
 
 	for _, obj := range objects {
 		p.Put(obj)
@@ -122,6 +126,17 @@ func TestHardLimit(t *testing.T) {
 		}()
 		runConcurrentBlockingTest(t, p, 20)
 	})
+}
+
+func TestConfigValues(t *testing.T) {
+	defaultConfig, err := pool.NewPoolConfigBuilder().Build()
+	require.NoError(t, err)
+
+	originalValues := storeDefaultConfigValues(defaultConfig)
+
+	customConfig := createCustomConfig(t)
+
+	verifyCustomValuesDifferent(t, originalValues, customConfig)
 }
 
 func TestDisabledChannelGrowth(t *testing.T) {
@@ -160,7 +175,8 @@ func TestDisabledChannelGrowth(t *testing.T) {
 	}
 
 	// Verify pool still grew despite channel growth being disabled
-	assert.True(t, p.IsGrowth())
+	poolObj := p.(*pool.Pool[*TestObject])
+	assert.True(t, poolObj.IsGrowth())
 
 	// Return objects
 	for _, obj := range objects {

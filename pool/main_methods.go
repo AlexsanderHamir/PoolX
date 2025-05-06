@@ -20,7 +20,7 @@ var (
 // NewPool creates a new object pool with the given configuration, allocator, cleaner, and pool type.
 // Only pointers can be stored in the pool. The allocator function creates new objects,
 // and the cleaner function resets objects before they are reused.
-func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (*Pool[T], error) {
+func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (PoolObj[T], error) {
 	if err := validateAllocator(allocator); err != nil {
 		return nil, err
 	}

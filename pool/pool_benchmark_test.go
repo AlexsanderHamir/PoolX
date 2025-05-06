@@ -38,7 +38,8 @@ func setupPool(b *testing.B, config *PoolConfig) *Pool[*example] {
 	if err != nil {
 		b.Fatalf("Failed to create pool: %v", err)
 	}
-	return p
+
+	return p.(*Pool[*example])
 }
 
 func Benchmark_Get(b *testing.B) {

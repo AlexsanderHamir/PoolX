@@ -2,7 +2,6 @@ package pool
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -88,39 +87,6 @@ func (p *Pool[T]) updateUsageStats() {
 		p.stats.peakInUse = maxUint64(p.stats.peakInUse, currentInUse)
 		p.stats.mu.Unlock()
 	}
-}
-
-func (p *Pool[T]) updateDerivedStats() {
-	if !p.config.enableStats {
-		log.Println("Stats are disabled")
-		return
-	}
-
-	totalGets := p.stats.totalGets.Load()
-	objectsInUse := p.stats.objectsInUse.Load()
-
-	currentCapacity := p.stats.currentCapacity
-
-	initialCapacity := p.stats.initialCapacity
-	totalCreated := currentCapacity - uint64(initialCapacity)
-
-	chPtr := p.cacheL1.Load()
-	var l1Len int
-	if chPtr != nil {
-		l1Len = len(*chPtr)
-	}
-
-	p.stats.mu.Lock()
-	availableObjects := p.pool.Length(false) + l1Len
-	if totalCreated > 0 {
-		p.stats.reqPerObj = float64(totalGets) / float64(totalCreated)
-	}
-
-	totalObjects := objectsInUse + uint64(availableObjects)
-	if totalObjects > 0 {
-		p.stats.utilization = (float64(objectsInUse) / float64(totalObjects)) * 100
-	}
-	p.stats.mu.Unlock()
 }
 
 // PrintPoolStats prints the current statistics of the pool to stdout.

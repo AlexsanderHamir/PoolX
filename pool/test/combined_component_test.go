@@ -3,7 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/AlexsanderHamir/PoolX/src/pool"
+	"github.com/AlexsanderHamir/PoolX/pool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,4 +76,5 @@ func TestPreReadBlockHook(t *testing.T) {
 	obj, err := p.SlowPath()
 	require.NoError(t, err)
 	require.NotNil(t, obj)
+
 }

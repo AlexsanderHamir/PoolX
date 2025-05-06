@@ -5,7 +5,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml)
 
-A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios.
+A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios. PoolX provides fine-grained control over object lifecycle, memory management, and performance characteristics.
 
 ![Flow](../assets/flow.png)
 
@@ -25,20 +25,23 @@ import (
 
 // Create a new pool configuration
 config, err := pool.NewPoolConfigBuilder().
-    SetPoolBasicConfigs(128, 5000, false, true).
-    SetRingBufferBasicConfigs(true, 0, 0, time.Second*5).
+    // Basic pool configuration
+    SetPoolBasicConfigs(128, 5000, false, true, true).
+    // Ring buffer configuration
+    SetRingBufferBasicConfigs(true, time.Second*5, time.Second*5, time.Second*5).
     SetRingBufferGrowthConfigs(150.0, 0.85, 1.2).
     SetRingBufferShrinkConfigs(
-        time.Second*2,
-        time.Second*5,
-        time.Second*1,
-        2,
-        5,
-        15,
-        3,
-        0.3,
-        0.5,
+        time.Second*2,    // check interval
+        time.Second*5,    // idle threshold
+        time.Second*1,    // shrink cooldown
+        2,                // min idle before shrink
+        5,                // stable underutilization rounds
+        15,               // min capacity
+        3,                // max consecutive shrinks
+        0.3,              // min utilization before shrink
+        0.5,              // shrink percent
     ).
+    // Fast path (L1 cache) configuration
     SetFastPathBasicConfigs(128, 4, 4, 1.0, 0.20).
     SetFastPathGrowthConfigs(100.0, 1.5, 0.85).
     SetFastPathShrinkConfigs(0.7, 5).
@@ -75,24 +78,55 @@ if err != nil {
 
 ### 1. Dynamic Resizing
 
-- **Ring Buffer**: Automatically grows and shrinks based on usage patterns (applies to ring buffer and channel L1)
+- **Ring Buffer**: Automatically grows and shrinks based on usage patterns
+  - Configurable growth thresholds and rates
+  - Smart shrinking based on utilization metrics
+  - Customizable cooldown periods and stability requirements
 - **Fast Path (L1 Cache)**: Provides quick access to frequently used objects
-- **Smart Growth**: Exponential growth until threshold, then fixed growth
-- **Efficient Shrinking**: Reduces size when pool is underutilized
+  - Independent growth and shrink policies
+  - Configurable event triggers for resizing
+  - Automatic refill based on utilization
 
 ### 2. Performance Optimizations
 
-- Non-blocking operations by default
-- Configurable timeouts for blocking operations
-- Automatic L1 cache management
+- Non-blocking operations with configurable timeouts
+- Automatic L1 cache management with customizable policies
 - Memory-efficient object reuse
+- Configurable blocking behavior for ring buffer operations
+- Pre-read hook attempts for performance tuning
 
 ### 3. Configuration Options
 
-- **Pool Settings**: Initial capacity, hard limits, verbosity
-- **Growth Control**: Thresholds, growth rates, limits
-- **Shrink Control**: Idle detection, utilization thresholds
-- **Fast Path**: Size, growth triggers, refill behavior
+#### Pool Settings
+
+- Initial capacity and hard limits
+- Verbose logging and statistics collection
+- Channel growth control
+- Performance monitoring
+
+#### Ring Buffer Configuration
+
+- Blocking/non-blocking operations
+- Read/write timeouts
+- Growth parameters:
+  - Exponential threshold factor
+  - Growth percentage
+  - Fixed growth factor
+- Shrink parameters:
+  - Check intervals
+  - Idle thresholds
+  - Utilization requirements
+  - Capacity limits
+
+#### Fast Path Configuration
+
+- Initial size and capacity limits
+- Growth triggers and rates
+- Shrink policies
+- Refill behavior
+- Channel growth control
+
+For a complete list of all available configuration options and their detailed descriptions, please check the [API file](../pool/api.go) in the repository.
 
 ## Common Use Cases
 
@@ -100,7 +134,8 @@ if err != nil {
 
 ```go
 config, _ := pool.NewPoolConfigBuilder().
-    SetPoolBasicConfigs(1000, 10000, false, true).
+    SetPoolBasicConfigs(1000, 10000, false, true, true).
+    SetRingBufferBasicConfigs(true, time.Second*5, time.Second*5, time.Second*5).
     SetRingBufferGrowthConfigs(200.0, 0.85, 1.2).
     SetRingBufferShrinkConfigs(
         time.Second*5,
@@ -114,6 +149,8 @@ config, _ := pool.NewPoolConfigBuilder().
         0.5,
     ).
     SetFastPathBasicConfigs(256, 4, 4, 0.8, 0.30).
+    SetFastPathGrowthConfigs(150.0, 1.5, 0.85).
+    SetFastPathShrinkConfigs(0.7, 10).
     Build()
 ```
 
@@ -121,7 +158,8 @@ config, _ := pool.NewPoolConfigBuilder().
 
 ```go
 config, _ := pool.NewPoolConfigBuilder().
-    SetPoolBasicConfigs(100, 1000, false, true).
+    SetPoolBasicConfigs(100, 1000, false, true, true).
+    SetRingBufferBasicConfigs(true, time.Second*10, time.Second*10, time.Second*10).
     SetRingBufferGrowthConfigs(150.0, 0.50, 1.1).
     SetRingBufferShrinkConfigs(
         time.Second*10,
@@ -135,6 +173,8 @@ config, _ := pool.NewPoolConfigBuilder().
         0.7,
     ).
     SetFastPathBasicConfigs(64, 2, 2, 0.5, 0.50).
+    SetFastPathGrowthConfigs(100.0, 1.2, 0.90).
+    SetFastPathShrinkConfigs(0.5, 5).
     Build()
 ```
 
@@ -143,6 +183,8 @@ config, _ := pool.NewPoolConfigBuilder().
 1. **Type Safety**: Only pointers can be stored in the pool
 2. **Default Behavior**: Ring buffer operates in non-blocking mode by default
 3. **Performance**: Resizing operations are expensive - tune growth/shrink parameters carefully
+4. **Configuration**: Use `EnforceCustomConfig()` when you need precise control over shrinking behavior
+5. **Aggressiveness Levels**: Use `SetShrinkAggressiveness()` for preset configurations (levels 1-5)
 
 ## Contributing
 

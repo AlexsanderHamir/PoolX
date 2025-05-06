@@ -31,6 +31,7 @@ func RunBasicExample() error {
 	}
 	defer pool.Close()
 
+
 	const numWorkers = 2000
 	const objectsPerWorker = 100
 

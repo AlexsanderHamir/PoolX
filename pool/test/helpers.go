@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/PoolX/src/pool"
+	"github.com/AlexsanderHamir/PoolX/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -141,7 +141,7 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 		SetFastPathExponentialThresholdFactor(3.0121).
 		SetFastPathFixedGrowthFactor(0.8121).
 		SetFastPathShrinkEventsTrigger(4121).
-		SetFastPathShrinkAggressiveness(pool.AggressivenessVeryAggressive).
+		SetFastPathShrinkAggressiveness(pool.AggressivenessLevel(1)).
 		SetFastPathShrinkPercent(0.3121).
 		SetFastPathShrinkMinCapacity(20121).
 		SetVerbose(true).
@@ -211,7 +211,7 @@ func createTestPool(t *testing.T, config *pool.PoolConfig) *pool.Pool[*TestObjec
 
 	p, err := pool.NewPool(config, allocator, cleaner)
 	require.NoError(t, err)
-	return p
+	return p.(*pool.Pool[*TestObject])
 }
 
 func runNilReturnTest(t *testing.T, p *pool.Pool[*TestObject]) {
@@ -386,8 +386,6 @@ func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, avai
 
 	assert.Equal(t, 0, p.GetBlockedReaders())
 }
-
-
 
 func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().

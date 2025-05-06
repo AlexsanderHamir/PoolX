@@ -56,6 +56,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 	if err != nil {
 		panic(err)
 	}
+
 	return poolConfig
 }
 
