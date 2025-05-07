@@ -52,15 +52,8 @@ func (b *poolConfigBuilder) SetInitialCapacity(cap int) PoolConfigBuilder {
 
 // SetHardLimit sets the maximum number of objects the pool can grow to. This is an
 // absolute upper bound that the pool will never exceed, even during growth operations.
-func (b *poolConfigBuilder) SetHardLimit(count int) PoolConfigBuilder{
+func (b *poolConfigBuilder) SetHardLimit(count int) PoolConfigBuilder {
 	b.config.hardLimit = count
-	return b
-}
-
-// SetVerbose enables or disables verbose logging. When enabled, the pool will log
-// detailed information about its operations, which is useful for debugging.
-func (b *poolConfigBuilder) SetVerbose(verbose bool) PoolConfigBuilder {
-	b.config.verbose = verbose
 	return b
 }
 
@@ -90,20 +83,6 @@ func (b *poolConfigBuilder) SetFixedGrowthFactor(factor float64) PoolConfigBuild
 // This is the time between consecutive shrink eligibility checks.
 func (b *poolConfigBuilder) SetShrinkCheckInterval(interval time.Duration) PoolConfigBuilder {
 	b.config.shrink.checkInterval = interval
-	return b
-}
-
-// SetIdleThreshold sets the minimum idle duration before shrinking is considered.
-// The pool must be idle for this duration before shrink operations are allowed.
-func (b *poolConfigBuilder) SetIdleThreshold(duration time.Duration) PoolConfigBuilder {
-	b.config.shrink.idleThreshold = duration
-	return b
-}
-
-// SetMinIdleBeforeShrink sets the number of consecutive idle checks before shrinking.
-// This ensures stability by requiring multiple idle checks before shrinking.
-func (b *poolConfigBuilder) SetMinIdleBeforeShrink(count int) PoolConfigBuilder {
-	b.config.shrink.minIdleBeforeShrink = count
 	return b
 }
 
@@ -268,13 +247,6 @@ func (b *poolConfigBuilder) SetRingBufferWriteTimeout(d time.Duration) PoolConfi
 	if d > 0 {
 		b.config.ringBufferConfig.WTimeout = d
 	}
-	return b
-}
-
-// SetEnableStats enables or disables the collection of non-essential pool statistics.
-// When enabled, the pool will track additional metrics for monitoring.
-func (b *poolConfigBuilder) SetEnableStats(enable bool) PoolConfigBuilder {
-	b.config.enableStats = enable
 	return b
 }
 

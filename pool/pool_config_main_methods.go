@@ -18,7 +18,7 @@ import (
 //   - enableStats: Enable collection of non-essential pool statistics
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit int, verbose, enableChannelGrowth, enableStats bool) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit int, enableChannelGrowth bool) PoolConfigBuilder {
 	if initialCapacity > 0 {
 		b.config.initialCapacity = initialCapacity
 	}
@@ -27,13 +27,7 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 		b.config.hardLimit = hardLimit
 	}
 
-	if verbose {
-		b.config.verbose = verbose
-	}
-
 	b.config.fastPath.enableChannelGrowth = enableChannelGrowth
-
-	b.config.enableStats = enableStats
 
 	return b
 }
@@ -135,14 +129,6 @@ func (b *poolConfigBuilder) EnforceCustomConfig() PoolConfigBuilder {
 func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent float64) PoolConfigBuilder {
 	if checkInterval > 0 {
 		b.config.shrink.checkInterval = checkInterval
-	}
-
-	if idleThreshold > 0 {
-		b.config.shrink.idleThreshold = idleThreshold
-	}
-
-	if minIdleBeforeShrink > 0 {
-		b.config.shrink.minIdleBeforeShrink = minIdleBeforeShrink
 	}
 
 	if shrinkCooldown > 0 {

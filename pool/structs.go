@@ -26,7 +26,7 @@ import (
 type Pool[T any] struct {
 	// cacheL1 is an atomic pointer to a channel serving as the L1 cache.
 	// This provides fast access to frequently used objects without main pool contention.
-	cacheL1 atomic.Pointer[chan T]
+	cacheL1 *chan T
 
 	// pool is the main storage using a ring buffer.
 	// It provides efficient operations and handles the bulk of object storage.
@@ -78,14 +78,6 @@ type PoolConfig struct {
 	// is configured to not block. This helps prevent unbounded memory growth.
 	hardLimit int
 
-	// verbose enables detailed logging of pool operations.
-	// Useful for debugging and monitoring pool behavior.
-	verbose bool
-
-	// enableStats enables the collection of non-essential pool statistics.
-	// These statistics help monitor pool performance and behavior.
-	enableStats bool
-
 	// growth defines how the pool expands when demand increases.
 	// Controls both the growth strategy and rate.
 	growth *growthParameters
@@ -126,10 +118,6 @@ func (c *PoolConfig) GetFastPath() *fastPathParameters {
 
 func (c *PoolConfig) GetRingBufferConfig() *config.RingBufferConfig {
 	return c.ringBufferConfig
-}
-
-func (c *PoolConfig) IsVerbose() bool {
-	return c.verbose
 }
 
 // growthParameters controls how the pool expands to meet demand.
@@ -183,14 +171,6 @@ type shrinkParameters struct {
 	// Shorter intervals allow faster response to decreased demand but increase overhead.
 	checkInterval time.Duration
 
-	// idleThreshold is the minimum time the pool must be idle before shrinking.
-	// Helps prevent premature shrinking during temporary lulls in activity.
-	idleThreshold time.Duration
-
-	// minIdleBeforeShrink requires multiple consecutive idle checks before shrinking.
-	// Provides stability by ensuring the idle state is consistent.
-	minIdleBeforeShrink int
-
 	// shrinkCooldown prevents too frequent shrink operations.
 	// Enforces a minimum time between consecutive shrink operations.
 	shrinkCooldown time.Duration
@@ -228,14 +208,6 @@ func (s *shrinkParameters) GetAggressivenessLevel() AggressivenessLevel {
 
 func (s *shrinkParameters) GetCheckInterval() time.Duration {
 	return s.checkInterval
-}
-
-func (s *shrinkParameters) GetIdleThreshold() time.Duration {
-	return s.idleThreshold
-}
-
-func (s *shrinkParameters) GetMinIdleBeforeShrink() int {
-	return s.minIdleBeforeShrink
 }
 
 func (s *shrinkParameters) GetShrinkCooldown() time.Duration {
@@ -346,12 +318,6 @@ func (f *fastPathParameters) GetPreReadBlockHookAttempts() int {
 type shrinkDefaults struct {
 	// interval is the default check interval for shrink operations
 	interval time.Duration
-
-	// idle is the default idle threshold before shrinking
-	idle time.Duration
-
-	// minIdle is the default minimum number of idle checks required
-	minIdle int
 
 	// cooldown is the default time between shrink operations
 	cooldown time.Duration
