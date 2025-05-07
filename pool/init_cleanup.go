@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	"sync/atomic"
 
 	"github.com/AlexsanderHamir/ringbuffer"
 )
@@ -18,7 +17,6 @@ func createDefaultConfig() *PoolConfig {
 		config: &PoolConfig{
 			initialCapacity:  defaultPoolCapacity,
 			hardLimit:        defaultHardLimit,
-			enableStats:      defaultEnableStats,
 			shrink:           defaultShrinkParameters,
 			growth:           defaultGrowthParameters,
 			fastPath:         defaultFastPath,
@@ -69,7 +67,7 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 	ch := make(chan T, config.fastPath.initialSize)
 
 	poolObj := &Pool[T]{
-		cacheL1:   atomic.Pointer[chan T]{},
+		cacheL1:   &ch,
 		allocator: allocator,
 		cleaner:   cleaner,
 		config:    config,
@@ -77,7 +75,7 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 		pool:      ringBuffer,
 	}
 
-	poolObj.cacheL1.Store(&ch)
+	poolObj.cacheL1 = &ch
 
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
 	return poolObj, nil
@@ -111,7 +109,7 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 // This method is called during pool shutdown to ensure proper resource cleanup.
 func (p *Pool[T]) cleanupCacheL1() {
 	var zero T
-	chPtr := p.cacheL1.Load()
+	chPtr := p.cacheL1
 	if chPtr == nil {
 		return
 	}

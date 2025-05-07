@@ -10,7 +10,6 @@ import (
 )
 
 var (
-	errPoolClosed       = errors.New("pool is closed")
 	errGrowthBlocked    = errors.New("growth is blocked")
 	errRingBufferFailed = errors.New("ring buffer failed core operation")
 	errNoItemsToMove    = errors.New("no items to move")
@@ -56,12 +55,6 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (Po
 
 // Get returns an object from the pool, either from L1 cache or the ring buffer, preferring L1.
 func (p *Pool[T]) Get() (zero T, err error) {
-	if p.closed.Load() {
-		return zero, errPoolClosed
-	}
-
-	defer p.handleShrinkBlocked()
-
 	if obj, found := p.tryGetFromL1(false); found {
 		return obj, nil
 	}
@@ -75,29 +68,22 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, err
 	}
 
-	p.recordSlowPathStats()
+	p.updateUsageStats()
 	return obj, nil
 }
 
 // Put returns an object to the pool. The object will be cleaned using the cleaner function
 // before being made available for reuse.
 func (p *Pool[T]) Put(obj T) error {
-	if p.closed.Load() {
-		return errPoolClosed
-	}
-
 	p.releaseObj(obj)
 
-	if p.config.verbose {
-		fmt.Printf("[PUT] Releasing object")
-	}
+	p.mu.RLock()
+	pool := p.pool
+	p.mu.RUnlock()
 
-	if p.pool.GetBlockedReaders() > 0 {
-		err := p.slowPathPut(obj)
+	if pool.GetBlockedReaders() > 0 {
+		err := p.slowPathPut(obj, pool)
 		if err != nil {
-			if p.config.verbose {
-				fmt.Printf("[PUT] Error in slowPathPut: %v", err)
-			}
 			return err
 		}
 		return nil
@@ -107,7 +93,7 @@ func (p *Pool[T]) Put(obj T) error {
 		return nil
 	}
 
-	return p.slowPathPut(obj)
+	return p.slowPathPut(obj, pool)
 }
 
 // Close closes the pool and releases all resources. If there are outstanding objects,
@@ -118,10 +104,11 @@ func (p *Pool[T]) Close() error {
 	}
 
 	if p.hasOutstandingObjects() {
-		return p.closeAsync()
+		p.closeAsync()
 	}
 
-	return p.closeImmediate()
+	p.performClosure()
+	return nil
 }
 
 // shrink is a background goroutine that periodically checks the pool for idle and underutilized objects,
@@ -132,8 +119,8 @@ func (p *Pool[T]) shrink() {
 	defer ticker.Stop()
 
 	var (
-		idleCount, underutilCount int
-		idleOK, utilOK            bool
+		underutilCount int
+		utilOK         bool
 	)
 
 	for {
@@ -163,9 +150,9 @@ func (p *Pool[T]) shrink() {
 				continue
 			}
 
-			p.performShrinkChecks(params, &idleCount, &underutilCount, &idleOK, &utilOK)
-			if idleOK || utilOK {
-				p.executeShrink(&idleCount, &underutilCount, &idleOK, &utilOK)
+			p.performShrinkChecks(&underutilCount, &utilOK)
+			if utilOK {
+				p.executeShrink(&underutilCount, &utilOK)
 			}
 
 			p.mu.Unlock()
@@ -175,40 +162,30 @@ func (p *Pool[T]) shrink() {
 
 // grow is called when the demand for objects exceeds the current capacity, if enabled.
 // It increases the pool's capacity according to the growth configuration.
-func (p *Pool[T]) grow(now time.Time) error {
-	if p.closed.Load() {
-		return errPoolClosed
-	}
+func (p *Pool[T]) grow() error {
+	defer func() {
+		if p.isShrinkBlocked.Load() {
+			p.shrinkCond.Signal()
+		}
+	}()
 
 	if p.isGrowthBlocked.Load() {
 		return errGrowthBlocked
 	}
 
-	currentCap, objectsInUse, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
+	currentCap, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
 	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth)
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
-		if p.config.verbose {
-			fmt.Printf("[GROW] Error in updatePoolCapacity: %v", err)
-		}
 		return fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
 
-	p.stats.totalGrowthEvents.Add(1)
-	if p.config.enableStats {
-		p.updateGrowthStats(now)
-	}
-
+	p.stats.totalGrowthEvents++
 	err := p.tryL1ResizeIfTriggered()
 	if err != nil {
-		if p.config.verbose {
-			fmt.Printf("[GROW] Error in tryL1ResizeIfTriggered: %v", err)
-		}
 		return err
 	}
-	if p.config.verbose {
-		p.logGrowthState(newCapacity, objectsInUse)
-	}
+
 	return nil
 }
 
@@ -223,7 +200,7 @@ func (p *Pool[T]) preReadBlockHook() bool {
 		attempts = 1
 	}
 
-	chPtr := p.cacheL1.Load()
+	chPtr := p.cacheL1
 	if chPtr == nil {
 		return false
 	}
@@ -237,9 +214,6 @@ func (p *Pool[T]) preReadBlockHook() bool {
 			}
 			err := p.pool.Write(obj)
 			if err != nil {
-				if p.config.verbose {
-					fmt.Printf("[PREBLOCKHOOK] Error in pool.Write: %v", err)
-				}
 				continue
 			}
 			return true
