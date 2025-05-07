@@ -75,8 +75,6 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 		pool:      ringBuffer,
 	}
 
-	poolObj.cacheL1 = &ch
-
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
 	return poolObj, nil
 }

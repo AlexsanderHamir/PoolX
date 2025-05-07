@@ -8,15 +8,16 @@ import (
 )
 
 // calculateNewCapacity determines the new capacity based on current capacity and growth configuration
-func (p *Pool[T]) calculateNewCapacity(currentCap int, cfg *growthParameters) int {
-	threshold := currentCap * cfg.exponentialThresholdFactor
-	step := currentCap * cfg.fixedGrowthFactor
+func (p *Pool[T]) calculateNewCapacity(currentCap int) int {
+	cfg := p.config.fastPath.growth
+	initialCap := p.config.fastPath.initialSize
 
+	threshold := initialCap * cfg.exponentialThresholdFactor
 	if currentCap < threshold {
-		initialSize := p.config.fastPath.initialSize
-		return initialSize + maxInt(initialSize*cfg.growthPercent, 1)
+		return currentCap + (initialCap * cfg.growthPercent)
 	}
 
+	step := initialCap * cfg.fixedGrowthFactor
 	return currentCap + step
 }
 
@@ -57,7 +58,7 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 	}
 
 	currentCap := p.stats.currentL1Capacity
-	newCap := p.calculateNewCapacity(currentCap, p.config.fastPath.growth)
+	newCap := p.calculateNewCapacity(currentCap)
 
 	oldChPtr := p.cacheL1
 	if oldChPtr == nil {

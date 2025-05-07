@@ -13,7 +13,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Max capacity: 40000 objects (reasonable upper limit for most systems)
 		// - Verbose logging enabled for monitoring
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(300000, 300000, true).
+		SetPoolBasicConfigs(40000, 40000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -36,17 +36,17 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Shrink by 30% when triggered
 		SetRingBufferShrinkConfigs(time.Second*120, time.Second*10, 5, 50, 5, 3, 40).
 		// Fast path (L1 cache) settings:
-		// - Initial size: 256 objects
+		// - Initial size: 64 objects
 		// - Grow after 1 growth events
 		// - Shrink after 1 shrink events
 		// - Maximum fill aggressiveness (1.0) - 100%
 		// - Refill when 1% empty
-		SetFastPathBasicConfigs(256, 1, 1, 100, 1).
+		SetFastPathBasicConfigs(8, 1, 1, 100, 1).
 		// Fast path growth strategy:
-		// - Exponential growth until 150% of current capacity
-		// - 300% fixed growth after exponential phase
-		// - 75% growth rate in exponential mode
-		SetFastPathGrowthConfigs(1000, 300, 75).
+		// - Exponential growth until 6000x of initial capacity (8 * 6000 = 48000)
+		// - 300x growth rate in exponential mode currentCapacity + (8 * 300 = 2400)
+		// - 1x fixed growth after exponential phase (currentCapacity + (initialCapacity(8) * 30 = 248))
+		SetFastPathGrowthConfigs(6000, 30, 300).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
 		// - Minimum 20 objects

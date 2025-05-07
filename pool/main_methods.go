@@ -167,9 +167,8 @@ func (p *Pool[T]) grow() error {
 	if p.isGrowthBlocked.Load() {
 		return errGrowthBlocked
 	}
-
-	currentCap, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
-	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth.growthPercent)
+	
+	newCapacity := p.calculateNewPoolCapacity()
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
 		return fmt.Errorf("%w: %w", errRingBufferFailed, err)

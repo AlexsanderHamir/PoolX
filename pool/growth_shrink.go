@@ -11,9 +11,15 @@ import (
 // calculateNewPoolCapacity determines the new capacity for the pool based on the current capacity
 // and growth strategy. It uses either exponential growth (below threshold) or fixed-step growth
 // (above threshold) to calculate the new size.
-func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep int, growthPercent int) int {
-	if currentCap < threshold {
-		growth := maxInt(p.config.initialCapacity*growthPercent, 1)
+func (p *Pool[T]) calculateNewPoolCapacity() int {
+	cfg := p.config.growth
+	currentCap := p.stats.currentCapacity
+	initialCap := p.config.initialCapacity
+	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
+	fixedStep := initialCap * cfg.fixedGrowthFactor
+
+	if currentCap < exponentialThreshold {
+		growth := initialCap * cfg.growthPercent
 		newCap := currentCap + growth
 		return newCap
 	}
@@ -264,8 +270,9 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T],
 func (p *Pool[T]) calculateGrowthParameters() (int, int, int) {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity
-	exponentialThreshold := p.config.initialCapacity * cfg.exponentialThresholdFactor
-	fixedStep := currentCap * cfg.fixedGrowthFactor
+	initialCap := p.config.initialCapacity
+	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
+	fixedStep := initialCap * cfg.fixedGrowthFactor
 	return currentCap, exponentialThreshold, fixedStep
 }
 
