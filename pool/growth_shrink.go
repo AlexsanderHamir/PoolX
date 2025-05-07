@@ -11,9 +11,9 @@ import (
 // calculateNewPoolCapacity determines the new capacity for the pool based on the current capacity
 // and growth strategy. It uses either exponential growth (below threshold) or fixed-step growth
 // (above threshold) to calculate the new size.
-func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep int, cfg *growthParameters) int {
+func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep int, growthPercent int) int {
 	if currentCap < threshold {
-		growth := maxInt(currentCap*cfg.growthPercent, 1)
+		growth := maxInt(p.config.initialCapacity*growthPercent, 1)
 		newCap := currentCap + growth
 		return newCap
 	}
@@ -31,7 +31,7 @@ func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity int) bool {
 // while maintaining proper logging and statistics.
 func (p *Pool[T]) shrinkExecution() {
 	currentCap := p.stats.currentCapacity
-	inUse := int(p.stats.objectsInUse.Load())
+	inUse := int(p.stats.totalGets.Load() - (p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()))
 	newCapacity := int(currentCap) * (100 - p.config.shrink.shrinkPercent) / 100
 
 	if !p.shouldShrinkMainPool(currentCap, newCapacity) {
@@ -41,7 +41,6 @@ func (p *Pool[T]) shrinkExecution() {
 	newCapacity = p.adjustMainShrinkTarget(newCapacity, inUse)
 	p.performShrink(newCapacity, inUse)
 
-	// Fast Path (L1)
 	if !p.config.fastPath.enableChannelGrowth || !p.shouldShrinkFastPath() {
 		return
 	}
@@ -265,7 +264,7 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T],
 func (p *Pool[T]) calculateGrowthParameters() (int, int, int) {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity
-	exponentialThreshold := currentCap * cfg.exponentialThresholdFactor
+	exponentialThreshold := p.config.initialCapacity * cfg.exponentialThresholdFactor
 	fixedStep := currentCap * cfg.fixedGrowthFactor
 	return currentCap, exponentialThreshold, fixedStep
 }

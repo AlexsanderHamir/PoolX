@@ -59,16 +59,15 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	if obj, found := p.tryRefillAndGetL1(); found { // heavy operation.
+	if obj, found := p.tryRefillAndGetL1(); found {
 		return obj, nil
 	}
 
 	obj, err := p.SlowPath()
-	if err != nil {
+	if err == nil {
 		return obj, err
 	}
 
-	p.updateUsageStats()
 	return obj, nil
 }
 
@@ -80,7 +79,6 @@ func (p *Pool[T]) Put(obj T) error {
 	p.mu.RUnlock()
 
 	p.cleaner(obj)
-	p.reduceObjectsInUse()
 
 	if pool.GetBlockedReaders() > 0 {
 		err := p.slowPathPut(obj, pool)
@@ -90,7 +88,7 @@ func (p *Pool[T]) Put(obj T) error {
 		return nil
 	}
 
-	if ok := p.tryFastPathPut(obj); ok {
+	if p.tryFastPathPut(obj, pool) {
 		return nil
 	}
 
@@ -126,6 +124,7 @@ func (p *Pool[T]) shrink() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
+
 			if p.handleMaxConsecutiveShrinks(params.maxConsecutiveShrinks) {
 				p.mu.Unlock()
 				continue
@@ -170,7 +169,7 @@ func (p *Pool[T]) grow() error {
 	}
 
 	currentCap, exponentialThreshold, fixedStep := p.calculateGrowthParameters()
-	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth)
+	newCapacity := p.calculateNewPoolCapacity(currentCap, exponentialThreshold, fixedStep, p.config.growth.growthPercent)
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
 		return fmt.Errorf("%w: %w", errRingBufferFailed, err)

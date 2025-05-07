@@ -3,6 +3,8 @@ package pool
 import (
 	"fmt"
 	"log"
+
+	"github.com/AlexsanderHamir/ringbuffer"
 )
 
 // calculateNewCapacity determines the new capacity based on current capacity and growth configuration
@@ -11,7 +13,8 @@ func (p *Pool[T]) calculateNewCapacity(currentCap int, cfg *growthParameters) in
 	step := currentCap * cfg.fixedGrowthFactor
 
 	if currentCap < threshold {
-		return currentCap + maxInt(currentCap*cfg.growthPercent, 1)
+		initialSize := p.config.fastPath.initialSize
+		return initialSize + maxInt(initialSize*cfg.growthPercent, 1)
 	}
 
 	return currentCap + step
@@ -92,10 +95,9 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 			return zero, false
 		}
 
-		p.updateUsageStats()
+		p.stats.totalGets.Add(1)
 
 		return obj, true
-
 	default:
 		return zero, false
 	}
@@ -104,10 +106,14 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 // tryFastPathPut attempts to quickly return an object to the L1 cache channel using a non-blocking
 // select operation. If successful, it updates hit statistics and returns true.
 // If the channel is full, it returns false to indicate a miss.
-func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
+func (p *Pool[T]) tryFastPathPut(obj T, pool *ringbuffer.RingBuffer[T]) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[PUT] panic on fast path put — channel closed")
+			err := p.slowPathPut(obj, pool)
+			if err != nil {
+				log.Printf("[PUT] error on slow path put, couldn't return object: %v", err)
+			}
 		}
 	}()
 
@@ -119,13 +125,12 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 
 	select {
 	case <-p.ctx.Done():
-		return
+		return false
 	case ch <- obj:
 		p.stats.FastReturnHit.Add(1)
-		ok = true
-		return
+		return true
 	default:
-		return
+		return false
 	}
 }
 
@@ -183,7 +188,7 @@ func (p *Pool[T]) shouldShrinkFastPath() bool {
 func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap int) int {
 	cfg := p.config.fastPath.shrink
 	newCap := currentCap * (100 - cfg.shrinkPercent) / 100
-	inUse := int(p.stats.objectsInUse.Load())
+	inUse := int(p.stats.totalGets.Load() - (p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()))
 
 	if newCap < cfg.minCapacity {
 		return cfg.minCapacity
@@ -242,13 +247,13 @@ func (p *Pool[T]) updateShrinkStats(newCapacity int) {
 func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	chPtr := p.cacheL1
 	ch := *chPtr
-	close(ch)
 
 	newL1 := p.createNewL1Channel(ch, newCapacity, inUse)
 	if newL1 == nil {
 		return
 	}
 
+	close(ch)
 	p.cacheL1 = &newL1
 	p.updateShrinkStats(newCapacity)
 }

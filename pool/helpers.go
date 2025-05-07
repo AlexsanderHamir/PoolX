@@ -2,6 +2,7 @@ package pool
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/AlexsanderHamir/ringbuffer"
@@ -40,7 +41,7 @@ func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 // calculateUtilization calculates the current utilization percentage of the pool.
 // Returns 0 if there are no objects in the pool or if the L1 cache is nil.
 func (p *Pool[T]) calculateUtilization() int {
-	inUse := p.stats.objectsInUse.Load()
+	inUse := p.stats.totalGets.Load() - (p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load())
 	return (int(inUse) / p.pool.Capacity()) * 100
 }
 
@@ -105,7 +106,7 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 		return nil, nil, errRingBufferFailed
 	}
 
-	if part1 == nil && part2 == nil && err == nil || len(part1) == 0 && len(part2) == 0 {
+	if len(part1) == 0 && len(part2) == 0 {
 		return nil, nil, errNoItemsToMove
 	}
 
@@ -115,6 +116,7 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 func (p *Pool[T]) moveItemsToL1(items []T) error {
 	defer func() {
 		if r := recover(); r != nil {
+			log.Printf("[MOVE] panic on move items to L1: %v", r)
 		}
 	}()
 
@@ -186,12 +188,11 @@ func (p *Pool[T]) handleShrinkCooldown(shrinkCooldown time.Duration) (cooldownAc
 
 func (p *Pool[T]) tryRefillIfNeeded() (bool, error) {
 	currentCap, currentPercent := p.calculateL1Usage()
+	fillTarget := p.calculateFillTarget(currentCap)
 
 	if currentPercent > p.config.fastPath.refillPercent {
 		return true, nil
 	}
-
-	fillTarget := p.calculateFillTarget(currentCap)
 
 	err := p.refill(fillTarget)
 	if err != nil {
@@ -213,6 +214,8 @@ func (p *Pool[T]) SlowPath() (obj T, err error) {
 	if err != nil {
 		return obj, fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
+
+	p.stats.totalGets.Add(1)
 
 	return obj, nil
 }
