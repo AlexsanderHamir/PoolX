@@ -60,21 +60,21 @@ func (b *poolConfigBuilder) SetHardLimit(count int) PoolConfigBuilder {
 // SetGrowthExponentialThresholdFactor sets the threshold factor for switching from
 // exponential to fixed growth. When the pool's capacity exceeds this threshold,
 // growth switches from percentage-based to fixed-step growth.
-func (b *poolConfigBuilder) SetGrowthExponentialThresholdFactor(factor float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetGrowthExponentialThresholdFactor(factor int) PoolConfigBuilder {
 	b.config.growth.exponentialThresholdFactor = factor
 	return b
 }
 
 // SetGrowthPercent sets the growth percentage used in exponential growth mode.
 // This determines how much the pool grows by percentage when below the exponential threshold.
-func (b *poolConfigBuilder) SetGrowthPercent(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetGrowthPercent(percent int) PoolConfigBuilder {
 	b.config.growth.growthPercent = percent
 	return b
 }
 
 // SetFixedGrowthFactor sets the fixed growth factor used after exponential growth ends.
 // This determines the fixed step size for growth when above the exponential threshold.
-func (b *poolConfigBuilder) SetFixedGrowthFactor(factor float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFixedGrowthFactor(factor int) PoolConfigBuilder {
 	b.config.growth.fixedGrowthFactor = factor
 	return b
 }
@@ -95,7 +95,7 @@ func (b *poolConfigBuilder) SetShrinkCooldown(duration time.Duration) PoolConfig
 
 // SetMinUtilizationBeforeShrink sets the utilization threshold for shrinking.
 // The pool will only shrink if its utilization falls below this threshold.
-func (b *poolConfigBuilder) SetMinUtilizationBeforeShrink(threshold float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetMinUtilizationBeforeShrink(threshold int) PoolConfigBuilder {
 	b.config.shrink.minUtilizationBeforeShrink = threshold
 	return b
 }
@@ -109,7 +109,7 @@ func (b *poolConfigBuilder) SetStableUnderutilizationRounds(rounds int) PoolConf
 
 // SetShrinkPercent sets the percentage by which the pool shrinks.
 // This determines how much capacity is reduced during shrink operations.
-func (b *poolConfigBuilder) SetShrinkPercent(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetShrinkPercent(percent int) PoolConfigBuilder {
 	b.config.shrink.shrinkPercent = percent
 	return b
 }
@@ -137,14 +137,14 @@ func (b *poolConfigBuilder) SetFastPathInitialSize(count int) PoolConfigBuilder 
 
 // SetFastPathFillAggressiveness sets how aggressively the fast path is filled.
 // This determines what percentage of the fast path capacity should be filled initially.
-func (b *poolConfigBuilder) SetFastPathFillAggressiveness(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathFillAggressiveness(percent int) PoolConfigBuilder {
 	b.config.fastPath.fillAggressiveness = percent
 	return b
 }
 
 // SetFastPathRefillPercent sets the refill threshold for the fast path.
 // When the fast path usage falls below this percentage, it will be refilled.
-func (b *poolConfigBuilder) SetFastPathRefillPercent(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathRefillPercent(percent int) PoolConfigBuilder {
 	b.config.fastPath.refillPercent = percent
 	return b
 }
@@ -165,21 +165,21 @@ func (b *poolConfigBuilder) SetFastPathGrowthEventsTrigger(count int) PoolConfig
 
 // SetFastPathGrowthPercent sets the growth percentage for the fast path.
 // This determines how much the L1 cache grows by percentage.
-func (b *poolConfigBuilder) SetFastPathGrowthPercent(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathGrowthPercent(percent int) PoolConfigBuilder {
 	b.config.fastPath.growth.growthPercent = percent
 	return b
 }
 
 // SetFastPathExponentialThresholdFactor sets the exponential threshold factor for fast path growth.
 // This determines when the L1 cache switches from exponential to fixed growth.
-func (b *poolConfigBuilder) SetFastPathExponentialThresholdFactor(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathExponentialThresholdFactor(percent int) PoolConfigBuilder {
 	b.config.fastPath.growth.exponentialThresholdFactor = percent
 	return b
 }
 
 // SetFastPathFixedGrowthFactor sets the fixed growth factor for fast path growth.
 // This determines the fixed step size for L1 cache growth above the threshold.
-func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(percent int) PoolConfigBuilder {
 	b.config.fastPath.growth.fixedGrowthFactor = percent
 	return b
 }
@@ -193,7 +193,7 @@ func (b *poolConfigBuilder) SetFastPathShrinkEventsTrigger(count int) PoolConfig
 
 // SetFastPathShrinkPercent sets the shrink percentage for the fast path.
 // This determines how much the L1 cache shrinks by percentage.
-func (b *poolConfigBuilder) SetFastPathShrinkPercent(percent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathShrinkPercent(percent int) PoolConfigBuilder {
 	b.config.fastPath.shrink.shrinkPercent = percent
 	return b
 }

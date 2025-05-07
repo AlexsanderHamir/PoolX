@@ -4,7 +4,7 @@ import (
 	"errors"
 )
 
-func maxUint64(a, b uint64) uint64 {
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
@@ -21,18 +21,13 @@ func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 }
 
 func (p *Pool[T]) IsShrunk() bool {
-	return p.stats.currentCapacity < uint64(p.config.initialCapacity)
+	return p.stats.currentCapacity < p.config.initialCapacity
 }
 
 func (p *Pool[T]) IsGrowth() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.stats.currentCapacity > uint64(p.config.initialCapacity)
-}
-
-func (p *Pool[T]) releaseObj(obj T) {
-	p.cleaner(obj)
-	p.reduceObjectsInUse()
+	return p.stats.currentCapacity > p.config.initialCapacity
 }
 
 func (p *Pool[T]) reduceObjectsInUse() {

@@ -75,11 +75,12 @@ func (p *Pool[T]) Get() (zero T, err error) {
 // Put returns an object to the pool. The object will be cleaned using the cleaner function
 // before being made available for reuse.
 func (p *Pool[T]) Put(obj T) error {
-	p.releaseObj(obj)
-
 	p.mu.RLock()
 	pool := p.pool
 	p.mu.RUnlock()
+
+	p.cleaner(obj)
+	p.reduceObjectsInUse()
 
 	if pool.GetBlockedReaders() > 0 {
 		err := p.slowPathPut(obj, pool)
@@ -99,10 +100,6 @@ func (p *Pool[T]) Put(obj T) error {
 // Close closes the pool and releases all resources. If there are outstanding objects,
 // it will wait for them to be returned before closing.
 func (p *Pool[T]) Close() error {
-	if p.closed.Load() {
-		return errors.New("pool is already closed")
-	}
-
 	if p.hasOutstandingObjects() {
 		p.closeAsync()
 	}
@@ -129,30 +126,31 @@ func (p *Pool[T]) shrink() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
-			if p.closed.Load() {
-				p.mu.Unlock()
-				return
-			}
-
-			if p.isShrinkBlocked.Load() {
+			if p.handleMaxConsecutiveShrinks(params.maxConsecutiveShrinks) {
 				p.mu.Unlock()
 				continue
 			}
 
-			if p.handleMaxConsecutiveShrinks(params) {
+			if p.handleShrinkCooldown(params.shrinkCooldown) {
 				p.mu.Unlock()
 				continue
 			}
 
-			cooldownActive := p.handleShrinkCooldown(params)
-			if cooldownActive {
-				p.mu.Unlock()
-				continue
+			if p.isUnderUtilized() {
+				underutilCount++
+				if underutilCount >= params.stableUnderutilizationRounds {
+					utilOK = true
+				}
+			} else {
+				if underutilCount > 0 {
+					underutilCount--
+				}
 			}
 
-			p.performShrinkChecks(&underutilCount, &utilOK)
 			if utilOK {
-				p.executeShrink(&underutilCount, &utilOK)
+				p.shrinkExecution()
+				underutilCount = 0
+				utilOK = false
 			}
 
 			p.mu.Unlock()
@@ -164,9 +162,7 @@ func (p *Pool[T]) shrink() {
 // It increases the pool's capacity according to the growth configuration.
 func (p *Pool[T]) grow() error {
 	defer func() {
-		if p.isShrinkBlocked.Load() {
-			p.shrinkCond.Signal()
-		}
+		p.shrinkCond.Signal()
 	}()
 
 	if p.isGrowthBlocked.Load() {
@@ -201,9 +197,6 @@ func (p *Pool[T]) preReadBlockHook() bool {
 	}
 
 	chPtr := p.cacheL1
-	if chPtr == nil {
-		return false
-	}
 	ch := *chPtr
 
 	for i := range attempts {

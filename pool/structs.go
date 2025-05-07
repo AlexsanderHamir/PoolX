@@ -41,9 +41,6 @@ type Pool[T any] struct {
 	// stats tracks various pool usage statistics when enabled
 	stats *poolStats
 
-	// isShrinkBlocked prevents shrinking operations when true
-	isShrinkBlocked atomic.Bool
-
 	// isGrowthBlocked prevents growth operations when true
 	isGrowthBlocked atomic.Bool
 
@@ -59,9 +56,6 @@ type Pool[T any] struct {
 	// ctx and cancel manage the pool's lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	// closed prevents further operations after Close() is called
-	closed atomic.Bool
 }
 
 // PoolConfig defines the configuration parameters for the pool.
@@ -127,29 +121,26 @@ type growthParameters struct {
 	// exponentialThresholdFactor determines when to switch from exponential to fixed growth.
 	// Once capacity reaches (InitialCapacity * ExponentialThresholdFactor),
 	// growth switches to fixed mode to prevent excessive expansion.
-	// Must be greater than 0.
-	exponentialThresholdFactor float64
+	exponentialThresholdFactor int
 
 	// growthPercent defines the growth rate during exponential phase.
-	// For example, 0.5 means increase capacity by 50% each time.
-	// Must be greater than 0.
-	growthPercent float64
+	// For example, 50 means increase capacity by 50% each time.
+	growthPercent int
 
 	// fixedGrowthFactor determines the fixed growth amount after exponential phase.
 	// The pool grows by (InitialCapacity * FixedGrowthFactor) each time.
-	// Must be greater than 0.
-	fixedGrowthFactor float64
+	fixedGrowthFactor int
 }
 
-func (g *growthParameters) GetExponentialThresholdFactor() float64 {
+func (g *growthParameters) GetExponentialThresholdFactor() int {
 	return g.exponentialThresholdFactor
 }
 
-func (g *growthParameters) GetGrowthPercent() float64 {
+func (g *growthParameters) GetGrowthPercent() int {
 	return g.growthPercent
 }
 
-func (g *growthParameters) GetFixedGrowthFactor() float64 {
+func (g *growthParameters) GetFixedGrowthFactor() int {
 	return g.fixedGrowthFactor
 }
 
@@ -157,7 +148,7 @@ func (g *growthParameters) GetFixedGrowthFactor() float64 {
 // It provides fine-grained control over when and how the pool shrinks,
 // allowing for different balance points between memory efficiency and performance.
 type shrinkParameters struct {
-	// enforceCustomConfig requires explicit configuration of all parameters.
+	// enforceCustomConfig reqTestFastPathConfigurationsres explicit configuration of all parameters.
 	// When false, uses default values for unspecified parameters.
 	// When true, all parameters must be manually configured.
 	enforceCustomConfig bool
@@ -177,8 +168,8 @@ type shrinkParameters struct {
 
 	// minUtilizationBeforeShrink defines the utilization threshold for shrinking.
 	// The pool will only shrink if its utilization falls below this value.
-	// Must be between 0 and 1.0.
-	minUtilizationBeforeShrink float64
+	// Must be between 0 and 100.
+	minUtilizationBeforeShrink int
 
 	// stableUnderutilizationRounds requires consistent underutilization before shrinking.
 	// Ensures the underutilization is not just a temporary condition.
@@ -186,8 +177,8 @@ type shrinkParameters struct {
 
 	// shrinkPercent determines how much to reduce the pool size when shrinking.
 	// For example, 0.2 means reduce capacity by 20% each time.
-	// Must be between 0 and 1.0.
-	shrinkPercent float64
+	// Must be between 0 and 100.
+	shrinkPercent int
 
 	// maxConsecutiveShrinks limits back-to-back shrink operations.
 	// Prevents excessive shrinking in response to temporary demand changes.
@@ -214,7 +205,7 @@ func (s *shrinkParameters) GetShrinkCooldown() time.Duration {
 	return s.shrinkCooldown
 }
 
-func (s *shrinkParameters) GetMinUtilizationBeforeShrink() float64 {
+func (s *shrinkParameters) GetMinUtilizationBeforeShrink() int {
 	return s.minUtilizationBeforeShrink
 }
 
@@ -222,7 +213,7 @@ func (s *shrinkParameters) GetStableUnderutilizationRounds() int {
 	return s.stableUnderutilizationRounds
 }
 
-func (s *shrinkParameters) GetShrinkPercent() float64 {
+func (s *shrinkParameters) GetShrinkPercent() int {
 	return s.shrinkPercent
 }
 
@@ -253,11 +244,11 @@ type fastPathParameters struct {
 	// fillAggressiveness controls how aggressively to fill the fast path.
 	// Value between 0.0 and 1.0, representing the target fill percentage.
 	// Higher values mean more objects are kept in the fast path.
-	fillAggressiveness float64
+	fillAggressiveness int
 
 	// refillPercent triggers refill when occupancy drops below this threshold.
 	// Value between 0.0 and 0.99, representing the minimum acceptable fill level.
-	refillPercent float64
+	refillPercent int
 
 	// preReadBlockHookAttempts controls how many times to attempt getting an object
 	// from L1 in preReadBlockHook before falling back to the main pool.
@@ -281,11 +272,11 @@ func (f *fastPathParameters) GetInitialSize() int {
 	return f.initialSize
 }
 
-func (f *fastPathParameters) GetFillAggressiveness() float64 {
+func (f *fastPathParameters) GetFillAggressiveness() int {
 	return f.fillAggressiveness
 }
 
-func (f *fastPathParameters) GetRefillPercent() float64 {
+func (f *fastPathParameters) GetRefillPercent() int {
 	return f.refillPercent
 }
 
@@ -323,13 +314,13 @@ type shrinkDefaults struct {
 	cooldown time.Duration
 
 	// utilization is the default utilization threshold for shrinking
-	utilization float64
+	utilization int
 
 	// underutilized is the default number of underutilization rounds required
 	underutilized int
 
 	// percent is the default shrink percentage
-	percent float64
+	percent int
 
 	// maxShrinks is the default maximum number of consecutive shrinks
 	maxShrinks int

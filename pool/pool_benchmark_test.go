@@ -51,12 +51,12 @@ func Benchmark_Get(b *testing.B) {
 		SetHardLimit(10_000_000).  // defaultHardLimit
 		SetMinShrinkCapacity(128). // defaultMinCapacity
 		SetFastPathEnableChannelGrowth(true).
-		SetFastPathFillAggressiveness(1.0). // fillAggressivenessExtreme
-		SetFastPathRefillPercent(0.10).     // defaultRefillPercent
+		SetFastPathFillAggressiveness(100). // fillAggressivenessExtreme
+		SetFastPathRefillPercent(10).     // defaultRefillPercent
 		SetFastPathGrowthEventsTrigger(3).
-		SetFastPathGrowthPercent(0.75).
-		SetFastPathExponentialThresholdFactor(1000.0).
-		SetFastPathFixedGrowthFactor(1.0).
+		SetFastPathGrowthPercent(75).
+		SetFastPathExponentialThresholdFactor(1000).
+		SetFastPathFixedGrowthFactor(100).
 		Build()
 	if err != nil {
 		b.Fatalf("Failed to create custom config: %v", err)
@@ -82,7 +82,7 @@ func Benchmark_Grow(b *testing.B) {
 	poolObj := setupPool(b, nil)
 
 	for i := 0; i < b.N; i++ {
-		poolObj.grow(time.Now())
+		poolObj.grow()
 
 		time.Sleep(3 * time.Millisecond)
 	}
@@ -134,7 +134,7 @@ func Benchmark_Shrink(b *testing.B) {
 			break
 		}
 
-		poolObj.performShrink(newCap, inUse, uint64(prevCap))
+		poolObj.performShrink(newCap, inUse)
 
 		newLen := poolObj.pool.Capacity()
 		if newLen >= prevCap {

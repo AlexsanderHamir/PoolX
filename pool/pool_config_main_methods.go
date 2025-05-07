@@ -43,7 +43,7 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 //   - fixedGrowthFactor: Fixed step size for growth when above threshold
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFactor float64, growthPercent float64, fixedGrowthFactor float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthPercent, fixedGrowthFactor int) PoolConfigBuilder {
 	if exponentialThresholdFactor > 0 {
 		b.config.growth.exponentialThresholdFactor = exponentialThresholdFactor
 	}
@@ -126,7 +126,7 @@ func (b *poolConfigBuilder) EnforceCustomConfig() PoolConfigBuilder {
 //   - shrinkPercent: Percentage by which to shrink
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent int) PoolConfigBuilder {
 	if checkInterval > 0 {
 		b.config.shrink.checkInterval = checkInterval
 	}
@@ -169,7 +169,7 @@ func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThresh
 //   - shrinkEventsTrigger: Number of shrink events before fast path shrinks
 //   - fillAggressiveness: How aggressively to fill the fast path initially
 //   - refillPercent: Threshold for refilling the fast path
-func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize int, growthEventsTrigger int, shrinkEventsTrigger int, fillAggressiveness, refillPercent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize, growthEventsTrigger, shrinkEventsTrigger int, fillAggressiveness, refillPercent int) PoolConfigBuilder {
 	if initialSize > 0 {
 		b.config.fastPath.initialSize = initialSize
 	}
@@ -198,7 +198,7 @@ func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize int, growthEvent
 //   - exponentialThresholdFactor: Threshold for switching growth modes
 //   - fixedGrowthFactor: Fixed step size for growth above threshold
 //   - growthPercent: Percentage growth rate below threshold
-func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor float64, fixedGrowthFactor float64, growthPercent float64) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor, fixedGrowthFactor, growthPercent int) PoolConfigBuilder {
 	if exponentialThresholdFactor > 0 {
 		b.config.fastPath.growth.exponentialThresholdFactor = exponentialThresholdFactor
 	}
@@ -218,7 +218,7 @@ func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor 
 // Parameters:
 //   - shrinkPercent: Percentage by which to shrink the fast path
 //   - minCapacity: Minimum capacity after shrinking
-func (b *poolConfigBuilder) SetFastPathShrinkConfigs(shrinkPercent float64, minCapacity int) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathShrinkConfigs(shrinkPercent, minCapacity int) PoolConfigBuilder {
 	if shrinkPercent > 0 {
 		b.config.fastPath.shrink.shrinkPercent = shrinkPercent
 	}

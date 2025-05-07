@@ -47,30 +47,30 @@ type TestJob struct {
 type DefaultConfigValues struct {
 	InitialCapacity                    int
 	HardLimit                          int
-	GrowthPercent                      float64
-	FixedGrowthFactor                  float64
-	ExponentialThresholdFactor         float64
+	GrowthPercent                      int
+	FixedGrowthFactor                  int
+	ExponentialThresholdFactor         int
 	ShrinkAggressiveness               pool.AggressivenessLevel
 	ShrinkCheckInterval                time.Duration
 	IdleThreshold                      time.Duration
 	MinIdleBeforeShrink                int
 	ShrinkCooldown                     time.Duration
-	MinUtilizationBeforeShrink         float64
+	MinUtilizationBeforeShrink         int
 	StableUnderutilizationRounds       int
-	ShrinkPercent                      float64
+	ShrinkPercent                      int
 	MinShrinkCapacity                  int
 	MaxConsecutiveShrinks              int
 	InitialSize                        int
-	FillAggressiveness                 float64
-	RefillPercent                      float64
+	FillAggressiveness                 int
+	RefillPercent                      int
 	EnableChannelGrowth                bool
 	GrowthEventsTrigger                int
-	FastPathGrowthPercent              float64
-	FastPathExponentialThresholdFactor float64
-	FastPathFixedGrowthFactor          float64
+	FastPathGrowthPercent              int
+	FastPathExponentialThresholdFactor int
+	FastPathFixedGrowthFactor          int
 	ShrinkEventsTrigger                int
 	FastPathShrinkAggressiveness       pool.AggressivenessLevel
-	FastPathShrinkPercent              float64
+	FastPathShrinkPercent              int
 	FastPathShrinkMinCapacity          int
 	Verbose                            bool
 	RingBufferBlocking                 bool
@@ -117,27 +117,27 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(101210).
 		SetHardLimit(10000000028182820).
-		SetGrowthPercent(0.52).
-		SetFixedGrowthFactor(1.0).
-		SetGrowthExponentialThresholdFactor(4.0).
+		SetGrowthPercent(52).
+		SetFixedGrowthFactor(100).
+		SetGrowthExponentialThresholdFactor(400).
 		SetShrinkCheckInterval(2 * time.Second).
 		SetShrinkCooldown(10 * time.Second).
-		SetMinUtilizationBeforeShrink(0.321).
+		SetMinUtilizationBeforeShrink(32).
 		SetStableUnderutilizationRounds(3121).
-		SetShrinkPercent(0.25121).
+		SetShrinkPercent(25).
 		SetMinShrinkCapacity(10121).
 		SetMaxConsecutiveShrinks(3121).
 		SetFastPathInitialSize(50121).
-		SetFastPathFillAggressiveness(0.8121).
-		SetFastPathRefillPercent(0.2121).
+		SetFastPathFillAggressiveness(800).
+		SetFastPathRefillPercent(2121).
 		SetFastPathEnableChannelGrowth(false).
 		SetFastPathGrowthEventsTrigger(5121).
-		SetFastPathGrowthPercent(0.6121).
-		SetFastPathExponentialThresholdFactor(3.0121).
-		SetFastPathFixedGrowthFactor(0.8121).
+		SetFastPathGrowthPercent(6121).
+		SetFastPathExponentialThresholdFactor(300).
+		SetFastPathFixedGrowthFactor(800).
 		SetFastPathShrinkEventsTrigger(4121).
 		SetFastPathShrinkAggressiveness(pool.AggressivenessLevel(1)).
-		SetFastPathShrinkPercent(0.3121).
+		SetFastPathShrinkPercent(31).
 		SetFastPathShrinkMinCapacity(20121).
 		SetRingBufferBlocking(true).
 		SetRingBufferTimeout(5 * time.Second).
@@ -319,7 +319,7 @@ func testValidConfig(t *testing.T, name string, configFunc func() (*pool.PoolCon
 }
 
 func ValidateCapacity(p *pool.Pool[*TestObject], stats *pool.PoolStatsSnapshot) error {
-	ringCap := uint64(p.RingBufferCapacity())
+	ringCap := p.RingBufferCapacity()
 	if ringCap != stats.CurrentCapacity {
 		return fmt.Errorf("current capacity (%d) does not match ring buffer capacity (%d)", stats.CurrentCapacity, ringCap)
 	}

@@ -15,8 +15,8 @@ import (
 func TestPoolGrowth(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(2).
-		SetGrowthPercent(0.5).
-		SetFixedGrowthFactor(1.0).
+		SetGrowthPercent(50).
+		SetFixedGrowthFactor(100).
 		SetMinShrinkCapacity(2).
 		SetShrinkCheckInterval(1 * time.Second).
 		Build()
@@ -58,9 +58,9 @@ func TestPoolShrink(t *testing.T) {
 		EnforceCustomConfig().
 		SetShrinkCheckInterval(10 * time.Millisecond). // Very frequent checks
 		SetShrinkCooldown(10 * time.Millisecond).      // Short cooldown
-		SetMinUtilizationBeforeShrink(0.9).            // Shrink if utilization below 10%
+		SetMinUtilizationBeforeShrink(90).            // Shrink if utilization below 10%
 		SetStableUnderutilizationRounds(1).            // Only need 1 round of underutilization
-		SetShrinkPercent(0.5).                         // Shrink by 50%
+		SetShrinkPercent(50).                         // Shrink by 50%
 		SetMinShrinkCapacity(1).                       // Can shrink down to 1
 		SetMaxConsecutiveShrinks(5).                   // Allow multiple consecutive shrinks
 		Build()
@@ -140,8 +140,8 @@ func TestConfigValues(t *testing.T) {
 func TestDisabledChannelGrowth(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(2).
-		SetGrowthPercent(0.5).
-		SetFixedGrowthFactor(1.0).
+		SetGrowthPercent(50).
+		SetFixedGrowthFactor(100).
 		SetMinShrinkCapacity(2).
 		SetFastPathEnableChannelGrowth(false). // Disable channel growth
 		Build()

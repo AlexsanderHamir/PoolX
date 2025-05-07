@@ -29,7 +29,7 @@ type PoolConfigBuilder interface {
 	//   - enableStats: Enable collection of non-essential pool statistics
 	//
 	// Note: Zero or negative values are ignored, default values will be used instead.
-	SetPoolBasicConfigs(initialCapacity int, hardLimit int, verbose, enableChannelGrowth, enableStats bool) PoolConfigBuilder
+	SetPoolBasicConfigs(initialCapacity int, hardLimit int, enableChannelGrowth bool) PoolConfigBuilder
 
 	// SetRingBufferBasicConfigs configures the core behavior of the ring buffer component.
 	// Parameters:
@@ -48,7 +48,7 @@ type PoolConfigBuilder interface {
 	//   - fixedGrowthFactor: Fixed step size for growth when above threshold
 	//
 	// Note: Zero or negative values are ignored, default values will be used instead.
-	SetRingBufferGrowthConfigs(exponentialThresholdFactor float64, growthPercent float64, fixedGrowthFactor float64) PoolConfigBuilder
+	SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthPercent, fixedGrowthFactor int) PoolConfigBuilder
 
 	// SetRingBufferShrinkConfigs controls the automatic shrinking behavior of the ring buffer.
 	// Parameters:
@@ -63,7 +63,7 @@ type PoolConfigBuilder interface {
 	//   - shrinkPercent: Percentage by which to shrink
 	//
 	// Note: Zero or negative values are ignored, default values will be used instead.
-	SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent float64) PoolConfigBuilder
+	SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent int) PoolConfigBuilder
 
 	// EnforceCustomConfig disables default shrink configuration, requiring manual setting
 	// of all shrink parameters. This is useful when you need precise control over
@@ -92,20 +92,20 @@ type PoolConfigBuilder interface {
 	//   - shrinkEventsTrigger: Number of shrink events before fast path shrinks
 	//   - fillAggressiveness: How aggressively to fill the fast path initially
 	//   - refillPercent: Threshold for refilling the fast path
-	SetFastPathBasicConfigs(initialSize int, growthEventsTrigger int, shrinkEventsTrigger int, fillAggressiveness, refillPercent float64) PoolConfigBuilder
+	SetFastPathBasicConfigs(initialSize, growthEventsTrigger, shrinkEventsTrigger int, fillAggressiveness, refillPercent int) PoolConfigBuilder
 
 	// SetFastPathGrowthConfigs defines how the fast path expands when under pressure.
 	// Parameters:
 	//   - exponentialThresholdFactor: Threshold for switching growth modes
 	//   - fixedGrowthFactor: Fixed step size for growth above threshold
 	//   - growthPercent: Percentage growth rate below threshold
-	SetFastPathGrowthConfigs(exponentialThresholdFactor float64, fixedGrowthFactor float64, growthPercent float64) PoolConfigBuilder
+	SetFastPathGrowthConfigs(exponentialThresholdFactor, fixedGrowthFactor, growthPercent int) PoolConfigBuilder
 
 	// SetFastPathShrinkConfigs controls the automatic shrinking behavior of the fast path.
 	// Parameters:
 	//   - shrinkPercent: Percentage by which to shrink the fast path
 	//   - minCapacity: Minimum capacity after shrinking
-	SetFastPathShrinkConfigs(shrinkPercent float64, minCapacity int) PoolConfigBuilder
+	SetFastPathShrinkConfigs(shrinkPercent, minCapacity int) PoolConfigBuilder
 
 	// SetFastPathShrinkAggressiveness configures the fast path shrink behavior using predefined levels.
 	// Uses the same aggressiveness levels as the main pool (1-5).
@@ -122,28 +122,22 @@ type PoolConfigBuilder interface {
 	SetInitialCapacity(cap int) PoolConfigBuilder
 	// SetHardLimit sets the maximum number of objects the pool can contain
 	SetHardLimit(count int) PoolConfigBuilder
-	// SetVerbose enables or disables detailed logging
-	SetVerbose(verbose bool) PoolConfigBuilder
 	// SetGrowthExponentialThresholdFactor sets the threshold for switching growth modes
-	SetGrowthExponentialThresholdFactor(factor float64) PoolConfigBuilder
+	SetGrowthExponentialThresholdFactor(factor int) PoolConfigBuilder
 	// SetGrowthPercent sets the percentage growth rate for exponential growth
-	SetGrowthPercent(percent float64) PoolConfigBuilder
+	SetGrowthPercent(percent int) PoolConfigBuilder
 	// SetFixedGrowthFactor sets the fixed step size for linear growth
-	SetFixedGrowthFactor(factor float64) PoolConfigBuilder
+	SetFixedGrowthFactor(factor int) PoolConfigBuilder
 	// SetShrinkCheckInterval sets the time between shrink eligibility checks
 	SetShrinkCheckInterval(interval time.Duration) PoolConfigBuilder
-	// SetIdleThreshold sets the minimum idle duration before shrinking
-	SetIdleThreshold(duration time.Duration) PoolConfigBuilder
-	// SetMinIdleBeforeShrink sets the required consecutive idle checks
-	SetMinIdleBeforeShrink(count int) PoolConfigBuilder
 	// SetShrinkCooldown sets the minimum time between shrink operations
 	SetShrinkCooldown(duration time.Duration) PoolConfigBuilder
 	// SetMinUtilizationBeforeShrink sets the utilization threshold for shrinking
-	SetMinUtilizationBeforeShrink(threshold float64) PoolConfigBuilder
+	SetMinUtilizationBeforeShrink(threshold int) PoolConfigBuilder
 	// SetStableUnderutilizationRounds sets the required stable underutilization rounds
 	SetStableUnderutilizationRounds(rounds int) PoolConfigBuilder
 	// SetShrinkPercent sets the percentage by which to shrink
-	SetShrinkPercent(percent float64) PoolConfigBuilder
+	SetShrinkPercent(percent int) PoolConfigBuilder
 	// SetMinShrinkCapacity sets the minimum capacity after shrinking
 	SetMinShrinkCapacity(minCap int) PoolConfigBuilder
 	// SetMaxConsecutiveShrinks sets the maximum consecutive shrink operations
@@ -151,23 +145,23 @@ type PoolConfigBuilder interface {
 	// SetFastPathInitialSize sets the initial capacity of the fast path
 	SetFastPathInitialSize(count int) PoolConfigBuilder
 	// SetFastPathFillAggressiveness sets how aggressively to fill the fast path
-	SetFastPathFillAggressiveness(percent float64) PoolConfigBuilder
+	SetFastPathFillAggressiveness(percent int) PoolConfigBuilder
 	// SetFastPathRefillPercent sets the threshold for refilling the fast path
-	SetFastPathRefillPercent(percent float64) PoolConfigBuilder
+	SetFastPathRefillPercent(percent int) PoolConfigBuilder
 	// SetFastPathEnableChannelGrowth enables or disables dynamic growth of the fast path
 	SetFastPathEnableChannelGrowth(enable bool) PoolConfigBuilder
 	// SetFastPathGrowthEventsTrigger sets the number of growth events before fast path grows
 	SetFastPathGrowthEventsTrigger(count int) PoolConfigBuilder
 	// SetFastPathGrowthPercent sets the percentage growth rate for the fast path
-	SetFastPathGrowthPercent(percent float64) PoolConfigBuilder
+	SetFastPathGrowthPercent(percent int) PoolConfigBuilder
 	// SetFastPathExponentialThresholdFactor sets the threshold for switching fast path growth modes
-	SetFastPathExponentialThresholdFactor(percent float64) PoolConfigBuilder
+	SetFastPathExponentialThresholdFactor(percent int) PoolConfigBuilder
 	// SetFastPathFixedGrowthFactor sets the fixed step size for fast path growth
-	SetFastPathFixedGrowthFactor(percent float64) PoolConfigBuilder
+	SetFastPathFixedGrowthFactor(percent int) PoolConfigBuilder
 	// SetFastPathShrinkEventsTrigger sets the number of shrink events before fast path shrinks
 	SetFastPathShrinkEventsTrigger(count int) PoolConfigBuilder
 	// SetFastPathShrinkPercent sets the percentage by which to shrink the fast path
-	SetFastPathShrinkPercent(percent float64) PoolConfigBuilder
+	SetFastPathShrinkPercent(percent int) PoolConfigBuilder
 	// SetFastPathShrinkMinCapacity sets the minimum capacity of the fast path after shrinking
 	SetFastPathShrinkMinCapacity(minCap int) PoolConfigBuilder
 	// SetPreReadBlockHookAttempts sets the number of attempts for pre-read block hooks
@@ -180,8 +174,6 @@ type PoolConfigBuilder interface {
 	SetRingBufferReadTimeout(d time.Duration) PoolConfigBuilder
 	// SetRingBufferWriteTimeout sets the write timeout for the ring buffer
 	SetRingBufferWriteTimeout(d time.Duration) PoolConfigBuilder
-	// SetEnableStats enables or disables collection of pool statistics
-	SetEnableStats(enable bool) PoolConfigBuilder
 	// Build creates and returns a new PoolConfig with the specified settings
 	Build() (*PoolConfig, error)
 }

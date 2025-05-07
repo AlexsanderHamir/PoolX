@@ -76,7 +76,7 @@ func TestGrowthConfigurations(t *testing.T) {
 		{
 			name: "negative growth percent",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetGrowthPercent(-0.1).Build()
+				return pool.NewPoolConfigBuilder().SetGrowthPercent(-1).Build()
 			},
 		},
 		{
@@ -124,13 +124,7 @@ func TestShrinkConfigurations(t *testing.T) {
 		{
 			name: "negative shrink percent",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetShrinkPercent(-0.1).Build()
-			},
-		},
-		{
-			name: "shrink percent greater than 100",
-			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetShrinkPercent(1.5).Build()
+				return pool.NewPoolConfigBuilder().SetShrinkPercent(-1).Build()
 			},
 		},
 		{
@@ -168,13 +162,7 @@ func TestShrinkConfigurations(t *testing.T) {
 		{
 			name: "negative min utilization before shrink",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetMinUtilizationBeforeShrink(-0.1).Build()
-			},
-		},
-		{
-			name: "min utilization before shrink greater than 100",
-			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetMinUtilizationBeforeShrink(1.5).Build()
+				return pool.NewPoolConfigBuilder().SetMinUtilizationBeforeShrink(-1).Build()
 			},
 		},
 		{
@@ -222,25 +210,13 @@ func TestFastPathConfigurations(t *testing.T) {
 		{
 			name: "negative fast path fill aggressiveness",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetFastPathFillAggressiveness(-0.1).Build()
-			},
-		},
-		{
-			name: "fast path fill aggressiveness greater than 100",
-			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetFastPathFillAggressiveness(1.5).Build()
+				return pool.NewPoolConfigBuilder().SetFastPathFillAggressiveness(-1).Build()
 			},
 		},
 		{
 			name: "negative fast path refill percent",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetFastPathRefillPercent(-0.1).Build()
-			},
-		},
-		{
-			name: "fast path refill percent greater than 100",
-			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetFastPathRefillPercent(1.5).Build()
+				return pool.NewPoolConfigBuilder().SetFastPathRefillPercent(-1).Build()
 			},
 		},
 	}
@@ -255,13 +231,13 @@ func TestValidConfiguration(t *testing.T) {
 		builder, err := pool.NewPoolConfigBuilder().
 			SetInitialCapacity(10).
 			SetHardLimit(20).
-			SetGrowthPercent(0.5).
-			SetShrinkPercent(0.3).
+			SetGrowthPercent(50).
+			SetShrinkPercent(30).
 			SetFastPathInitialSize(5).
-			SetFastPathFillAggressiveness(0.8).
-			SetFastPathRefillPercent(0.5).
-			SetFixedGrowthFactor(1.0).
-			SetGrowthExponentialThresholdFactor(2.0).
+			SetFastPathFillAggressiveness(80).
+			SetFastPathRefillPercent(20).
+			SetFixedGrowthFactor(100).
+			SetGrowthExponentialThresholdFactor(200).
 			SetShrinkAggressiveness(pool.AggressivenessBalanced)
 		if err != nil {
 			return nil, err
@@ -269,7 +245,7 @@ func TestValidConfiguration(t *testing.T) {
 		return builder.
 			SetShrinkCheckInterval(1 * time.Second).
 			SetShrinkCooldown(2 * time.Second).
-			SetMinUtilizationBeforeShrink(0.2).
+			SetMinUtilizationBeforeShrink(20).
 			SetStableUnderutilizationRounds(3).
 			SetMinShrinkCapacity(5).
 			SetMaxConsecutiveShrinks(3).

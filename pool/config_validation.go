@@ -51,14 +51,6 @@ func (b *poolConfigBuilder) validateShrinkConfig() error {
 		return fmt.Errorf("checkInterval must be greater than 0, got %v", sp.checkInterval)
 	}
 
-	if sp.idleThreshold <= 0 {
-		return fmt.Errorf("idleThreshold must be greater than 0, got %v", sp.idleThreshold)
-	}
-
-	if sp.minIdleBeforeShrink <= 0 {
-		return fmt.Errorf("minIdleBeforeShrink must be greater than 0, got %d", sp.minIdleBeforeShrink)
-	}
-
 	if sp.minCapacity > b.config.initialCapacity {
 		return fmt.Errorf("minCapacity (%d) must be <= initialCapacity (%d)", sp.minCapacity, b.config.initialCapacity)
 	}
@@ -67,16 +59,16 @@ func (b *poolConfigBuilder) validateShrinkConfig() error {
 		return fmt.Errorf("shrinkCooldown must be greater than 0, got %v", sp.shrinkCooldown)
 	}
 
-	if sp.minUtilizationBeforeShrink <= 0 || sp.minUtilizationBeforeShrink > 1.0 {
-		return fmt.Errorf("minUtilizationBeforeShrink must be between 0 and 1.0, got %.2f", sp.minUtilizationBeforeShrink)
+	if sp.minUtilizationBeforeShrink <= 0 {
+		return fmt.Errorf("minUtilizationBeforeShrink must be greater than 0, got %d", sp.minUtilizationBeforeShrink)
 	}
 
 	if sp.stableUnderutilizationRounds <= 0 {
 		return fmt.Errorf("stableUnderutilizationRounds must be greater than 0, got %d", sp.stableUnderutilizationRounds)
 	}
 
-	if sp.shrinkPercent <= 0 || sp.shrinkPercent > 1.0 {
-		return fmt.Errorf("shrinkPercent must be between 0 and 1.0, got %.2f", sp.shrinkPercent)
+	if sp.shrinkPercent <= 0 {
+		return fmt.Errorf("shrinkPercent must be greater than 0, got %d", sp.shrinkPercent)
 	}
 
 	if sp.minCapacity <= 0 {
@@ -95,15 +87,15 @@ func (b *poolConfigBuilder) validateGrowthConfig() error {
 	gp := b.config.growth
 
 	if gp.exponentialThresholdFactor <= 0 {
-		return fmt.Errorf("exponentialThresholdFactor must be greater than 0, got %.2f", gp.exponentialThresholdFactor)
+		return fmt.Errorf("exponentialThresholdFactor must be greater than 0, got %d", gp.exponentialThresholdFactor)
 	}
 
 	if gp.growthPercent <= 0 {
-		return fmt.Errorf("growthPercent must be greater than 0, got %.2f", gp.growthPercent)
+		return fmt.Errorf("growthPercent must be greater than 0, got %d", gp.growthPercent)
 	}
 
 	if gp.fixedGrowthFactor <= 0 {
-		return fmt.Errorf("fixedGrowthFactor must be greater than 0, got %.2f", gp.fixedGrowthFactor)
+		return fmt.Errorf("fixedGrowthFactor must be greater than 0, got %d", gp.fixedGrowthFactor)
 	}
 
 	return nil
@@ -125,12 +117,12 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 		return fmt.Errorf("fastPath.initialSize must be greater than 0, got %d", fp.initialSize)
 	}
 
-	if fp.fillAggressiveness <= 0 || fp.fillAggressiveness > 1.0 {
-		return fmt.Errorf("fastPath.fillAggressiveness must be between 0 and 1.0, got %.2f", fp.fillAggressiveness)
+	if fp.fillAggressiveness <= 0 {
+		return fmt.Errorf("fastPath.fillAggressiveness must be greater than 0, got %d", fp.fillAggressiveness)
 	}
 
-	if fp.refillPercent <= 0 || fp.refillPercent >= 1.0 {
-		return fmt.Errorf("fastPath.refillPercent must be between 0 and 0.99, got %.2f", fp.refillPercent)
+	if fp.refillPercent <= 0 {
+		return fmt.Errorf("fastPath.refillPercent must be greater than 0, got %d", fp.refillPercent)
 	}
 
 	if fp.growthEventsTrigger <= 0 {
@@ -138,15 +130,15 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 	}
 
 	if fp.growth.exponentialThresholdFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.exponentialThresholdFactor must be greater than 0, got %.2f", fp.growth.exponentialThresholdFactor)
+		return fmt.Errorf("fastPath.growth.exponentialThresholdFactor must be greater than 0, got %d", fp.growth.exponentialThresholdFactor)
 	}
 
 	if fp.growth.growthPercent <= 0 {
-		return fmt.Errorf("fastPath.growth.growthPercent must be greater than 0, got %.2f", fp.growth.growthPercent)
+		return fmt.Errorf("fastPath.growth.growthPercent must be greater than 0, got %d", fp.growth.growthPercent)
 	}
 
 	if fp.growth.fixedGrowthFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.fixedGrowthFactor must be greater than 0, got %.2f", fp.growth.fixedGrowthFactor)
+		return fmt.Errorf("fastPath.growth.fixedGrowthFactor must be greater than 0, got %d", fp.growth.fixedGrowthFactor)
 	}
 
 	if fp.shrinkEventsTrigger <= 0 {
@@ -158,7 +150,7 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 	}
 
 	if fp.shrink.shrinkPercent <= 0 {
-		return fmt.Errorf("fastPath.shrink.shrinkPercent must be greater than 0, got %.2f", fp.shrink.shrinkPercent)
+		return fmt.Errorf("fastPath.shrink.shrinkPercent must be greater than 0, got %d", fp.shrink.shrinkPercent)
 	}
 
 	return nil

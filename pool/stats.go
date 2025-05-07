@@ -11,8 +11,8 @@ import (
 type poolStats struct {
 	mu sync.RWMutex
 
-	initialCapacity uint64
-	currentCapacity uint64
+	initialCapacity int
+	currentCapacity int
 
 	// Fast-path accessed fields — must be atomic
 	objectsInUse      atomic.Uint64
@@ -29,14 +29,14 @@ type poolStats struct {
 
 	lastL1ResizeAtGrowthNum int
 	lastResizeAtShrinkNum   int
-	currentL1Capacity       uint64
+	currentL1Capacity       int
 }
 
 // PoolStatsSnapshot represents a snapshot of the pool's statistics at a given moment
 type PoolStatsSnapshot struct {
 	// Basic Pool Stats
-	InitialCapacity   uint64
-	CurrentCapacity   uint64
+	InitialCapacity   int
+	CurrentCapacity   int
 	ObjectsInUse      uint64
 	TotalGets         uint64
 	TotalGrowthEvents int
@@ -53,12 +53,12 @@ type PoolStatsSnapshot struct {
 	// L1 Cache Stats
 	LastL1ResizeAtGrowthNum int
 	LastResizeAtShrinkNum   int
-	CurrentL1Capacity       uint64
+	CurrentL1Capacity       int
 
 	// Derived Stats (computed from other fields)
-	AvailableObjects uint64
-	RingBufferLength uint64
-	L1Length         uint64
+	AvailableObjects int
+	RingBufferLength int
+	L1Length         int
 	L2SpillRate      float64
 	Utilization      float64
 }
@@ -104,10 +104,8 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	}
 
 	chPtr := p.cacheL1
-	var l1Len int
-	if chPtr != nil {
-		l1Len = len(*chPtr)
-	}
+	ch := *chPtr
+	l1Len := len(ch)
 
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
@@ -132,9 +130,9 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		CurrentL1Capacity:       p.stats.currentL1Capacity,
 
 		// Derived Stats (computed from other fields)
-		AvailableObjects: p.stats.currentCapacity - p.stats.objectsInUse.Load(),
-		RingBufferLength: uint64(l1Len),
-		L1Length:         uint64(l1Len),
+		AvailableObjects: p.stats.currentCapacity - int(p.stats.objectsInUse.Load()),
+		RingBufferLength: p.pool.Length(false),
+		L1Length:         l1Len,
 		L2SpillRate:      l2SpillRate,
 		Utilization:      float64(p.stats.objectsInUse.Load()) / float64(p.stats.currentCapacity),
 	}

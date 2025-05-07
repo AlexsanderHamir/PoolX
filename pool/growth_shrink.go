@@ -11,9 +11,9 @@ import (
 // calculateNewPoolCapacity determines the new capacity for the pool based on the current capacity
 // and growth strategy. It uses either exponential growth (below threshold) or fixed-step growth
 // (above threshold) to calculate the new size.
-func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint64, cfg *growthParameters) uint64 {
+func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep int, cfg *growthParameters) int {
 	if currentCap < threshold {
-		growth := maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
+		growth := maxInt(currentCap*cfg.growthPercent, 1)
 		newCap := currentCap + growth
 		return newCap
 	}
@@ -22,8 +22,8 @@ func (p *Pool[T]) calculateNewPoolCapacity(currentCap, threshold, fixedStep uint
 	return newCap
 }
 
-func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity uint64) bool {
-	return newCapacity > uint64(p.config.hardLimit)
+func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity int) bool {
+	return newCapacity > p.config.hardLimit
 }
 
 // ShrinkExecution orchestrates the complete shrinking process for both the main pool and L1 cache.
@@ -32,7 +32,7 @@ func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity uint64) bool {
 func (p *Pool[T]) shrinkExecution() {
 	currentCap := p.stats.currentCapacity
 	inUse := int(p.stats.objectsInUse.Load())
-	newCapacity := int(float64(currentCap) * (1.0 - p.config.shrink.shrinkPercent))
+	newCapacity := int(currentCap) * (100 - p.config.shrink.shrinkPercent) / 100
 
 	if !p.shouldShrinkMainPool(currentCap, newCapacity) {
 		return
@@ -124,7 +124,7 @@ func (p *Pool[T]) writeItemsToNewBuffer(newRingBuffer *ringbuffer.RingBuffer[T],
 // finalizeShrink updates the pool with the new buffer and updates statistics
 func (p *Pool[T]) finalizeShrink(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity int) {
 	p.pool = newRingBuffer
-	p.stats.currentCapacity = uint64(newCapacity)
+	p.stats.currentCapacity = newCapacity
 	p.stats.totalShrinkEvents++
 	p.stats.lastShrinkTime = time.Now()
 	p.stats.consecutiveShrinks++
@@ -135,22 +135,19 @@ func (p *Pool[T]) finalizeShrink(newRingBuffer *ringbuffer.RingBuffer[T], newCap
 // - New capacity vs current capacity
 // - Available objects vs in-use objects
 // Returns false if any condition prevents shrinking.
-func (p *Pool[T]) shouldShrinkMainPool(currentCap uint64, newCap int) bool {
+func (p *Pool[T]) shouldShrinkMainPool(currentCap int, newCap int) bool {
 	minCap := p.config.shrink.minCapacity
 
 	switch {
 	case newCap == 0:
 		return false
-	case currentCap == uint64(minCap):
+	case currentCap == minCap:
 		return false
-	case newCap >= int(currentCap):
+	case newCap >= currentCap:
 		return false
 	}
 
 	chPtr := p.cacheL1
-	if chPtr == nil {
-		return false
-	}
 	ch := *chPtr
 	l1Available := len(ch)
 	totalAvailable := p.pool.Length(false) + l1Available
@@ -186,7 +183,7 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 // createAndPopulateBuffer creates a new ring buffer with the specified capacity and
 // populates it with objects from the old buffer. It handles the complete migration
 // process including validation and error handling.
-func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*ringbuffer.RingBuffer[T], error) {
+func (p *Pool[T]) createAndPopulateBuffer(newCapacity int) (*ringbuffer.RingBuffer[T], error) {
 	newRingBuffer := p.createNewBuffer(newCapacity)
 	if newRingBuffer == nil {
 		return nil, fmt.Errorf("failed to create ring buffer")
@@ -210,8 +207,8 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity uint64) (*ringbuffer.RingB
 	return newRingBuffer, nil
 }
 
-func (p *Pool[T]) createNewBuffer(newCapacity uint64) *ringbuffer.RingBuffer[T] {
-	newRingBuffer := ringbuffer.New[T](int(newCapacity))
+func (p *Pool[T]) createNewBuffer(newCapacity int) *ringbuffer.RingBuffer[T] {
+	newRingBuffer := ringbuffer.New[T](newCapacity)
 	if p.pool == nil {
 		return nil
 	}
@@ -227,8 +224,8 @@ func (p *Pool[T]) getItemsFromOldBuffer() (part1, part2 []T, err error) {
 	return part1, part2, nil
 }
 
-func (p *Pool[T]) validateAndWriteItems(newRingBuffer *ringbuffer.RingBuffer[T], part1, part2 []T, newCapacity uint64) error {
-	if len(part1)+len(part2) > int(newCapacity) {
+func (p *Pool[T]) validateAndWriteItems(newRingBuffer *ringbuffer.RingBuffer[T], part1, part2 []T, newCapacity int) error {
+	if len(part1)+len(part2) > newCapacity {
 		return errors.ErrInvalidLength
 	}
 
@@ -243,7 +240,7 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *ringbuffer.RingBuffer[T],
 	return nil
 }
 
-func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity uint64) error {
+func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity int) error {
 	currentCapacity := p.stats.currentCapacity
 
 	toAdd := newCapacity - currentCapacity
@@ -265,24 +262,24 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T],
 // calculateGrowthParameters computes all necessary parameters for pool growth including
 // current capacity, objects in use, exponential threshold, and fixed growth step.
 // These parameters are used to determine the growth strategy and new capacity.
-func (p *Pool[T]) calculateGrowthParameters() (uint64, uint64, uint64) {
+func (p *Pool[T]) calculateGrowthParameters() (int, int, int) {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity
-	exponentialThreshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
-	fixedStep := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
+	exponentialThreshold := currentCap * cfg.exponentialThresholdFactor
+	fixedStep := currentCap * cfg.fixedGrowthFactor
 	return currentCap, exponentialThreshold, fixedStep
 }
 
 // updatePoolCapacity handles the core capacity update logic, including hard limit checks
 // and the creation/population of the new buffer. It's the main entry point for
 // capacity changes in the pool.
-func (p *Pool[T]) updatePoolCapacity(newCapacity uint64) error {
+func (p *Pool[T]) updatePoolCapacity(newCapacity int) error {
 	if p.needsToShrinkToHardLimit(newCapacity) {
-		newCapacity = uint64(p.config.hardLimit)
+		newCapacity = p.config.hardLimit
 		p.isGrowthBlocked.Store(true)
 	}
 
-	if newCapacity == uint64(p.config.hardLimit) {
+	if newCapacity == p.config.hardLimit {
 		p.isGrowthBlocked.Store(true)
 	}
 

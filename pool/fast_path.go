@@ -6,13 +6,14 @@ import (
 )
 
 // calculateNewCapacity determines the new capacity based on current capacity and growth configuration
-func (p *Pool[T]) calculateNewCapacity(currentCap uint64, cfg *growthParameters) uint64 {
-	threshold := uint64(float64(currentCap) * cfg.exponentialThresholdFactor)
-	step := uint64(float64(currentCap) * cfg.fixedGrowthFactor)
+func (p *Pool[T]) calculateNewCapacity(currentCap int, cfg *growthParameters) int {
+	threshold := currentCap * cfg.exponentialThresholdFactor
+	step := currentCap * cfg.fixedGrowthFactor
 
 	if currentCap < threshold {
-		return currentCap + maxUint64(uint64(float64(currentCap)*cfg.growthPercent), 1)
+		return currentCap + maxInt(currentCap*cfg.growthPercent, 1)
 	}
+
 	return currentCap + step
 }
 
@@ -85,10 +86,6 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 		chPtr = p.cacheL1
 	}
 
-	if chPtr == nil {
-		return zero, false
-	}
-
 	select {
 	case obj, ok := <-*chPtr:
 		if !ok {
@@ -134,36 +131,31 @@ func (p *Pool[T]) tryFastPathPut(obj T) (ok bool) {
 
 // calculateL1Usage computes the current usage statistics of the L1 cache channel,
 // returning the current length, capacity, and usage percentage.
-func (p *Pool[T]) calculateL1Usage() (uint64, float64) {
+func (p *Pool[T]) calculateL1Usage() (int, int) {
 	currentCap := p.stats.currentL1Capacity
 	chPtr := p.cacheL1
-	if chPtr == nil {
-		return 0, 0
-	}
 	ch := *chPtr
 	currentLength := len(ch)
 
-	var currentPercent float64
+	var currentPercent int
 	if currentCap > 0 {
-		currentPercent = float64(currentLength) / float64(currentCap)
+		currentPercent = currentLength / currentCap
 	}
+
 	return currentCap, currentPercent
 }
 
 // calculateFillTarget determines how many items need to be added to the L1 cache
 // to reach the target fill level based on the configured fill aggressiveness.
 // Returns 0 if no items are needed or if the target is already met.
-func (p *Pool[T]) calculateFillTarget(currentCap uint64) int {
+func (p *Pool[T]) calculateFillTarget(currentCap int) int {
 	if currentCap <= 0 {
 		return 0
 	}
 
-	targetFill := int(float64(currentCap) * p.config.fastPath.fillAggressiveness)
+	targetFill := currentCap * p.config.fastPath.fillAggressiveness
 
 	chPtr := p.cacheL1
-	if chPtr == nil {
-		return 0
-	}
 	ch := *chPtr
 
 	currentLength := len(ch)
@@ -188,9 +180,9 @@ func (p *Pool[T]) shouldShrinkFastPath() bool {
 
 // adjustFastPathShrinkTarget calculates the new target capacity for the L1 cache
 // when shrinking, ensuring it doesn't go below the minimum capacity or current in-use count.
-func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap uint64) int {
+func (p *Pool[T]) adjustFastPathShrinkTarget(currentCap int) int {
 	cfg := p.config.fastPath.shrink
-	newCap := int(float64(currentCap) * (1.0 - cfg.shrinkPercent))
+	newCap := currentCap * (100 - cfg.shrinkPercent) / 100
 	inUse := int(p.stats.objectsInUse.Load())
 
 	if newCap < cfg.minCapacity {
@@ -244,14 +236,11 @@ func (p *Pool[T]) createNewL1Channel(oldCh chan T, newCapacity, inUse int) chan 
 // updateShrinkStats updates the pool statistics after a shrink operation
 func (p *Pool[T]) updateShrinkStats(newCapacity int) {
 	p.stats.lastResizeAtShrinkNum = p.stats.totalShrinkEvents
-	p.stats.currentL1Capacity = uint64(newCapacity)
+	p.stats.currentL1Capacity = newCapacity
 }
 
 func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	chPtr := p.cacheL1
-	if chPtr == nil {
-		return
-	}
 	ch := *chPtr
 	close(ch)
 

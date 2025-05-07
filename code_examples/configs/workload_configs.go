@@ -13,7 +13,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Max capacity: 10000 objects (reasonable upper limit for most systems)
 		// - Verbose logging enabled for monitoring
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(256, 10000, false, true, false).
+		SetPoolBasicConfigs(256, 10000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -23,7 +23,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Exponential growth until 200% of current capacity
 		// - 75% growth rate in exponential mode
 		// - 50% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(200.0, 0.75, 1.5).
+		SetRingBufferGrowthConfigs(200, 75, 50).
 		// Ring buffer shrink strategy:
 		// - Check every 5 seconds
 		// - Consider idle after 10 seconds from last get call
@@ -34,24 +34,23 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 5
 		// - Shrink when utilization below 40%
 		// - Shrink by 30% when triggered
-		SetRingBufferShrinkConfigs(time.Second*5, time.Second*10, time.Second*2, 3, 5, 50, 5, 0.4, 0.3).
+		SetRingBufferShrinkConfigs(time.Second*5, time.Second*10, time.Second*2, 3, 5, 50, 5, 40, 30).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 256 objects
 		// - Grow after 3 growth events
 		// - Shrink after 3 shrink events
 		// - Maximum fill aggressiveness (1.0) - 100%
 		// - Refill when 30% empty
-		SetFastPathBasicConfigs(256, 3, 3, 1.0, 0.30).
+		SetFastPathBasicConfigs(256, 3, 3, 100, 30).
 		// Fast path growth strategy:
 		// - Exponential growth until 150% of current capacity
 		// - 50% fixed growth after exponential phase
 		// - 75% growth rate in exponential mode
-		SetFastPathGrowthConfigs(150.0, 1.5, 0.75).
+		SetFastPathGrowthConfigs(150, 150, 75).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
 		// - Minimum 20 objects
-		SetFastPathShrinkConfigs(0.4, 20).
-		SetEnableStats(true).
+		SetFastPathShrinkConfigs(40, 20).
 		Build()
 	if err != nil {
 		panic(err)
@@ -67,7 +66,7 @@ func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 		// - Max capacity: 1000 objects (strict limit for memory-constrained systems)
 		// - Verbose logging disabled to save memory
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(16, 1000, false, true, false).
+		SetPoolBasicConfigs(16, 1000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better memory management
 		// - No read/write specific timeouts (0)
@@ -77,7 +76,7 @@ func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 		// - Exponential growth until 100% of current capacity
 		// - 30% growth rate in exponential mode
 		// - 20% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(100.0, 0.3, 1.2).
+		SetRingBufferGrowthConfigs(100, 30, 20).
 		// Ring buffer shrink strategy:
 		// - Check every 15 seconds
 		// - Consider idle after 60 seconds from last get call
@@ -88,23 +87,23 @@ func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 3
 		// - Shrink when utilization below 20%
 		// - Shrink by 40% when triggered
-		SetRingBufferShrinkConfigs(time.Second*15, time.Second*60, time.Second*10, 5, 8, 8, 3, 0.2, 0.4).
+		SetRingBufferShrinkConfigs(time.Second*15, time.Second*60, time.Second*10, 5, 8, 8, 3, 20, 40).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 16 objects
 		// - Grow after 2 growth events
 		// - Shrink after 2 shrink events
 		// - Moderate fill aggressiveness (0.7) - 70%
 		// - Refill when 50% empty
-		SetFastPathBasicConfigs(16, 2, 2, 0.7, 0.50).
+		SetFastPathBasicConfigs(16, 2, 2, 70, 50).
 		// Fast path growth strategy:
 		// - Exponential growth until 100% of current capacity
 		// - 30% fixed growth after exponential phase
 		// - 40% growth rate in exponential mode
-		SetFastPathGrowthConfigs(100.0, 1.3, 0.4).
+		SetFastPathGrowthConfigs(100, 130, 40).
 		// Fast path shrink strategy:
 		// - Shrink by 50% when triggered
 		// - Minimum 4 objects
-		SetFastPathShrinkConfigs(0.5, 4).
+		SetFastPathShrinkConfigs(50, 4).
 		Build()
 	if err != nil {
 		panic(err)
@@ -119,7 +118,7 @@ func CreateLowLatencyConfig() *pool.PoolConfig {
 		// - Max capacity: 20000 objects (higher limit for burst handling)
 		// - Verbose logging disabled to minimize overhead
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(512, 20000, false, true, false).
+		SetPoolBasicConfigs(512, 20000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better latency
 		// - No read/write specific timeouts (0)
@@ -140,23 +139,23 @@ func CreateLowLatencyConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 3
 		// - Shrink when utilization below 30%
 		// - Shrink by 20% when triggered
-		SetRingBufferShrinkConfigs(time.Second*3, time.Second*5, time.Second*1, 2, 3, 32, 3, 0.3, 0.2).
+		SetRingBufferShrinkConfigs(time.Second*3, time.Second*5, time.Second*1, 2, 3, 32, 3, 30, 20).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 512 objects
 		// - Grow after 1 growth event
 		// - Shrink after 1 shrink event
 		// - Maximum fill aggressiveness (1.0) - 100%
 		// - Refill when 20% empty
-		SetFastPathBasicConfigs(512, 1, 1, 1.0, 0.20).
+		SetFastPathBasicConfigs(512, 1, 1, 100, 20).
 		// Fast path growth strategy:
 		// - Exponential growth until 200% of current capacity
 		// - 100% fixed growth after exponential phase
 		// - 100% growth rate in exponential mode
-		SetFastPathGrowthConfigs(200.0, 2.0, 1.0).
+		SetFastPathGrowthConfigs(200, 200, 100).
 		// Fast path shrink strategy:
 		// - Shrink by 30% when triggered
 		// - Minimum 16 objects
-		SetFastPathShrinkConfigs(0.3, 16).
+		SetFastPathShrinkConfigs(30, 16).
 		Build()
 	if err != nil {
 		panic(err)
@@ -171,7 +170,7 @@ func CreateBatchProcessingConfig() *pool.PoolConfig {
 		// - Max capacity: 5000 objects (reasonable for batch workloads)
 		// - Verbose logging disabled to save resources
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(128, 5000, false, true, false).
+		SetPoolBasicConfigs(128, 5000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -181,7 +180,7 @@ func CreateBatchProcessingConfig() *pool.PoolConfig {
 		// - Exponential growth until 150% of current capacity
 		// - 50% growth rate in exponential mode
 		// - 30% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(150.0, 0.5, 1.3).
+		SetRingBufferGrowthConfigs(150, 50, 30).
 		// Ring buffer shrink strategy:
 		// - Check every 10 seconds
 		// - Consider idle after 30 seconds from last get call
@@ -192,23 +191,23 @@ func CreateBatchProcessingConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 4
 		// - Shrink when utilization below 40%
 		// - Shrink by 30% when triggered
-		SetRingBufferShrinkConfigs(time.Second*10, time.Second*30, time.Second*5, 4, 6, 32, 4, 0.4, 0.3).
+		SetRingBufferShrinkConfigs(time.Second*10, time.Second*30, time.Second*5, 4, 6, 32, 4, 40, 30).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 128 objects
 		// - Grow after 2 growth events
 		// - Shrink after 2 shrink events
 		// - High fill aggressiveness (0.9) - 90%
 		// - Refill when 30% empty
-		SetFastPathBasicConfigs(128, 2, 2, 0.9, 0.30).
+		SetFastPathBasicConfigs(128, 2, 2, 90, 30).
 		// Fast path growth strategy:
 		// - Exponential growth until 150% of current capacity
 		// - 50% fixed growth after exponential phase
 		// - 60% growth rate in exponential mode
-		SetFastPathGrowthConfigs(150.0, 1.5, 0.6).
+		SetFastPathGrowthConfigs(150, 150, 60).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
 		// - Minimum 16 objects
-		SetFastPathShrinkConfigs(0.4, 16).
+		SetFastPathShrinkConfigs(40, 16).
 		Build()
 	if err != nil {
 		panic(err)
@@ -223,7 +222,7 @@ func CreateRealTimeConfig() *pool.PoolConfig {
 		// - Max capacity: 50000 objects (very high for burst handling)
 		// - Verbose logging disabled to minimize overhead
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(1024, 50000, false, true, false).
+		SetPoolBasicConfigs(1024, 50000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better latency
 		// - No read/write specific timeouts (0)
@@ -233,7 +232,7 @@ func CreateRealTimeConfig() *pool.PoolConfig {
 		// - Exponential growth until 400% of current capacity
 		// - 150% growth rate in exponential mode
 		// - 100% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(400.0, 1.5, 2.0).
+		SetRingBufferGrowthConfigs(400, 150, 100).
 		// Ring buffer shrink strategy:
 		// - Check every 1 second
 		// - Consider idle after 3 seconds from last get call
@@ -244,23 +243,23 @@ func CreateRealTimeConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 2
 		// - Shrink when utilization below 20%
 		// - Shrink by 10% when triggered
-		SetRingBufferShrinkConfigs(time.Second*1, time.Second*3, time.Millisecond*500, 2, 2, 64, 2, 0.2, 0.1).
+		SetRingBufferShrinkConfigs(time.Second*1, time.Second*3, time.Millisecond*500, 2, 2, 64, 2, 20, 10).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 1024 objects
 		// - Grow after 1 growth event
 		// - Shrink after 1 shrink event
 		// - Maximum fill aggressiveness (1.0) - 100%
 		// - Refill when 10% empty
-		SetFastPathBasicConfigs(1024, 1, 1, 1.0, 0.10).
+		SetFastPathBasicConfigs(1024, 1, 1, 100, 10).
 		// Fast path growth strategy:
 		// - Exponential growth until 300% of current capacity
 		// - 150% fixed growth after exponential phase
 		// - 150% growth rate in exponential mode
-		SetFastPathGrowthConfigs(300.0, 2.5, 1.5).
+		SetFastPathGrowthConfigs(300, 250, 150).
 		// Fast path shrink strategy:
 		// - Shrink by 20% when triggered
 		// - Minimum 32 objects
-		SetFastPathShrinkConfigs(0.2, 32).
+		SetFastPathShrinkConfigs(20, 32).
 		Build()
 	if err != nil {
 		panic(err)
@@ -275,7 +274,7 @@ func CreateBalancedConfig() *pool.PoolConfig {
 		// - Max capacity: 8000 objects (reasonable upper limit)
 		// - Verbose logging disabled to save resources
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(192, 8000, false, true, false).
+		SetPoolBasicConfigs(192, 8000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -285,7 +284,7 @@ func CreateBalancedConfig() *pool.PoolConfig {
 		// - Exponential growth until 150% of current capacity
 		// - 60% growth rate in exponential mode
 		// - 40% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(150.0, 0.6, 1.4).
+		SetRingBufferGrowthConfigs(150, 60, 40).
 		// Ring buffer shrink strategy:
 		// - Check every 5 seconds
 		// - Consider idle after 15 seconds from last get call
@@ -296,23 +295,23 @@ func CreateBalancedConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 3
 		// - Shrink when utilization below 30%
 		// - Shrink by 25% when triggered
-		SetRingBufferShrinkConfigs(time.Second*5, time.Second*15, time.Second*2, 3, 4, 24, 3, 0.3, 0.25).
+		SetRingBufferShrinkConfigs(time.Second*5, time.Second*15, time.Second*2, 3, 4, 24, 3, 30, 25).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 192 objects
 		// - Grow after 2 growth events
 		// - Shrink after 2 shrink events
 		// - High fill aggressiveness (0.95) - 95%
 		// - Refill when 25% empty
-		SetFastPathBasicConfigs(192, 2, 2, 0.95, 0.25).
+		SetFastPathBasicConfigs(192, 2, 2, 95, 25).
 		// Fast path growth strategy:
 		// - Exponential growth until 150% of current capacity
 		// - 60% fixed growth after exponential phase
 		// - 70% growth rate in exponential mode
-		SetFastPathGrowthConfigs(150.0, 1.6, 0.7).
+		SetFastPathGrowthConfigs(150, 160, 70).
 		// Fast path shrink strategy:
 		// - Shrink by 35% when triggered
 		// - Minimum 12 objects
-		SetFastPathShrinkConfigs(0.35, 12).
+		SetFastPathShrinkConfigs(35, 12).
 		Build()
 	if err != nil {
 		panic(err)

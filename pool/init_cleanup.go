@@ -38,9 +38,9 @@ func createDefaultConfig() *PoolConfig {
 // the main pool and L1 cache.
 func initializePoolStats(config *PoolConfig) *poolStats {
 	stats := &poolStats{mu: sync.RWMutex{}}
-	stats.initialCapacity = uint64(config.initialCapacity)
-	stats.currentCapacity = (uint64(config.initialCapacity))
-	stats.currentL1Capacity = uint64(config.fastPath.initialSize)
+	stats.initialCapacity = config.initialCapacity
+	stats.currentCapacity = config.initialCapacity
+	stats.currentL1Capacity = config.fastPath.initialSize
 	return stats
 }
 
@@ -86,7 +86,7 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 // how many objects should go to the L1 cache versus the main buffer.
 // Returns an error if object allocation or distribution fails.
 func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
-	fillTarget := int(float64(poolObj.config.fastPath.initialSize) * poolObj.config.fastPath.fillAggressiveness)
+	fillTarget := poolObj.config.fastPath.initialSize * poolObj.config.fastPath.fillAggressiveness
 	fastPathRemaining := fillTarget
 
 	for range poolObj.config.initialCapacity {
@@ -110,9 +110,6 @@ func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
 func (p *Pool[T]) cleanupCacheL1() {
 	var zero T
 	chPtr := p.cacheL1
-	if chPtr == nil {
-		return
-	}
 	ch := *chPtr
 
 	for {

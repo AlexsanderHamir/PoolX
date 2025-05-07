@@ -16,12 +16,12 @@ const (
 	AggressivenessAggressive          AggressivenessLevel = 3
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
-	defaultExponentialThresholdFactor                     = 100.0
-	defaultGrowthPercent                                  = 0.5
-	defaultFixedGrowthFactor                              = 1.5
-	defaultfillAggressiveness                             = 0.8
-	fillAggressivenessExtreme                             = 1.0
-	defaultRefillPercent                                  = 0.2
+	defaultExponentialThresholdFactor                     = 100
+	defaultGrowthPercent                                  = 50
+	defaultFixedGrowthFactor                              = 150
+	defaultfillAggressiveness                             = 80
+	fillAggressivenessExtreme                             = 100
+	defaultRefillPercent                                  = 20
 	defaultMinCapacity                                    = 32
 	defaultPoolCapacity                                   = 64
 	defaultL1MinCapacity                                  = defaultPoolCapacity // L1 doesn't go below its initial capacity
@@ -35,22 +35,52 @@ const (
 
 var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
 	AggressivenessDisabled: {
-		0, 0, 0, 0, 0, 0, 0, 0,
+		interval:      0,
+		cooldown:      0,
+		utilization:   0,
+		underutilized: 0,
+		percent:       0,
+		maxShrinks:    0,
 	},
 	AggressivenessConservative: {
-		15 * time.Minute, 30 * time.Minute, 5, 30 * time.Minute, 0.15, 5, 0.05, 1,
+		interval:      15 * time.Minute,
+		cooldown:      30 * time.Minute,
+		utilization:   15,
+		underutilized: 5,
+		percent:       5,
+		maxShrinks:    1,
 	},
 	AggressivenessBalanced: {
-		10 * time.Minute, 20 * time.Minute, 4, 20 * time.Minute, 0.25, 4, 0.15, 2,
+		interval:      10 * time.Minute,
+		cooldown:      20 * time.Minute,
+		utilization:   25,
+		underutilized: 4,
+		percent:       15,
+		maxShrinks:    2,
 	},
 	AggressivenessAggressive: {
-		5 * time.Minute, 10 * time.Minute, 3, 10 * time.Minute, 0.35, 3, 0.30, 3,
+		interval:      5 * time.Minute,
+		cooldown:      10 * time.Minute,
+		utilization:   35,
+		underutilized: 3,
+		percent:       30,
+		maxShrinks:    3,
 	},
 	AggressivenessVeryAggressive: {
-		2 * time.Minute, 5 * time.Minute, 2, 5 * time.Minute, 0.45, 2, 0.50, 4,
+		interval:      2 * time.Minute,
+		cooldown:      5 * time.Minute,
+		utilization:   45,
+		underutilized: 2,
+		percent:       50,
+		maxShrinks:    4,
 	},
 	AggressivenessExtreme: {
-		1 * time.Minute, 2 * time.Minute, 1, 2 * time.Minute, 0.55, 1, 0.70, 5,
+		interval:      1 * time.Minute,
+		cooldown:      2 * time.Minute,
+		utilization:   55,
+		underutilized: 1,
+		percent:       70,
+		maxShrinks:    5,
 	},
 }
 
