@@ -29,16 +29,3 @@ func (p *Pool[T]) IsGrowth() bool {
 	defer p.mu.RUnlock()
 	return p.stats.currentCapacity > p.config.initialCapacity
 }
-
-func (p *Pool[T]) reduceObjectsInUse() {
-	for {
-		old := p.stats.objectsInUse.Load()
-		if old == 0 {
-			break
-		}
-
-		if p.stats.objectsInUse.CompareAndSwap(old, old-1) {
-			break
-		}
-	}
-}

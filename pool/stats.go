@@ -15,7 +15,6 @@ type poolStats struct {
 	currentCapacity int
 
 	// Fast-path accessed fields — must be atomic
-	objectsInUse      atomic.Uint64
 	totalGets         atomic.Uint64
 	totalGrowthEvents int
 
@@ -63,11 +62,6 @@ type PoolStatsSnapshot struct {
 	Utilization      float64
 }
 
-func (p *Pool[T]) updateUsageStats() {
-	p.stats.objectsInUse.Add(1)
-	p.stats.totalGets.Add(1)
-}
-
 // PrintPoolStats prints the current statistics of the pool to stdout.
 // This includes information about pool capacity, object usage, hit rates,
 // and performance metrics.
@@ -107,12 +101,16 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	ch := *chPtr
 	l1Len := len(ch)
 
+	totalPuts := p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()
+	totalGets := p.stats.totalGets.Load()
+	objectsInUse := totalGets - totalPuts
+
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		InitialCapacity:   p.stats.initialCapacity,
 		CurrentCapacity:   p.stats.currentCapacity,
-		ObjectsInUse:      p.stats.objectsInUse.Load(),
-		TotalGets:         p.stats.totalGets.Load(),
+		ObjectsInUse:      objectsInUse,
+		TotalGets:         totalGets,
 		TotalGrowthEvents: p.stats.totalGrowthEvents,
 
 		// Fast Return Stats
@@ -130,11 +128,11 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		CurrentL1Capacity:       p.stats.currentL1Capacity,
 
 		// Derived Stats (computed from other fields)
-		AvailableObjects: p.stats.currentCapacity - int(p.stats.objectsInUse.Load()),
+		AvailableObjects: p.stats.currentCapacity - int(objectsInUse),
 		RingBufferLength: p.pool.Length(false),
 		L1Length:         l1Len,
 		L2SpillRate:      l2SpillRate,
-		Utilization:      float64(p.stats.objectsInUse.Load()) / float64(p.stats.currentCapacity),
+		Utilization:      float64(objectsInUse) / float64(p.stats.currentCapacity),
 	}
 }
 
