@@ -160,12 +160,6 @@ func TestShrinkConfigurations(t *testing.T) {
 			},
 		},
 		{
-			name: "negative min idle before shrink",
-			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetMinIdleBeforeShrink(-1).Build()
-			},
-		},
-		{
 			name: "negative shrink cooldown",
 			config: func() (*pool.PoolConfig, error) {
 				return pool.NewPoolConfigBuilder().SetShrinkCooldown(-1 * time.Second).Build()
@@ -274,8 +268,6 @@ func TestValidConfiguration(t *testing.T) {
 		}
 		return builder.
 			SetShrinkCheckInterval(1 * time.Second).
-			SetIdleThreshold(5 * time.Second).
-			SetMinIdleBeforeShrink(2).
 			SetShrinkCooldown(2 * time.Second).
 			SetMinUtilizationBeforeShrink(0.2).
 			SetStableUnderutilizationRounds(3).

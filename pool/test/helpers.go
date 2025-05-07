@@ -88,8 +88,6 @@ func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
 		ExponentialThresholdFactor:         config.GetGrowth().GetExponentialThresholdFactor(),
 		ShrinkAggressiveness:               config.GetShrink().GetAggressivenessLevel(),
 		ShrinkCheckInterval:                config.GetShrink().GetCheckInterval(),
-		IdleThreshold:                      config.GetShrink().GetIdleThreshold(),
-		MinIdleBeforeShrink:                config.GetShrink().GetMinIdleBeforeShrink(),
 		ShrinkCooldown:                     config.GetShrink().GetShrinkCooldown(),
 		MinUtilizationBeforeShrink:         config.GetShrink().GetMinUtilizationBeforeShrink(),
 		StableUnderutilizationRounds:       config.GetShrink().GetStableUnderutilizationRounds(),
@@ -108,7 +106,6 @@ func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
 		FastPathShrinkAggressiveness:       config.GetFastPath().GetShrink().GetAggressivenessLevel(),
 		FastPathShrinkPercent:              config.GetFastPath().GetShrink().GetShrinkPercent(),
 		FastPathShrinkMinCapacity:          config.GetFastPath().GetShrink().GetMinCapacity(),
-		Verbose:                            config.IsVerbose(),
 		RingBufferBlocking:                 config.GetRingBufferConfig().IsBlocking(),
 		ReadTimeout:                        config.GetRingBufferConfig().GetReadTimeout(),
 		WriteTimeout:                       config.GetRingBufferConfig().GetWriteTimeout(),
@@ -124,8 +121,6 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 		SetFixedGrowthFactor(1.0).
 		SetGrowthExponentialThresholdFactor(4.0).
 		SetShrinkCheckInterval(2 * time.Second).
-		SetIdleThreshold(5 * time.Second).
-		SetMinIdleBeforeShrink(29).
 		SetShrinkCooldown(10 * time.Second).
 		SetMinUtilizationBeforeShrink(0.321).
 		SetStableUnderutilizationRounds(3121).
@@ -144,7 +139,6 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 		SetFastPathShrinkAggressiveness(pool.AggressivenessLevel(1)).
 		SetFastPathShrinkPercent(0.3121).
 		SetFastPathShrinkMinCapacity(20121).
-		SetVerbose(true).
 		SetRingBufferBlocking(true).
 		SetRingBufferTimeout(5 * time.Second).
 		Build()
@@ -161,8 +155,6 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 	assert.NotEqual(t, original.FixedGrowthFactor, custom.GetGrowth().GetFixedGrowthFactor())
 	assert.NotEqual(t, original.ExponentialThresholdFactor, custom.GetGrowth().GetExponentialThresholdFactor())
 	assert.NotEqual(t, original.ShrinkCheckInterval, custom.GetShrink().GetCheckInterval())
-	assert.NotEqual(t, original.IdleThreshold, custom.GetShrink().GetIdleThreshold())
-	assert.NotEqual(t, original.MinIdleBeforeShrink, custom.GetShrink().GetMinIdleBeforeShrink())
 	assert.NotEqual(t, original.ShrinkCooldown, custom.GetShrink().GetShrinkCooldown())
 	assert.NotEqual(t, original.MinUtilizationBeforeShrink, custom.GetShrink().GetMinUtilizationBeforeShrink())
 	assert.NotEqual(t, original.StableUnderutilizationRounds, custom.GetShrink().GetStableUnderutilizationRounds())
@@ -181,7 +173,6 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 	assert.NotEqual(t, original.FastPathShrinkAggressiveness, custom.GetFastPath().GetShrink().GetAggressivenessLevel())
 	assert.NotEqual(t, original.FastPathShrinkPercent, custom.GetFastPath().GetShrink().GetShrinkPercent())
 	assert.NotEqual(t, original.FastPathShrinkMinCapacity, custom.GetFastPath().GetShrink().GetMinCapacity())
-	assert.NotEqual(t, original.Verbose, custom.IsVerbose())
 	assert.NotEqual(t, original.RingBufferBlocking, custom.GetRingBufferConfig().IsBlocking())
 	assert.NotEqual(t, original.ReadTimeout, custom.GetRingBufferConfig().GetReadTimeout())
 	assert.NotEqual(t, original.WriteTimeout, custom.GetRingBufferConfig().GetWriteTimeout())
@@ -394,7 +385,6 @@ func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) 
 		SetRingBufferBlocking(true).   // prevent nil returns
 		SetHardLimit(hardLimit).
 		SetPreReadBlockHookAttempts(attempts).
-		SetVerbose(verbose).
 		Build()
 	require.NoError(t, err)
 	return config

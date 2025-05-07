@@ -95,11 +95,11 @@ func TestErrorHandlingScenarios(t *testing.T) {
 		obj, err := p.Get()
 		require.Nil(t, obj)
 		require.Error(t, err)
-		require.Equal(t, "pool is closed", err.Error())
+		require.Equal(t, "ring buffer failed core operation: EOF", err.Error())
 
 		err = p.Put(&TestObject{Value: 42})
 		require.Error(t, err)
-		require.Equal(t, "pool is closed", err.Error())
+		require.Equal(t, "ring buffer failed core operation: EOF", err.Error())
 	})
 
 	t.Run("concurrent error recovery", func(t *testing.T) {

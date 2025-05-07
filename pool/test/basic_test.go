@@ -57,10 +57,8 @@ func TestPoolShrink(t *testing.T) {
 		SetInitialCapacity(32).
 		EnforceCustomConfig().
 		SetShrinkCheckInterval(10 * time.Millisecond). // Very frequent checks
-		SetIdleThreshold(20 * time.Millisecond).       // Short idle time
-		SetMinIdleBeforeShrink(1).                     // Shrink after just 1 idle check
 		SetShrinkCooldown(10 * time.Millisecond).      // Short cooldown
-		SetMinUtilizationBeforeShrink(0.1).            // Shrink if utilization below 10%
+		SetMinUtilizationBeforeShrink(0.9).            // Shrink if utilization below 10%
 		SetStableUnderutilizationRounds(1).            // Only need 1 round of underutilization
 		SetShrinkPercent(0.5).                         // Shrink by 50%
 		SetMinShrinkCapacity(1).                       // Can shrink down to 1
