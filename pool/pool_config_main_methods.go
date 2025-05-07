@@ -116,9 +116,7 @@ func (b *poolConfigBuilder) EnforceCustomConfig() PoolConfigBuilder {
 // SetRingBufferShrinkConfigs sets custom shrink parameters for the ring buffer.
 // Parameters:
 //   - checkInterval: Time between shrink eligibility checks
-//   - idleThreshold: Minimum idle duration before shrinking
 //   - shrinkCooldown: Minimum time between shrink operations
-//   - minIdleBeforeShrink: Required consecutive idle checks
 //   - stableUnderutilizationRounds: Required stable underutilization rounds
 //   - minCapacity: Minimum capacity after shrinking
 //   - maxConsecutiveShrinks: Maximum consecutive shrink operations
@@ -126,7 +124,7 @@ func (b *poolConfigBuilder) EnforceCustomConfig() PoolConfigBuilder {
 //   - shrinkPercent: Percentage by which to shrink
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent int) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetRingBufferShrinkConfigs(checkInterval, shrinkCooldown time.Duration, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent int) PoolConfigBuilder {
 	if checkInterval > 0 {
 		b.config.shrink.checkInterval = checkInterval
 	}

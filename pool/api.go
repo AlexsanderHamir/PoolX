@@ -24,9 +24,7 @@ type PoolConfigBuilder interface {
 	// Parameters:
 	//   - initialCapacity: Initial size of both ring buffer and fast path (can be overridden)
 	//   - hardLimit: Maximum number of objects the pool can grow to
-	//   - verbose: Enable detailed logging of pool operations
 	//   - enableChannelGrowth: Enable dynamic growth of the fast path channel
-	//   - enableStats: Enable collection of non-essential pool statistics
 	//
 	// Note: Zero or negative values are ignored, default values will be used instead.
 	SetPoolBasicConfigs(initialCapacity int, hardLimit int, enableChannelGrowth bool) PoolConfigBuilder
@@ -43,19 +41,18 @@ type PoolConfigBuilder interface {
 
 	// SetRingBufferGrowthConfigs defines how the ring buffer expands when under pressure.
 	// Parameters:
-	//   - exponentialThresholdFactor: Threshold for switching from exponential to fixed growth
-	//   - growthPercent: Percentage growth rate when below threshold
-	//   - fixedGrowthFactor: Fixed step size for growth when above threshold
+	//   - exponentialThresholdFactor: Threshold for switching from exponential to fixed growth (example: initialCapacity * 200, the mark at which we switch to fixed growth)
+	//   - growthPercent: Percentage growth rate when below threshold (example: 75)
+	//   - fixedGrowthFactor: Fixed step size for growth when above threshold (example: currentCapacity * 50)
 	//
 	// Note: Zero or negative values are ignored, default values will be used instead.
+	// fixedGrowthFactor is calculated based on the current capacity not the initial capacity.
 	SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthPercent, fixedGrowthFactor int) PoolConfigBuilder
 
 	// SetRingBufferShrinkConfigs controls the automatic shrinking behavior of the ring buffer.
 	// Parameters:
 	//   - checkInterval: Time between shrink eligibility checks
-	//   - idleThreshold: Minimum idle duration before shrinking
 	//   - shrinkCooldown: Minimum time between shrink operations
-	//   - minIdleBeforeShrink: Required consecutive idle checks
 	//   - stableUnderutilizationRounds: Required stable underutilization rounds
 	//   - minCapacity: Minimum capacity after shrinking
 	//   - maxConsecutiveShrinks: Maximum consecutive shrink operations
@@ -63,7 +60,7 @@ type PoolConfigBuilder interface {
 	//   - shrinkPercent: Percentage by which to shrink
 	//
 	// Note: Zero or negative values are ignored, default values will be used instead.
-	SetRingBufferShrinkConfigs(checkInterval, idleThreshold, shrinkCooldown time.Duration, minIdleBeforeShrink, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent int) PoolConfigBuilder
+	SetRingBufferShrinkConfigs(checkInterval, shrinkCooldown time.Duration, stableUnderutilizationRounds, minCapacity, maxConsecutiveShrinks int, minUtilizationBeforeShrink, shrinkPercent int) PoolConfigBuilder
 
 	// EnforceCustomConfig disables default shrink configuration, requiring manual setting
 	// of all shrink parameters. This is useful when you need precise control over
