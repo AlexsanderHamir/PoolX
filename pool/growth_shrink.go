@@ -15,16 +15,17 @@ func (p *Pool[T]) calculateNewPoolCapacity() int {
 	cfg := p.config.growth
 	currentCap := p.stats.currentCapacity
 	initialCap := p.config.initialCapacity
-	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
-	fixedStep := initialCap * cfg.fixedGrowthFactor
 
+	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
 	if currentCap < exponentialThreshold {
 		growth := initialCap * cfg.growthPercent
 		newCap := currentCap + growth
 		return newCap
 	}
 
+	fixedStep := initialCap * cfg.fixedGrowthFactor
 	newCap := currentCap + fixedStep
+
 	return newCap
 }
 
@@ -37,13 +38,12 @@ func (p *Pool[T]) needsToShrinkToHardLimit(newCapacity int) bool {
 // while maintaining proper logging and statistics.
 func (p *Pool[T]) shrinkExecution() {
 	currentCap := p.stats.currentCapacity
-	inUse := int(p.stats.totalGets.Load() - (p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()))
 	newCapacity := int(currentCap) * (100 - p.config.shrink.shrinkPercent) / 100
-
 	if !p.shouldShrinkMainPool(currentCap, newCapacity) {
 		return
 	}
 
+	inUse := int(p.stats.totalGets.Load() - (p.stats.FastReturnHit.Load() + p.stats.FastReturnMiss.Load()))
 	newCapacity = p.adjustMainShrinkTarget(newCapacity, inUse)
 	p.performShrink(newCapacity, inUse)
 
