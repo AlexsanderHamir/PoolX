@@ -26,12 +26,11 @@ func createDefaultConfig() *PoolConfig {
 		},
 	}
 
-	copiedShrink := *defaultShrinkParameters
-	pgb.config.fastPath.shrink.ApplyDefaults(getShrinkDefaultsMap())
-	pgb.config.fastPath.shrink.minCapacity = defaultL1MinCapacity
-	pgb.config.fastPath.shrink = &copiedShrink
-
 	pgb.config.shrink.ApplyDefaults(getShrinkDefaultsMap())
+
+	copiedShrink := *pgb.config.shrink
+	pgb.config.fastPath.shrink = &copiedShrink
+	pgb.config.fastPath.shrink.minCapacity = defaultL1MinCapacity
 
 	return pgb.config
 }
@@ -73,7 +72,6 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 		cacheL1:   atomic.Pointer[chan T]{},
 		allocator: allocator,
 		cleaner:   cleaner,
-		mu:        sync.RWMutex{},
 		config:    config,
 		stats:     stats,
 		pool:      ringBuffer,

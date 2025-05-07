@@ -297,6 +297,9 @@ func (p *Pool[T]) refill(fillTarget int) (int, int, error) {
 }
 
 func (p *Pool[T]) slowPathPut(obj T) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	if err := p.pool.Write(obj); err != nil {
 		return fmt.Errorf("%w: %w", errRingBufferFailed, err)
 	}
