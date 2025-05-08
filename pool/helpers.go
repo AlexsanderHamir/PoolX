@@ -217,7 +217,7 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, error) {
 // SlowPath retrieves an object from the ring buffer. It blocks if the ring buffer is empty
 // and the ring buffer is in blocking mode. We always try to refill the ring buffer before
 // calling the slow path.
-func (p *Pool[T]) SlowPath() (obj T, err error) {
+func (p *Pool[T]) SlowPathGet	() (obj T, err error) {
 	const maxRetries = 3
 	const retryDelay = 10 * time.Millisecond
 

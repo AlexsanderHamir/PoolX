@@ -73,7 +73,7 @@ func TestPreReadBlockHook(t *testing.T) {
 
 	p := createTestPool(t, config)
 
-	obj, err := p.SlowPath()
+	obj, err := p.SlowPathGet()
 	require.NoError(t, err)
 	require.NotNil(t, obj)
 

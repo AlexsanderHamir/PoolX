@@ -76,7 +76,7 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	obj, err := p.SlowPath()
+	obj, err := p.SlowPathGet()
 	if err != nil {
 		return zero, err
 	}

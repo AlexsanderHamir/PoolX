@@ -103,7 +103,7 @@ func Benchmark_SlowPath(b *testing.B) {
 	poolObj := setupPool(b, config)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			obj, _ := poolObj.SlowPath()
+			obj, _ := poolObj.SlowPathGet()
 			_ = obj
 		}
 	})
