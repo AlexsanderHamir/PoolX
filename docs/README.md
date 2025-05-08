@@ -87,22 +87,12 @@ if err != nil {
   - Configurable event triggers for resizing
   - Automatic refill based on utilization
 
-### 2. Performance Optimizations
-
-- Non-blocking operations with configurable timeouts
-- Automatic L1 cache management with customizable policies
-- Memory-efficient object reuse
-- Configurable blocking behavior for ring buffer operations
-- Pre-read hook attempts for performance tuning
-
-### 3. Configuration Options
+### 2. Configuration Options
 
 #### Pool Settings
 
 - Initial capacity and hard limits
-- Verbose logging and statistics collection
 - Channel growth control
-- Performance monitoring
 
 #### Ring Buffer Configuration
 
@@ -183,7 +173,7 @@ config, _ := pool.NewPoolConfigBuilder().
 1. **Type Safety**: Only pointers can be stored in the pool
 2. **Default Behavior**: Ring buffer operates in non-blocking mode by default
 3. **Performance**: Resizing operations are expensive - tune growth/shrink parameters carefully
-4. **Configuration**: Use `EnforceCustomConfig()` when you need precise control over shrinking behavior
+4. **Configuration**: Use `EnforceCustomConfig()` when you need precise control over all fields of the shrinking struct.
 5. **Aggressiveness Levels**: Use `SetShrinkAggressiveness()` for preset configurations (levels 1-5)
 
 ## Contributing
