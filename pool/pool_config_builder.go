@@ -61,21 +61,21 @@ func (b *poolConfigBuilder) SetHardLimit(count int) PoolConfigBuilder {
 // exponential to fixed growth. When the pool's capacity exceeds this threshold,
 // growth switches from percentage-based to fixed-step growth.
 func (b *poolConfigBuilder) SetGrowthExponentialThresholdFactor(factor int) PoolConfigBuilder {
-	b.config.growth.exponentialThresholdFactor = factor
+	b.config.growth.thresholdFactor = factor
 	return b
 }
 
 // SetGrowthFactor sets the growth factor used in exponential growth mode.
 // This determines how much the pool grows by factor when below the exponential threshold.
 func (b *poolConfigBuilder) SetGrowthFactor(factor int) PoolConfigBuilder {
-	b.config.growth.growthFactor = factor
+	b.config.growth.bigGrowthFactor = factor
 	return b
 }
 
 // SetFixedGrowthFactor sets the fixed growth factor used after exponential growth ends.
 // This determines the fixed step size for growth when above the exponential threshold.
 func (b *poolConfigBuilder) SetFixedGrowthFactor(factor int) PoolConfigBuilder {
-	b.config.growth.fixedGrowthFactor = factor
+	b.config.growth.controlledGrowthFactor = factor
 	return b
 }
 
@@ -166,21 +166,21 @@ func (b *poolConfigBuilder) SetFastPathGrowthEventsTrigger(count int) PoolConfig
 // SetFastPathGrowthPercent sets the growth percentage for the fast path.
 // This determines how much the L1 cache grows by percentage.
 func (b *poolConfigBuilder) SetFastPathGrowthFactor(factor int) PoolConfigBuilder {
-	b.config.fastPath.growth.growthFactor = factor
+	b.config.fastPath.growth.bigGrowthFactor = factor
 	return b
 }
 
 // SetFastPathExponentialThresholdFactor sets the exponential threshold factor for fast path growth.
 // This determines when the L1 cache switches from exponential to fixed growth.
 func (b *poolConfigBuilder) SetFastPathExponentialThresholdFactor(percent int) PoolConfigBuilder {
-	b.config.fastPath.growth.exponentialThresholdFactor = percent
+	b.config.fastPath.growth.thresholdFactor = percent
 	return b
 }
 
 // SetFastPathFixedGrowthFactor sets the fixed growth factor for fast path growth.
 // This determines the fixed step size for L1 cache growth above the threshold.
-func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(percent int) PoolConfigBuilder {
-	b.config.fastPath.growth.fixedGrowthFactor = percent
+func (b *poolConfigBuilder) SetFastPathFixedGrowthFactor(factor int) PoolConfigBuilder {
+	b.config.fastPath.growth.controlledGrowthFactor = factor
 	return b
 }
 

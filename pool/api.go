@@ -92,8 +92,8 @@ type PoolConfigBuilder interface {
 	//   - initialSize: Initial capacity of the fast path buffer
 	//   - growthEventsTrigger: Number of growth events before fast path grows
 	//   - shrinkEventsTrigger: Number of shrink events before fast path shrinks
-	//   - fillAggressiveness: How aggressively to fill the fast path initially
-	//   - refillPercent: Threshold for refilling the fast path
+	//   - fillAggressiveness: How aggressively to fill the fast path initially (percentage of capacity)
+	//   - refillPercent: Threshold for refilling the fast path (percentage of capacity)
 	SetFastPathBasicConfigs(initialSize, growthEventsTrigger, shrinkEventsTrigger int, fillAggressiveness, refillPercent int) PoolConfigBuilder
 
 	// SetFastPathGrowthConfigs defines how the fast path expands when under pressure.

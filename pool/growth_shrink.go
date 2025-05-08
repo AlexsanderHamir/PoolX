@@ -16,14 +16,14 @@ func (p *Pool[T]) calculateNewPoolCapacity() int {
 	currentCap := p.stats.currentCapacity
 	initialCap := p.config.initialCapacity
 
-	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
+	exponentialThreshold := initialCap * cfg.thresholdFactor
 	if currentCap < exponentialThreshold {
-		growthStep := initialCap * cfg.growthFactor
+		growthStep := initialCap * cfg.bigGrowthFactor
 		newCap := currentCap + growthStep
 		return newCap
 	}
 
-	fixedStep := initialCap * cfg.fixedGrowthFactor
+	fixedStep := initialCap * cfg.controlledGrowthFactor
 	newCap := currentCap + fixedStep
 
 	return newCap

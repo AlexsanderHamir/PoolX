@@ -86,7 +86,7 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 // how many objects should go to the L1 cache versus the main buffer.
 // Returns an error if object allocation or distribution fails.
 func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
-	fillTarget := poolObj.config.fastPath.initialSize * poolObj.config.fastPath.fillAggressiveness
+	fillTarget := poolObj.config.fastPath.initialSize * poolObj.config.fastPath.fillAggressiveness / 100
 	fastPathRemaining := fillTarget
 
 	for range poolObj.config.initialCapacity {

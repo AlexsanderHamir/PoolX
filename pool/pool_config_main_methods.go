@@ -43,17 +43,17 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 //   - fixedGrowthFactor: Fixed step size for growth when above threshold
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthFactor, fixedGrowthFactor int) PoolConfigBuilder {
-	if exponentialThresholdFactor > 0 {
-		b.config.growth.exponentialThresholdFactor = exponentialThresholdFactor
+func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor int) PoolConfigBuilder {
+	if thresholdFactor > 0 {
+		b.config.growth.thresholdFactor = thresholdFactor
 	}
 
-	if growthFactor > 0 {
-		b.config.growth.growthFactor = growthFactor
+	if bigGrowthFactor > 0 {
+		b.config.growth.bigGrowthFactor = bigGrowthFactor
 	}
 
-	if fixedGrowthFactor > 0 {
-		b.config.growth.fixedGrowthFactor = fixedGrowthFactor
+	if controlledGrowthFactor > 0 {
+		b.config.growth.controlledGrowthFactor = controlledGrowthFactor
 	}
 	return b
 }
@@ -193,20 +193,20 @@ func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize, growthEventsTri
 
 // SetFastPathGrowthConfigs sets the growth configuration parameters for the fast path.
 // Parameters:
-//   - exponentialThresholdFactor: Threshold for switching growth modes
-//   - fixedGrowthFactor: Fixed step size for growth above threshold
-//   - growthFactor: Growth factor below threshold
-func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor, fixedGrowthFactor, growthFactor int) PoolConfigBuilder {
-	if exponentialThresholdFactor > 0 {
-		b.config.fastPath.growth.exponentialThresholdFactor = exponentialThresholdFactor
+//   - thresholdFactor: Threshold for switching growth modes
+//   - bigGrowthFactor: Fixed step size for growth above threshold
+//   - controlledGrowthFactor: Growth factor below threshold
+func (b *poolConfigBuilder) SetFastPathGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor int) PoolConfigBuilder {
+	if thresholdFactor > 0 {
+		b.config.fastPath.growth.thresholdFactor = thresholdFactor
 	}
 
-	if fixedGrowthFactor > 0 {
-		b.config.fastPath.growth.fixedGrowthFactor = fixedGrowthFactor
+	if controlledGrowthFactor > 0 {
+		b.config.fastPath.growth.controlledGrowthFactor = controlledGrowthFactor
 	}
 
-	if growthFactor > 0 {
-		b.config.fastPath.growth.growthFactor = growthFactor
+	if bigGrowthFactor > 0 {
+		b.config.fastPath.growth.bigGrowthFactor = bigGrowthFactor
 	}
 
 	return b

@@ -85,9 +85,9 @@ var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
 }
 
 var defaultGrowthParameters = &growthParameters{
-	exponentialThresholdFactor: defaultExponentialThresholdFactor,
-	growthFactor:               defaultGrowthFactor,
-	fixedGrowthFactor:          defaultFixedGrowthFactor,
+	thresholdFactor: defaultExponentialThresholdFactor,
+	bigGrowthFactor: defaultGrowthFactor,
+	controlledGrowthFactor: defaultFixedGrowthFactor,
 }
 
 var defaultShrinkParameters = &shrinkParameters{

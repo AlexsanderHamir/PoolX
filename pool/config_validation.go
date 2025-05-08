@@ -86,16 +86,16 @@ func (b *poolConfigBuilder) validateShrinkConfig() error {
 func (b *poolConfigBuilder) validateGrowthConfig() error {
 	gp := b.config.growth
 
-	if gp.exponentialThresholdFactor <= 0 {
-		return fmt.Errorf("exponentialThresholdFactor must be greater than 0, got %d", gp.exponentialThresholdFactor)
+	if gp.thresholdFactor <= 0 {
+		return fmt.Errorf("thresholdFactor must be greater than 0, got %d", gp.thresholdFactor)
 	}
 
-	if gp.growthFactor <= 0 {
-		return fmt.Errorf("growthFactor must be greater than 0, got %d", gp.growthFactor)
+	if gp.bigGrowthFactor <= 0 {
+		return fmt.Errorf("bigGrowthFactor must be greater than 0, got %d", gp.bigGrowthFactor)
 	}
 
-	if gp.fixedGrowthFactor <= 0 {
-		return fmt.Errorf("fixedGrowthFactor must be greater than 0, got %d", gp.fixedGrowthFactor)
+	if gp.controlledGrowthFactor <= 0 {
+		return fmt.Errorf("controlledGrowthFactor must be greater than 0, got %d", gp.controlledGrowthFactor)
 	}
 
 	return nil
@@ -129,16 +129,16 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 		return fmt.Errorf("fastPath.growthEventsTrigger must be greater than 0, got %d", fp.growthEventsTrigger)
 	}
 
-	if fp.growth.exponentialThresholdFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.exponentialThresholdFactor must be greater than 0, got %d", fp.growth.exponentialThresholdFactor)
+	if fp.growth.thresholdFactor <= 0 {
+		return fmt.Errorf("fastPath.growth.thresholdFactor must be greater than 0, got %d", fp.growth.thresholdFactor)
 	}
 
-	if fp.growth.growthFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.growthFactor must be greater than 0, got %d", fp.growth.growthFactor)
+	if fp.growth.bigGrowthFactor <= 0 {
+		return fmt.Errorf("fastPath.growth.bigGrowthFactor must be greater than 0, got %d", fp.growth.bigGrowthFactor)
 	}
 
-	if fp.growth.fixedGrowthFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.fixedGrowthFactor must be greater than 0, got %d", fp.growth.fixedGrowthFactor)
+	if fp.growth.controlledGrowthFactor <= 0 {
+		return fmt.Errorf("fastPath.growth.controlledGrowthFactor must be greater than 0, got %d", fp.growth.controlledGrowthFactor)
 	}
 
 	if fp.shrinkEventsTrigger <= 0 {

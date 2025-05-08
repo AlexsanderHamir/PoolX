@@ -24,7 +24,6 @@ import (
 //
 // Type parameter T must be a pointer type. Non-pointer types will cause an error.
 type Pool[T any] struct {
-	// cacheL1 is an atomic pointer to a channel serving as the L1 cache.
 	// This provides fast access to frequently used objects without main pool contention.
 	cacheL1 *chan T
 
@@ -32,7 +31,6 @@ type Pool[T any] struct {
 	// It provides efficient operations and handles the bulk of object storage.
 	pool *ringbuffer.RingBuffer[T]
 
-	// mu protects pool state modifications and ensures thread safety
 	mu       sync.RWMutex
 	refillMu sync.Mutex
 
@@ -40,9 +38,11 @@ type Pool[T any] struct {
 
 	// shrinkCond is used for blocking shrink when it reaches maxConsecutiveShrinks
 	shrinkCond *sync.Cond
+
+	// refillCond is used for blocking multiple goroutines while one goroutine is refilling the pool
 	refillCond *sync.Cond
 
-	// stats tracks various pool usage statistics when enabled
+	// stats tracks essential pool statistics for the functionallity of the pool
 	stats *poolStats
 
 	// isGrowthBlocked prevents growth operations when true
@@ -122,30 +122,30 @@ func (c *PoolConfig) GetRingBufferConfig() *config.RingBufferConfig {
 // It supports both exponential and fixed growth strategies to balance
 // between rapid growth for high demand and controlled growth for stability.
 type growthParameters struct {
-	// exponentialThresholdFactor determines when to switch from exponential to fixed growth.
+	// thresholdFactor determines when to switch from big growth to controlled growth.
 	// Once capacity reaches (InitialCapacity * ExponentialThresholdFactor),
-	// growth switches to fixed mode to prevent excessive expansion.
-	exponentialThresholdFactor int
+	// growth switches to controlled mode to prevent excessive expansion.
+	thresholdFactor int
 
-	// growthFactor defines the growth rate during exponential phase.
+	// bigGrowthFactor defines the growth rate during exponential phase.
 	// For example, 50 means increase capacity by initialCapacity * 50 each time.
-	growthFactor int
+	bigGrowthFactor int
 
-	// fixedGrowthFactor determines the fixed growth amount after exponential phase.
+	// controlledGrowthFactor determines the fixed growth amount after big growth phase.
 	// The pool grows by (InitialCapacity * FixedGrowthFactor) each time.
-	fixedGrowthFactor int
+	controlledGrowthFactor int
 }
 
-func (g *growthParameters) GetExponentialThresholdFactor() int {
-	return g.exponentialThresholdFactor
+func (g *growthParameters) GetThresholdFactor() int {
+	return g.thresholdFactor
 }
 
-func (g *growthParameters) GetGrowthFactor() int {
-	return g.growthFactor
+func (g *growthParameters) GetBigGrowthFactor() int {
+	return g.bigGrowthFactor
 }
 
-func (g *growthParameters) GetFixedGrowthFactor() int {
-	return g.fixedGrowthFactor
+func (g *growthParameters) GetControlledGrowthFactor() int {
+	return g.controlledGrowthFactor
 }
 
 // shrinkParameters controls how the pool contracts when demand decreases.
@@ -180,7 +180,7 @@ type shrinkParameters struct {
 	stableUnderutilizationRounds int
 
 	// shrinkPercent determines how much to reduce the pool size when shrinking.
-	// For example, 0.2 means reduce capacity by 20% each time.
+	// For example, 20 means reduce capacity by 20% each time.
 	// Must be between 0 and 100.
 	shrinkPercent int
 
@@ -245,13 +245,14 @@ type fastPathParameters struct {
 	// After this many shrink events, the fast path will shrink.
 	shrinkEventsTrigger int
 
-	// fillAggressiveness controls how aggressively to fill the fast path.
-	// Value between 0.0 and 1.0, representing the target fill percentage.
-	// Higher values mean more objects are kept in the fast path.
+	// fillAggressiveness controls how aggressively to fill the fast path based on percentage of capacity.
+	// For example, 50 means fill the fast path to 50% of its capacity.
+	// How aggressively should the fast path be filled?
 	fillAggressiveness int
 
-	// refillPercent triggers refill when occupancy drops below this threshold.
-	// Value between 0.0 and 0.99, representing the minimum acceptable fill level.
+	// Value will be interpreted as a percentage of the fast path capacity.
+	// For example, 50 means refill will be triggered when occupancy drops below 50% of the fast path capacity.
+	// Below what percentage of the fast path capacity should the fast path be refilled?
 	refillPercent int
 
 	// preReadBlockHookAttempts controls how many times to attempt getting an object

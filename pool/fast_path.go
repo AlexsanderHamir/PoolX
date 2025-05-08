@@ -10,13 +10,13 @@ func (p *Pool[T]) calculateNewCapacity(currentCap int) int {
 	cfg := p.config.fastPath.growth
 	initialCap := p.config.fastPath.initialSize
 
-	threshold := initialCap * cfg.exponentialThresholdFactor
+	threshold := initialCap * cfg.thresholdFactor
 	if currentCap < threshold {
-		exponentialStep := initialCap * cfg.growthFactor
+		exponentialStep := initialCap * cfg.bigGrowthFactor
 		return currentCap + exponentialStep
 	}
 
-	fixedStep := initialCap * cfg.fixedGrowthFactor
+	fixedStep := initialCap * cfg.controlledGrowthFactor
 	return currentCap + fixedStep
 }
 
@@ -146,7 +146,7 @@ func (p *Pool[T]) calculateL1Usage() (int, int) {
 
 	var currentPercent int
 	if currentCap > 0 {
-		currentPercent = currentLength / currentCap
+		currentPercent = currentLength / currentCap * 100
 	}
 
 	return currentCap, currentPercent
@@ -160,7 +160,7 @@ func (p *Pool[T]) calculateFillTarget(currentCap int) int {
 		return 0
 	}
 
-	targetFill := currentCap * p.config.fastPath.fillAggressiveness
+	targetFill := currentCap * p.config.fastPath.fillAggressiveness / 100
 
 	chPtr := p.cacheL1
 	ch := *chPtr
