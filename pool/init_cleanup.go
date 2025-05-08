@@ -67,15 +67,17 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 	ch := make(chan T, config.fastPath.initialSize)
 
 	poolObj := &Pool[T]{
-		cacheL1:   &ch,
-		allocator: allocator,
-		cleaner:   cleaner,
-		config:    config,
-		stats:     stats,
-		pool:      ringBuffer,
+		cacheL1:         &ch,
+		refillSemaphore: make(chan struct{}, 1),
+		allocator:       allocator,
+		cleaner:         cleaner,
+		config:          config,
+		stats:           stats,
+		pool:            ringBuffer,
 	}
 
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
+	poolObj.refillCond = sync.NewCond(&poolObj.refillMu)
 	return poolObj, nil
 }
 

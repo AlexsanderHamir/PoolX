@@ -93,7 +93,7 @@ func TestErrorHandlingScenarios(t *testing.T) {
 
 		obj, err := p.Get()
 		require.Nil(t, obj)
-		require.Nil(t, err)
+		require.Equal(t, "ring buffer failed core operation: EOF", err.Error())
 
 		err = p.Put(&TestObject{Value: 42})
 		require.Equal(t, "ring buffer failed core operation: EOF", err.Error())

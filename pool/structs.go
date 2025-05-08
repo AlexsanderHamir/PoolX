@@ -33,10 +33,14 @@ type Pool[T any] struct {
 	pool *ringbuffer.RingBuffer[T]
 
 	// mu protects pool state modifications and ensures thread safety
-	mu sync.RWMutex
+	mu       sync.RWMutex
+	refillMu sync.Mutex
+
+	refillSemaphore chan struct{}
 
 	// shrinkCond is used for blocking shrink when it reaches maxConsecutiveShrinks
 	shrinkCond *sync.Cond
+	refillCond *sync.Cond
 
 	// stats tracks various pool usage statistics when enabled
 	stats *poolStats

@@ -17,7 +17,7 @@ const (
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
 	defaultExponentialThresholdFactor                     = 100
-	defaultGrowthFactor                                  = 50
+	defaultGrowthFactor                                   = 50
 	defaultFixedGrowthFactor                              = 150
 	defaultfillAggressiveness                             = 80
 	fillAggressivenessExtreme                             = 100

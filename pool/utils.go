@@ -4,13 +4,6 @@ import (
 	"errors"
 )
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 	var zero T
 	if errors.Is(refillError, errRingBufferFailed) || errors.Is(refillError, errNilObject) {

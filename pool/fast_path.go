@@ -3,8 +3,6 @@ package pool
 import (
 	"fmt"
 	"log"
-
-	"github.com/AlexsanderHamir/ringbuffer"
 )
 
 // calculateNewCapacity determines the new capacity based on current capacity and growth configuration
@@ -79,16 +77,18 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 }
 
 // tryGetFromL1 attempts to retrieve an object from the L1 cache channel.
-// If lock is false, it acquires a read lock before accessing the cache.
 // Returns the object and true if found, otherwise returns zero value and false.
-func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
+func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
 	var chPtr *chan T
-	if !lock {
+
+	if !locked {
 		p.mu.RLock()
-		chPtr = p.cacheL1
+	}
+
+	chPtr = p.cacheL1
+
+	if !locked {
 		p.mu.RUnlock()
-	} else {
-		chPtr = p.cacheL1
 	}
 
 	select {
@@ -108,11 +108,11 @@ func (p *Pool[T]) tryGetFromL1(lock bool) (zero T, found bool) {
 // tryFastPathPut attempts to quickly return an object to the L1 cache channel using a non-blocking
 // select operation. If successful, it updates hit statistics and returns true.
 // If the channel is full, it returns false to indicate a miss.
-func (p *Pool[T]) tryFastPathPut(obj T, pool *ringbuffer.RingBuffer[T]) bool {
+func (p *Pool[T]) tryFastPathPut(obj T) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[PUT] panic on fast path put — channel closed")
-			err := p.slowPathPut(obj, pool)
+			err := p.slowPathPut(obj)
 			if err != nil {
 				log.Printf("[PUT] error on slow path put, couldn't return object: %v", err)
 			}

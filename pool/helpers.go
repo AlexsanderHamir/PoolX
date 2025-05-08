@@ -5,7 +5,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/AlexsanderHamir/ringbuffer"
 	"github.com/AlexsanderHamir/ringbuffer/errors"
 )
 
@@ -161,14 +160,27 @@ func (p *Pool[T]) refill(fillTarget int) error {
 	return nil
 }
 
-func (p *Pool[T]) slowPathPut(obj T, pool *ringbuffer.RingBuffer[T]) error {
-	if err := pool.Write(obj); err != nil {
-		return fmt.Errorf("%w: %w", errRingBufferFailed, err)
+func (p *Pool[T]) slowPathPut(obj T) error {
+	const maxRetries = 3
+	const retryDelay = 10 * time.Millisecond
+	var err error
+
+	for i := range maxRetries {
+		p.mu.RLock()
+		pool := p.pool
+		p.mu.RUnlock()
+
+		if err = pool.Write(obj); err == nil {
+			p.stats.FastReturnMiss.Add(1)
+			return nil
+		}
+
+		if i < maxRetries-1 {
+			time.Sleep(retryDelay)
+		}
 	}
 
-	p.stats.FastReturnMiss.Add(1)
-
-	return nil
+	return fmt.Errorf("%w: %w", errRingBufferFailed, err)
 }
 
 func (p *Pool[T]) handleMaxConsecutiveShrinks(maxConsecutiveShrinks int) (cannotShrink bool) {
@@ -206,18 +218,26 @@ func (p *Pool[T]) tryRefillIfNeeded() (bool, error) {
 // and the ring buffer is in blocking mode. We always try to refill the ring buffer before
 // calling the slow path.
 func (p *Pool[T]) SlowPath() (obj T, err error) {
-	p.mu.RLock()
-	pool := p.pool
-	p.mu.RUnlock()
+	const maxRetries = 3
+	const retryDelay = 10 * time.Millisecond
 
-	obj, err = pool.GetOne()
-	if err != nil {
-		return obj, fmt.Errorf("%w: %w", errRingBufferFailed, err)
+	for i := range maxRetries {
+		p.mu.RLock()
+		pool := p.pool
+		p.mu.RUnlock()
+
+		obj, err = pool.GetOne()
+		if err == nil {
+			p.stats.totalGets.Add(1)
+			return obj, nil
+		}
+
+		if i < maxRetries-1 {
+			time.Sleep(retryDelay)
+		}
 	}
 
-	p.stats.totalGets.Add(1)
-
-	return obj, nil
+	return obj, fmt.Errorf("%w: %w", errRingBufferFailed, err)
 }
 
 func (p *Pool[T]) RingBufferCapacity() int {
@@ -274,7 +294,29 @@ func (p *Pool[T]) GetBlockedReaders() int {
 
 // tryRefillAndGetL1 attempts to refill the pool, and get an object from L1 cache.
 // It will grow in case it's allowed and needed.
-func (p *Pool[T]) tryRefillAndGetL1() (T, bool) {
+func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
+	select {
+	case p.refillSemaphore <- struct{}{}:
+		defer func() {
+			p.refillCond.Broadcast()
+			<-p.refillSemaphore
+		}()
+		obj, canProceed := p.handleRefillScenarios()
+		return obj, canProceed
+	default:
+		p.refillMu.Lock()
+		p.refillCond.Wait()
+		p.refillMu.Unlock()
+
+		if obj, found := p.tryGetFromL1(false); found {
+			return obj, true
+		}
+
+		return zero, false
+	}
+}
+
+func (p *Pool[T]) handleRefillScenarios() (zero T, canProceed bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -289,6 +331,5 @@ func (p *Pool[T]) tryRefillAndGetL1() (T, bool) {
 		return obj, true
 	}
 
-	var zero T
 	return zero, false
 }

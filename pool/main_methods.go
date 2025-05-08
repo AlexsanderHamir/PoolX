@@ -14,6 +14,7 @@ var (
 	errRingBufferFailed = errors.New("ring buffer failed core operation")
 	errNoItemsToMove    = errors.New("no items to move")
 	errNilObject        = errors.New("object is nil")
+	errNilConfig        = errors.New("config is nil")
 )
 
 // NewPool creates a new object pool with the given configuration, allocator, cleaner, and pool type.
@@ -26,6 +27,18 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (Po
 
 	if config == nil {
 		config = createDefaultConfig()
+	}
+
+	if config.ringBufferConfig == nil {
+		return nil, errNilConfig
+	}
+
+	if config.shrink == nil {
+		return nil, errNilConfig
+	}
+
+	if config.growth == nil {
+		return nil, errNilConfig
 	}
 
 	ringBuffer, err := ringbuffer.NewWithConfig[T](config.initialCapacity, config.ringBufferConfig)
@@ -64,8 +77,8 @@ func (p *Pool[T]) Get() (zero T, err error) {
 	}
 
 	obj, err := p.SlowPath()
-	if err == nil {
-		return obj, err
+	if err != nil {
+		return zero, err
 	}
 
 	return obj, nil
@@ -74,25 +87,26 @@ func (p *Pool[T]) Get() (zero T, err error) {
 // Put returns an object to the pool. The object will be cleaned using the cleaner function
 // before being made available for reuse.
 func (p *Pool[T]) Put(obj T) error {
+	defer p.refillCond.Signal()
+	p.cleaner(obj)
+
 	p.mu.RLock()
 	pool := p.pool
 	p.mu.RUnlock()
 
-	p.cleaner(obj)
-
 	if pool.GetBlockedReaders() > 0 {
-		err := p.slowPathPut(obj, pool)
+		err := p.slowPathPut(obj)
 		if err != nil {
 			return err
 		}
 		return nil
 	}
 
-	if p.tryFastPathPut(obj, pool) {
+	if p.tryFastPathPut(obj) {
 		return nil
 	}
 
-	return p.slowPathPut(obj, pool)
+	return p.slowPathPut(obj)
 }
 
 // Close closes the pool and releases all resources. If there are outstanding objects,
@@ -167,7 +181,7 @@ func (p *Pool[T]) grow() error {
 	if p.isGrowthBlocked.Load() {
 		return errGrowthBlocked
 	}
-	
+
 	newCapacity := p.calculateNewPoolCapacity()
 
 	if err := p.updatePoolCapacity(newCapacity); err != nil {
@@ -190,9 +204,6 @@ func (p *Pool[T]) preReadBlockHook() bool {
 	defer p.mu.RUnlock()
 
 	attempts := p.config.fastPath.preReadBlockHookAttempts
-	if attempts <= 0 {
-		attempts = 1
-	}
 
 	chPtr := p.cacheL1
 	ch := *chPtr
