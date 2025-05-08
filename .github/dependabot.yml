@@ -11,8 +11,6 @@ updates:
     labels:
       - "dependencies"
       - "go"
-    # Set the version update strategy
-    versioning-strategy: auto
     # Limit the number of open pull requests for version updates
     open-pull-requests-limit: 10
     # Allow up-to-date branches to be rebased
