@@ -23,7 +23,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Exponential growth until 200% of current capacity
 		// - 75% growth rate in exponential mode
 		// - 50% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(200, 75, 50).
+		SetRingBufferGrowthConfigs(40, 10, 1).
 		// Ring buffer shrink strategy:
 		// - Check every 5 seconds
 		// - Consider idle after 10 seconds from last get call
@@ -41,7 +41,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Shrink after 1 shrink events
 		// - Maximum fill aggressiveness (1.0) - 100%
 		// - Refill when 1% empty
-		SetFastPathBasicConfigs(8, 1, 1, 100, 1).
+		SetFastPathBasicConfigs(256, 1, 1, 100, 1).
 		// Fast path growth strategy:
 		// - Exponential growth until 6000x of initial capacity (8 * 6000 = 48000)
 		// - 300x growth rate in exponential mode currentCapacity + (8 * 300 = 2400)
