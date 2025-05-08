@@ -43,7 +43,7 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 //   - fixedGrowthFactor: Fixed step size for growth when above threshold
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor int) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor float64) PoolConfigBuilder {
 	if thresholdFactor > 0 {
 		b.config.growth.thresholdFactor = thresholdFactor
 	}
@@ -196,7 +196,7 @@ func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize, growthEventsTri
 //   - thresholdFactor: Threshold for switching growth modes
 //   - bigGrowthFactor: Fixed step size for growth above threshold
 //   - controlledGrowthFactor: Growth factor below threshold
-func (b *poolConfigBuilder) SetFastPathGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor int) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetFastPathGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor float64) PoolConfigBuilder {
 	if thresholdFactor > 0 {
 		b.config.fastPath.growth.thresholdFactor = thresholdFactor
 	}

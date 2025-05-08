@@ -125,26 +125,26 @@ type growthParameters struct {
 	// thresholdFactor determines when to switch from big growth to controlled growth.
 	// Once capacity reaches (InitialCapacity * ExponentialThresholdFactor),
 	// growth switches to controlled mode to prevent excessive expansion.
-	thresholdFactor int
+	thresholdFactor float64
 
 	// bigGrowthFactor defines the growth rate during exponential phase.
 	// For example, 50 means increase capacity by initialCapacity * 50 each time.
-	bigGrowthFactor int
+	bigGrowthFactor float64
 
 	// controlledGrowthFactor determines the fixed growth amount after big growth phase.
 	// The pool grows by (InitialCapacity * FixedGrowthFactor) each time.
-	controlledGrowthFactor int
+	controlledGrowthFactor float64
 }
 
-func (g *growthParameters) GetThresholdFactor() int {
+func (g *growthParameters) GetThresholdFactor() float64 {
 	return g.thresholdFactor
 }
 
-func (g *growthParameters) GetBigGrowthFactor() int {
+func (g *growthParameters) GetBigGrowthFactor() float64 {
 	return g.bigGrowthFactor
 }
 
-func (g *growthParameters) GetControlledGrowthFactor() int {
+func (g *growthParameters) GetControlledGrowthFactor() float64 {
 	return g.controlledGrowthFactor
 }
 

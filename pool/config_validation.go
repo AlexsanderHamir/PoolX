@@ -87,15 +87,15 @@ func (b *poolConfigBuilder) validateGrowthConfig() error {
 	gp := b.config.growth
 
 	if gp.thresholdFactor <= 0 {
-		return fmt.Errorf("thresholdFactor must be greater than 0, got %d", gp.thresholdFactor)
+		return fmt.Errorf("thresholdFactor must be greater than 0, got %f", gp.thresholdFactor)
 	}
 
 	if gp.bigGrowthFactor <= 0 {
-		return fmt.Errorf("bigGrowthFactor must be greater than 0, got %d", gp.bigGrowthFactor)
+		return fmt.Errorf("bigGrowthFactor must be greater than 0, got %f", gp.bigGrowthFactor)
 	}
 
 	if gp.controlledGrowthFactor <= 0 {
-		return fmt.Errorf("controlledGrowthFactor must be greater than 0, got %d", gp.controlledGrowthFactor)
+		return fmt.Errorf("controlledGrowthFactor must be greater than 0, got %f", gp.controlledGrowthFactor)
 	}
 
 	return nil
@@ -130,15 +130,15 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 	}
 
 	if fp.growth.thresholdFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.thresholdFactor must be greater than 0, got %d", fp.growth.thresholdFactor)
+		return fmt.Errorf("fastPath.growth.thresholdFactor must be greater than 0, got %f", fp.growth.thresholdFactor)
 	}
 
 	if fp.growth.bigGrowthFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.bigGrowthFactor must be greater than 0, got %d", fp.growth.bigGrowthFactor)
+		return fmt.Errorf("fastPath.growth.bigGrowthFactor must be greater than 0, got %f", fp.growth.bigGrowthFactor)
 	}
 
 	if fp.growth.controlledGrowthFactor <= 0 {
-		return fmt.Errorf("fastPath.growth.controlledGrowthFactor must be greater than 0, got %d", fp.growth.controlledGrowthFactor)
+		return fmt.Errorf("fastPath.growth.controlledGrowthFactor must be greater than 0, got %f", fp.growth.controlledGrowthFactor)
 	}
 
 	if fp.shrinkEventsTrigger <= 0 {

@@ -10,14 +10,16 @@ func (p *Pool[T]) calculateNewCapacity(currentCap int) int {
 	cfg := p.config.fastPath.growth
 	initialCap := p.config.fastPath.initialSize
 
-	threshold := initialCap * cfg.thresholdFactor
-	if currentCap < threshold {
-		exponentialStep := initialCap * cfg.bigGrowthFactor
-		return currentCap + exponentialStep
+	threshold := float64(initialCap) * cfg.thresholdFactor
+	floatCurrentCap := float64(currentCap)
+
+	if floatCurrentCap < threshold {
+		exponentialStep := floatCurrentCap * cfg.bigGrowthFactor
+		return currentCap + int(exponentialStep)
 	}
 
-	fixedStep := initialCap * cfg.controlledGrowthFactor
-	return currentCap + fixedStep
+	fixedStep := floatCurrentCap * cfg.controlledGrowthFactor
+	return currentCap + int(fixedStep)
 }
 
 // drainOldChannel transfers objects from the old channel to the new channel or pool
@@ -247,6 +249,12 @@ func (p *Pool[T]) updateShrinkStats(newCapacity int) {
 }
 
 func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[SHRINK] panic on shrink fast path — channel closed")
+		}
+	}()
+
 	chPtr := p.cacheL1
 	ch := *chPtr
 

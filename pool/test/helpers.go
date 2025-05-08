@@ -47,9 +47,9 @@ type TestJob struct {
 type DefaultConfigValues struct {
 	InitialCapacity                    int
 	HardLimit                          int
-	GrowthFactor                       int
-	FixedGrowthFactor                  int
-	ExponentialThresholdFactor         int
+	GrowthFactor                       float64
+	FixedGrowthFactor                  float64
+	ExponentialThresholdFactor         float64
 	ShrinkAggressiveness               pool.AggressivenessLevel
 	ShrinkCheckInterval                time.Duration
 	IdleThreshold                      time.Duration
@@ -65,9 +65,9 @@ type DefaultConfigValues struct {
 	RefillPercent                      int
 	EnableChannelGrowth                bool
 	GrowthEventsTrigger                int
-	FastPathGrowthFactor               int
-	FastPathExponentialThresholdFactor int
-	FastPathFixedGrowthFactor          int
+	FastPathGrowthFactor               float64
+	FastPathExponentialThresholdFactor float64
+	FastPathFixedGrowthFactor          float64
 	ShrinkEventsTrigger                int
 	FastPathShrinkAggressiveness       pool.AggressivenessLevel
 	FastPathShrinkPercent              int

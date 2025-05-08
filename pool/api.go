@@ -41,18 +41,15 @@ type PoolConfigBuilder interface {
 
 	// SetRingBufferGrowthConfigs defines how the ring buffer expands when under pressure.
 	// Parameters:
-	//   - exponentialThresholdFactor: Threshold for switching from exponential to fixed growth
-	//   example: initialCapacity(8) * 3000 == 24000, the mark at which we switch to fixed growth
+	//   - thresholdFactor: Threshold for switching from exponential to controlled growth
+	//   example: initialCapacity(8) * 3000 == 24000, the mark at which we switch to controlled growth
 	//
-	//   - growthPercent: Growth rate when below threshold (example: 75x)
-	//   example: currentCapacity(8) + (initialCapacity(8) * growthPercent(75) = 600)
+	//   - bigGrowthFactor: Growth rate when below threshold (example: 0.75 for 75% growth)
+	//   example: currentCapacity(1000) * bigGrowthFactor(0.75) = 1000 + 750 = 1750
 	//
-	//   - fixedGrowthFactor: Fixed step size for growth when above threshold (example: currentCapacity * 50)
-	//   example: currentCapacity(24000) + (initialCapacity(8) * fixedGrowthFactor(50) = 1200)
-	//
-	// Note: Zero or negative values are ignored, default values will be used instead.
-	// fixedGrowthFactor is calculated based on the current capacity not the initial capacity.
-	SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthFactor, fixedGrowthFactor int) PoolConfigBuilder
+	//   - controlledGrowthFactor: smaller step size for growth when above threshold (example: 0.5 for 50% growth)
+	//   example: currentCapacity(1750) * controlledGrowthFactor(0.5) = 1750 + 875 = 2625
+	SetRingBufferGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor float64) PoolConfigBuilder
 
 	// SetRingBufferShrinkConfigs controls the automatic shrinking behavior of the ring buffer.
 	// Parameters:
@@ -98,16 +95,15 @@ type PoolConfigBuilder interface {
 
 	// SetFastPathGrowthConfigs defines how the fast path expands when under pressure.
 	// Parameters:
-	//   // Parameters:
-	//   - exponentialThresholdFactor: Threshold for switching from exponential to fixed growth
-	//   example: initialCapacity(8) * 3000 == 24000, the mark at which we switch to fixed growth
+	//   - thresholdFactor: Threshold for switching from exponential to controlled growth
+	//   example: initialCapacity(8) * 3000 == 24000, the mark at which we switch to controlled growth
 	//
-	//   - growthPercent: Growth rate when below threshold (example: 75x)
-	//   example: currentCapacity(8) + (initialCapacity(8) * growthPercent(75) = 600)
+	//   - bigGrowthFactor: Growth rate when below threshold (example: 0.75 for 75% growth)
+	//   example: currentCapacity(1000) * bigGrowthFactor(0.75) = 1000 + 750 = 1750
 	//
-	//   - fixedGrowthFactor: Fixed step size for growth when above threshold (example: currentCapacity * 50)
-	//   example: currentCapacity(24000) + (initialCapacity(8) * fixedGrowthFactor(50) = 1200)
-	SetFastPathGrowthConfigs(exponentialThresholdFactor, fixedGrowthFactor, growthFactor int) PoolConfigBuilder
+	//   - controlledGrowthFactor: smaller step size for growth when above threshold (example: 0.5 for 50% growth)
+	//   example: currentCapacity(1750) * controlledGrowthFactor(0.5) = 1750 + 875 = 2625
+	SetFastPathGrowthConfigs(thresholdFactor, controlledGrowthFactor, bigGrowthFactor float64) PoolConfigBuilder
 
 	// SetFastPathShrinkConfigs controls the automatic shrinking behavior of the fast path.
 	// Parameters:
@@ -131,11 +127,11 @@ type PoolConfigBuilder interface {
 	// SetHardLimit sets the maximum number of objects the pool can contain
 	SetHardLimit(count int) PoolConfigBuilder
 	// SetGrowthExponentialThresholdFactor sets the threshold for switching growth modes
-	SetGrowthExponentialThresholdFactor(factor int) PoolConfigBuilder
+	SetGrowthExponentialThresholdFactor(factor float64) PoolConfigBuilder
 	// SetGrowthFactor sets the percentage growth rate for exponential growth
-	SetGrowthFactor(factor int) PoolConfigBuilder
-	// SetFixedGrowthFactor sets the fixed step size for linear growth
-	SetFixedGrowthFactor(factor int) PoolConfigBuilder
+	SetGrowthFactor(factor float64) PoolConfigBuilder
+	// SetFixedGrowthFactor sets the fixed step size after exponential growth ends
+	SetFixedGrowthFactor(factor float64) PoolConfigBuilder
 	// SetShrinkCheckInterval sets the time between shrink eligibility checks
 	SetShrinkCheckInterval(interval time.Duration) PoolConfigBuilder
 	// SetShrinkCooldown sets the minimum time between shrink operations
@@ -161,11 +157,11 @@ type PoolConfigBuilder interface {
 	// SetFastPathGrowthEventsTrigger sets the number of growth events before fast path grows
 	SetFastPathGrowthEventsTrigger(count int) PoolConfigBuilder
 	// SetFastPathGrowthFactor sets the growth factor for the fast path
-	SetFastPathGrowthFactor(factor int) PoolConfigBuilder
+	SetFastPathGrowthFactor(factor float64) PoolConfigBuilder
 	// SetFastPathExponentialThresholdFactor sets the threshold for switching fast path growth modes
-	SetFastPathExponentialThresholdFactor(factor int) PoolConfigBuilder
+	SetFastPathExponentialThresholdFactor(factor float64) PoolConfigBuilder
 	// SetFastPathFixedGrowthFactor sets the fixed step size for fast path growth
-	SetFastPathFixedGrowthFactor(factor int) PoolConfigBuilder
+	SetFastPathFixedGrowthFactor(factor float64) PoolConfigBuilder
 	// SetFastPathShrinkEventsTrigger sets the number of shrink events before fast path shrinks
 	SetFastPathShrinkEventsTrigger(count int) PoolConfigBuilder
 	// SetFastPathShrinkPercent sets the percentage by which to shrink the fast path

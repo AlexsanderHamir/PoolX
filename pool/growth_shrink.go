@@ -16,15 +16,16 @@ func (p *Pool[T]) calculateNewPoolCapacity() int {
 	currentCap := p.stats.currentCapacity
 	initialCap := p.config.initialCapacity
 
-	exponentialThreshold := initialCap * cfg.thresholdFactor
-	if currentCap < exponentialThreshold {
-		growthStep := initialCap * cfg.bigGrowthFactor
-		newCap := currentCap + growthStep
+	exponentialThreshold := float64(initialCap) * cfg.thresholdFactor // static value, should not be calculated on each call
+	floatCurrentCap := float64(currentCap)
+	if floatCurrentCap < exponentialThreshold {
+		growthStep := floatCurrentCap * cfg.bigGrowthFactor
+		newCap := currentCap + int(growthStep)
 		return newCap
 	}
 
-	fixedStep := initialCap * cfg.controlledGrowthFactor
-	newCap := currentCap + fixedStep
+	fixedStep := floatCurrentCap * cfg.controlledGrowthFactor
+	newCap := currentCap + int(fixedStep)
 
 	return newCap
 }
@@ -263,7 +264,6 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T],
 
 	return nil
 }
-
 
 // updatePoolCapacity handles the core capacity update logic, including hard limit checks
 // and the creation/population of the new buffer. It's the main entry point for
