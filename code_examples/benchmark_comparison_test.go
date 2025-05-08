@@ -68,6 +68,7 @@ func BenchmarkPoolX(b *testing.B) {
 			}
 		}
 	})
+
 }
 
 func BenchmarkSyncPool(b *testing.B) {
