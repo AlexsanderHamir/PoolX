@@ -78,3 +78,4 @@ func (r *RingBuffer[T]) waitWrite() (ok bool) {
 - **Blocked readers** are detected and prioritized via `slowPathPut`.
 - **Hooks** are used to avoid unnecessary blocking and allow the system to auto-heal under contention.
 - The design aims to **maximize throughput** while avoiding deadlocks or starvation.
+- The hooks are used inside the ring buffer.
