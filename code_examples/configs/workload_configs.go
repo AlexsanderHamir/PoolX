@@ -9,21 +9,20 @@ import (
 func CreateHighThroughputConfig() *pool.PoolConfig {
 	poolConfig, err := pool.NewPoolConfigBuilder().
 		// Basic pool settings:
-		// - Initial capacity: 40000 objects (common for high-throughput systems)
-		// - Max capacity: 40000 objects (reasonable upper limit for most systems)
+		// - Initial capacity: 50000 objects (common for high-throughput systems)
+		// - Max capacity: 80000 objects (reasonable upper limit for most systems)
 		// - Verbose logging enabled for monitoring
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(40000, 40000, true).
+		SetPoolBasicConfigs(40000, 80000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
 		// - 2 second general timeout for both operations
-		SetRingBufferBasicConfigs(true, 0, 0, time.Second*2).
+		SetRingBufferBasicConfigs(true, 0, 0, time.Second*3).
 		// Ring buffer growth strategy:
-		// - Exponential growth until 200% of current capacity
-		// - 75% growth rate in exponential mode
-		// - 50% fixed growth after exponential phase
-		SetRingBufferGrowthConfigs(40, 10, 1).
+		// - Setting big growth and  to 1(100%) makes the pool grow once to 80k. (which is the hard limit)
+		// - Controlled growth is 1% of the current capacity (40k + 400 = 40400) (won't be used, since we hit the hard limit)
+		SetRingBufferGrowthConfigs(1, 1, 0.01).
 		// Ring buffer shrink strategy:
 		// - Check every 5 seconds
 		// - Consider idle after 10 seconds from last get call
@@ -34,19 +33,19 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Maximum allowed consecutive shrinks: 5
 		// - Shrink when utilization below 40%
 		// - Shrink by 30% when triggered
-		SetRingBufferShrinkConfigs(time.Second*120, time.Second*10, 5, 50, 5, 3, 40).
+		SetRingBufferShrinkConfigs(time.Second*5, time.Second*10, 3, 50, 5, 40, 30).
 		// Fast path (L1 cache) settings:
 		// - Initial size: 64 objects
 		// - Grow after 1 growth events
 		// - Shrink after 1 shrink events
-		// - Maximum fill aggressiveness (1.0) - 100%
-		// - Refill when 1% empty
-		SetFastPathBasicConfigs(256, 1, 1, 100, 1).
+		// - Fill aggressiveness 100%
+		// - Refill when 10% empty
+		SetFastPathBasicConfigs(64, 1, 1, 100, 10).
 		// Fast path growth strategy:
-		// - Exponential growth until 6000x of initial capacity (8 * 6000 = 48000)
-		// - 300x growth rate in exponential mode currentCapacity + (8 * 300 = 2400)
-		// - 1x fixed growth after exponential phase (currentCapacity + (initialCapacity(8) * 30 = 248))
-		SetFastPathGrowthConfigs(6000, 30, 300).
+		// - Exponential growth until 100x(1000%) of initial capacity (64 * 100 = 6400)
+		// - controlled growth rate: currentCapacity + (64 * 5(500%) = 320)
+		// - 100x big growth rate: currentCapacity + (64 * 100(1000%) = 6400)
+		SetFastPathGrowthConfigs(100, 5, 100).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
 		// - Minimum 20 objects
