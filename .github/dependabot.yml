@@ -4,9 +4,9 @@ updates:
   - package-ecosystem: "gomod"
     # Look for `go.mod` and `go.sum` files in the root directory
     directory: "/"
-    # Check for updates once a week
+    # Check for updates once a day
     schedule:
-      interval: "weekly"
+      interval: "daily"
     # Specify labels for pull requests for version updates
     labels:
       - "dependencies"
