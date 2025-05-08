@@ -123,9 +123,9 @@ type growthParameters struct {
 	// growth switches to fixed mode to prevent excessive expansion.
 	exponentialThresholdFactor int
 
-	// growthPercent defines the growth rate during exponential phase.
-	// For example, 50 means increase capacity by 50% each time.
-	growthPercent int
+	// growthFactor defines the growth rate during exponential phase.
+	// For example, 50 means increase capacity by initialCapacity * 50 each time.
+	growthFactor int
 
 	// fixedGrowthFactor determines the fixed growth amount after exponential phase.
 	// The pool grows by (InitialCapacity * FixedGrowthFactor) each time.
@@ -136,8 +136,8 @@ func (g *growthParameters) GetExponentialThresholdFactor() int {
 	return g.exponentialThresholdFactor
 }
 
-func (g *growthParameters) GetGrowthPercent() int {
-	return g.growthPercent
+func (g *growthParameters) GetGrowthFactor() int {
+	return g.growthFactor
 }
 
 func (g *growthParameters) GetFixedGrowthFactor() int {

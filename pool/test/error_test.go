@@ -70,13 +70,13 @@ func TestGrowthConfigurations(t *testing.T) {
 		{
 			name: "zero growth percent",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetGrowthPercent(0).Build()
+				return pool.NewPoolConfigBuilder().SetGrowthFactor(0).Build()
 			},
 		},
 		{
 			name: "negative growth percent",
 			config: func() (*pool.PoolConfig, error) {
-				return pool.NewPoolConfigBuilder().SetGrowthPercent(-1).Build()
+				return pool.NewPoolConfigBuilder().SetGrowthFactor(-1).Build()
 			},
 		},
 		{
@@ -231,7 +231,7 @@ func TestValidConfiguration(t *testing.T) {
 		builder, err := pool.NewPoolConfigBuilder().
 			SetInitialCapacity(10).
 			SetHardLimit(20).
-			SetGrowthPercent(50).
+			SetGrowthFactor(50).
 			SetShrinkPercent(30).
 			SetFastPathInitialSize(5).
 			SetFastPathFillAggressiveness(80).

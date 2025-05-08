@@ -90,8 +90,8 @@ func (b *poolConfigBuilder) validateGrowthConfig() error {
 		return fmt.Errorf("exponentialThresholdFactor must be greater than 0, got %d", gp.exponentialThresholdFactor)
 	}
 
-	if gp.growthPercent <= 0 {
-		return fmt.Errorf("growthPercent must be greater than 0, got %d", gp.growthPercent)
+	if gp.growthFactor <= 0 {
+		return fmt.Errorf("growthFactor must be greater than 0, got %d", gp.growthFactor)
 	}
 
 	if gp.fixedGrowthFactor <= 0 {
@@ -133,8 +133,8 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 		return fmt.Errorf("fastPath.growth.exponentialThresholdFactor must be greater than 0, got %d", fp.growth.exponentialThresholdFactor)
 	}
 
-	if fp.growth.growthPercent <= 0 {
-		return fmt.Errorf("fastPath.growth.growthPercent must be greater than 0, got %d", fp.growth.growthPercent)
+	if fp.growth.growthFactor <= 0 {
+		return fmt.Errorf("fastPath.growth.growthFactor must be greater than 0, got %d", fp.growth.growthFactor)
 	}
 
 	if fp.growth.fixedGrowthFactor <= 0 {

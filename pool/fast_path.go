@@ -14,11 +14,12 @@ func (p *Pool[T]) calculateNewCapacity(currentCap int) int {
 
 	threshold := initialCap * cfg.exponentialThresholdFactor
 	if currentCap < threshold {
-		return currentCap + (initialCap * cfg.growthPercent)
+		exponentialStep := initialCap * cfg.growthFactor
+		return currentCap + exponentialStep
 	}
 
-	step := initialCap * cfg.fixedGrowthFactor
-	return currentCap + step
+	fixedStep := initialCap * cfg.fixedGrowthFactor
+	return currentCap + fixedStep
 }
 
 // drainOldChannel transfers objects from the old channel to the new channel or pool

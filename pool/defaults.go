@@ -17,7 +17,7 @@ const (
 	AggressivenessVeryAggressive      AggressivenessLevel = 4
 	AggressivenessExtreme             AggressivenessLevel = 5
 	defaultExponentialThresholdFactor                     = 100
-	defaultGrowthPercent                                  = 50
+	defaultGrowthFactor                                  = 50
 	defaultFixedGrowthFactor                              = 150
 	defaultfillAggressiveness                             = 80
 	fillAggressivenessExtreme                             = 100
@@ -86,7 +86,7 @@ var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
 
 var defaultGrowthParameters = &growthParameters{
 	exponentialThresholdFactor: defaultExponentialThresholdFactor,
-	growthPercent:              defaultGrowthPercent,
+	growthFactor:               defaultGrowthFactor,
 	fixedGrowthFactor:          defaultFixedGrowthFactor,
 }
 

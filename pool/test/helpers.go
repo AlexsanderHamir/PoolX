@@ -47,7 +47,7 @@ type TestJob struct {
 type DefaultConfigValues struct {
 	InitialCapacity                    int
 	HardLimit                          int
-	GrowthPercent                      int
+	GrowthFactor                       int
 	FixedGrowthFactor                  int
 	ExponentialThresholdFactor         int
 	ShrinkAggressiveness               pool.AggressivenessLevel
@@ -65,7 +65,7 @@ type DefaultConfigValues struct {
 	RefillPercent                      int
 	EnableChannelGrowth                bool
 	GrowthEventsTrigger                int
-	FastPathGrowthPercent              int
+	FastPathGrowthFactor               int
 	FastPathExponentialThresholdFactor int
 	FastPathFixedGrowthFactor          int
 	ShrinkEventsTrigger                int
@@ -83,7 +83,7 @@ func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
 	return DefaultConfigValues{
 		InitialCapacity:                    config.GetInitialCapacity(),
 		HardLimit:                          config.GetHardLimit(),
-		GrowthPercent:                      config.GetGrowth().GetGrowthPercent(),
+		GrowthFactor:                       config.GetGrowth().GetGrowthFactor(),
 		FixedGrowthFactor:                  config.GetGrowth().GetFixedGrowthFactor(),
 		ExponentialThresholdFactor:         config.GetGrowth().GetExponentialThresholdFactor(),
 		ShrinkAggressiveness:               config.GetShrink().GetAggressivenessLevel(),
@@ -99,7 +99,7 @@ func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
 		RefillPercent:                      config.GetFastPath().GetRefillPercent(),
 		EnableChannelGrowth:                config.GetFastPath().IsEnableChannelGrowth(),
 		GrowthEventsTrigger:                config.GetFastPath().GetGrowthEventsTrigger(),
-		FastPathGrowthPercent:              config.GetFastPath().GetGrowth().GetGrowthPercent(),
+		FastPathGrowthFactor:               config.GetFastPath().GetGrowth().GetGrowthFactor(),
 		FastPathExponentialThresholdFactor: config.GetFastPath().GetGrowth().GetExponentialThresholdFactor(),
 		FastPathFixedGrowthFactor:          config.GetFastPath().GetGrowth().GetFixedGrowthFactor(),
 		ShrinkEventsTrigger:                config.GetFastPath().GetShrinkEventsTrigger(),
@@ -117,7 +117,7 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(101210).
 		SetHardLimit(10000000028182820).
-		SetGrowthPercent(52).
+		SetGrowthFactor(52).
 		SetFixedGrowthFactor(100).
 		SetGrowthExponentialThresholdFactor(400).
 		SetShrinkCheckInterval(2 * time.Second).
@@ -132,7 +132,7 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 		SetFastPathRefillPercent(2121).
 		SetFastPathEnableChannelGrowth(false).
 		SetFastPathGrowthEventsTrigger(5121).
-		SetFastPathGrowthPercent(6121).
+		SetFastPathGrowthFactor(6121).
 		SetFastPathExponentialThresholdFactor(300).
 		SetFastPathFixedGrowthFactor(800).
 		SetFastPathShrinkEventsTrigger(4121).
@@ -151,7 +151,7 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, custom *pool.PoolConfig) {
 	assert.NotEqual(t, original.InitialCapacity, custom.GetInitialCapacity())
 	assert.NotEqual(t, original.HardLimit, custom.GetHardLimit())
-	assert.NotEqual(t, original.GrowthPercent, custom.GetGrowth().GetGrowthPercent())
+	assert.NotEqual(t, original.GrowthFactor, custom.GetGrowth().GetGrowthFactor())
 	assert.NotEqual(t, original.FixedGrowthFactor, custom.GetGrowth().GetFixedGrowthFactor())
 	assert.NotEqual(t, original.ExponentialThresholdFactor, custom.GetGrowth().GetExponentialThresholdFactor())
 	assert.NotEqual(t, original.ShrinkCheckInterval, custom.GetShrink().GetCheckInterval())
@@ -166,7 +166,7 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 	assert.NotEqual(t, original.RefillPercent, custom.GetFastPath().GetRefillPercent())
 	assert.NotEqual(t, original.EnableChannelGrowth, custom.GetFastPath().IsEnableChannelGrowth())
 	assert.NotEqual(t, original.GrowthEventsTrigger, custom.GetFastPath().GetGrowthEventsTrigger())
-	assert.NotEqual(t, original.FastPathGrowthPercent, custom.GetFastPath().GetGrowth().GetGrowthPercent())
+	assert.NotEqual(t, original.FastPathGrowthFactor, custom.GetFastPath().GetGrowth().GetGrowthFactor())
 	assert.NotEqual(t, original.FastPathExponentialThresholdFactor, custom.GetFastPath().GetGrowth().GetExponentialThresholdFactor())
 	assert.NotEqual(t, original.FastPathFixedGrowthFactor, custom.GetFastPath().GetGrowth().GetFixedGrowthFactor())
 	assert.NotEqual(t, original.ShrinkEventsTrigger, custom.GetFastPath().GetShrinkEventsTrigger())

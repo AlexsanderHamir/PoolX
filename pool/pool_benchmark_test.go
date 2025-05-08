@@ -54,7 +54,7 @@ func Benchmark_Get(b *testing.B) {
 		SetFastPathFillAggressiveness(100). // fillAggressivenessExtreme
 		SetFastPathRefillPercent(10).     // defaultRefillPercent
 		SetFastPathGrowthEventsTrigger(3).
-		SetFastPathGrowthPercent(75).
+		SetFastPathGrowthFactor(75).
 		SetFastPathExponentialThresholdFactor(1000).
 		SetFastPathFixedGrowthFactor(100).
 		Build()

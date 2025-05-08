@@ -39,17 +39,17 @@ func (b *poolConfigBuilder) SetPoolBasicConfigs(initialCapacity int, hardLimit i
 // SetRingBufferGrowthConfigs sets the growth configuration parameters for the ring buffer.
 // Parameters:
 //   - exponentialThresholdFactor: Threshold for switching from exponential to fixed growth
-//   - growthPercent: Percentage growth rate when below threshold
+//   - growthFactor: Growth factor when below threshold
 //   - fixedGrowthFactor: Fixed step size for growth when above threshold
 //
 // Note: Zero or negative values are ignored, default values will be used instead.
-func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthPercent, fixedGrowthFactor int) PoolConfigBuilder {
+func (b *poolConfigBuilder) SetRingBufferGrowthConfigs(exponentialThresholdFactor, growthFactor, fixedGrowthFactor int) PoolConfigBuilder {
 	if exponentialThresholdFactor > 0 {
 		b.config.growth.exponentialThresholdFactor = exponentialThresholdFactor
 	}
 
-	if growthPercent > 0 {
-		b.config.growth.growthPercent = growthPercent
+	if growthFactor > 0 {
+		b.config.growth.growthFactor = growthFactor
 	}
 
 	if fixedGrowthFactor > 0 {
@@ -195,8 +195,8 @@ func (b *poolConfigBuilder) SetFastPathBasicConfigs(initialSize, growthEventsTri
 // Parameters:
 //   - exponentialThresholdFactor: Threshold for switching growth modes
 //   - fixedGrowthFactor: Fixed step size for growth above threshold
-//   - growthPercent: Percentage growth rate below threshold
-func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor, fixedGrowthFactor, growthPercent int) PoolConfigBuilder {
+//   - growthFactor: Growth factor below threshold
+func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor, fixedGrowthFactor, growthFactor int) PoolConfigBuilder {
 	if exponentialThresholdFactor > 0 {
 		b.config.fastPath.growth.exponentialThresholdFactor = exponentialThresholdFactor
 	}
@@ -205,8 +205,8 @@ func (b *poolConfigBuilder) SetFastPathGrowthConfigs(exponentialThresholdFactor,
 		b.config.fastPath.growth.fixedGrowthFactor = fixedGrowthFactor
 	}
 
-	if growthPercent > 0 {
-		b.config.fastPath.growth.growthPercent = growthPercent
+	if growthFactor > 0 {
+		b.config.fastPath.growth.growthFactor = growthFactor
 	}
 
 	return b

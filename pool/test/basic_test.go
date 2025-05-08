@@ -15,7 +15,7 @@ import (
 func TestPoolGrowth(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(2).
-		SetGrowthPercent(50).
+		SetGrowthFactor(50).
 		SetFixedGrowthFactor(100).
 		SetMinShrinkCapacity(2).
 		SetShrinkCheckInterval(1 * time.Second).
@@ -140,7 +140,7 @@ func TestConfigValues(t *testing.T) {
 func TestDisabledChannelGrowth(t *testing.T) {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(2).
-		SetGrowthPercent(50).
+		SetGrowthFactor(50).
 		SetFixedGrowthFactor(100).
 		SetMinShrinkCapacity(2).
 		SetFastPathEnableChannelGrowth(false). // Disable channel growth

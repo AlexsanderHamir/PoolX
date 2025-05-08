@@ -18,8 +18,8 @@ func (p *Pool[T]) calculateNewPoolCapacity() int {
 
 	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
 	if currentCap < exponentialThreshold {
-		growth := initialCap * cfg.growthPercent
-		newCap := currentCap + growth
+		growthStep := initialCap * cfg.growthFactor
+		newCap := currentCap + growthStep
 		return newCap
 	}
 
@@ -264,17 +264,6 @@ func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T],
 	return nil
 }
 
-// calculateGrowthParameters computes all necessary parameters for pool growth including
-// current capacity, objects in use, exponential threshold, and fixed growth step.
-// These parameters are used to determine the growth strategy and new capacity.
-func (p *Pool[T]) calculateGrowthParameters() (int, int, int) {
-	cfg := p.config.growth
-	currentCap := p.stats.currentCapacity
-	initialCap := p.config.initialCapacity
-	exponentialThreshold := initialCap * cfg.exponentialThresholdFactor
-	fixedStep := initialCap * cfg.fixedGrowthFactor
-	return currentCap, exponentialThreshold, fixedStep
-}
 
 // updatePoolCapacity handles the core capacity update logic, including hard limit checks
 // and the creation/population of the new buffer. It's the main entry point for
