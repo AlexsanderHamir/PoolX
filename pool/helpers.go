@@ -81,9 +81,13 @@ func (p *Pool[T]) isGrowthNeeded(fillTarget int) bool {
 	return noObjsAvailable || fillTarget > poolLength
 }
 
-func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (bool, error) {
+func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (ableToGrow bool, err error) {
 	if p.isGrowthBlocked.Load() {
 		return false, errGrowthBlocked
+	}
+
+	if p.stats.objectsCreated < p.pool.Capacity() {
+		return false, nil
 	}
 
 	if p.isGrowthNeeded(fillTarget) {
@@ -137,9 +141,17 @@ func (p *Pool[T]) moveItemsToL1(items []T) error {
 // refill attempts to refill the L1 cache with objects from the pool.
 // Returns the number of items moved, number of items failed, and any error that occurred.
 func (p *Pool[T]) refill(fillTarget int) error {
-	shouldContinue, err := p.poolGrowthNeeded(fillTarget)
-	if !shouldContinue {
+	ableToGrow, err := p.poolGrowthNeeded(fillTarget)
+	if !ableToGrow && err != nil {
 		return err
+	}
+
+	if !ableToGrow && err == nil {
+		err := p.createOnDemand()
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	part1, part2, err := p.getItemsToMove(fillTarget)
@@ -158,6 +170,14 @@ func (p *Pool[T]) refill(fillTarget int) error {
 	}
 
 	return nil
+}
+
+func (p *Pool[T]) createOnDemand() error {
+	allocAmount := p.config.allocationStrategy.AllocAmount
+	spaceAvailable := p.pool.Capacity() - p.stats.objectsCreated
+	allocAmount = min(allocAmount, spaceAvailable)
+
+	return p.populateL1OrBuffer(allocAmount)
 }
 
 func (p *Pool[T]) slowPathPut(obj T) error {

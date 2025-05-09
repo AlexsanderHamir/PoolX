@@ -57,7 +57,10 @@ func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (Po
 
 	poolObj.ctx, poolObj.cancel = context.WithCancel(context.Background())
 
-	if err := populateL1OrBuffer(poolObj); err != nil {
+	allocationStrategy := poolObj.config.allocationStrategy
+	preAllocAmount := poolObj.stats.currentCapacity * allocationStrategy.AllocPercent / 100
+
+	if err := poolObj.populateL1OrBuffer(preAllocAmount); err != nil {
 		return nil, err
 	}
 

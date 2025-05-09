@@ -48,6 +48,7 @@ func (p *Pool[T]) shrinkExecution() {
 	newCapacity = p.adjustMainShrinkTarget(newCapacity, inUse)
 	p.performShrink(newCapacity, inUse)
 
+	defer p.updateObjsCreated(inUse)
 	if !p.config.fastPath.enableChannelGrowth || !p.shouldShrinkFastPath() {
 		return
 	}
@@ -56,7 +57,14 @@ func (p *Pool[T]) shrinkExecution() {
 	newCapacity = p.adjustFastPathShrinkTarget(currentCap)
 
 	p.shrinkFastPath(newCapacity, inUse)
+}
 
+func (p *Pool[T]) updateObjsCreated(inUse int) {
+	chPtr := p.cacheL1
+	ch := *chPtr
+	l1Available := len(ch)
+
+	p.stats.objectsCreated = p.pool.Length(false) + l1Available + inUse
 }
 
 // performShrink executes the actual shrinking of the main pool by creating a new ring buffer
@@ -69,7 +77,6 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int) {
 
 	newRingBuffer := p.createShrinkBuffer(newCapacity)
 	itemsToKeep := p.calculateItemsToKeep(newCapacity, inUse)
-
 	if err := p.migrateItems(newRingBuffer, itemsToKeep); err != nil {
 		return
 	}
@@ -129,6 +136,7 @@ func (p *Pool[T]) writeItemsToNewBuffer(newRingBuffer *ringbuffer.RingBuffer[T],
 
 // finalizeShrink updates the pool with the new buffer and updates statistics
 func (p *Pool[T]) finalizeShrink(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity int) {
+	p.pool.Close()
 	p.pool = newRingBuffer
 	p.stats.currentCapacity = newCapacity
 	p.stats.totalShrinkEvents++
@@ -169,12 +177,12 @@ func (p *Pool[T]) adjustMainShrinkTarget(newCap, inUse int) int {
 	adjustedCap := newCap
 
 	// Ensure we don't go below minimum capacity
-	if adjustedCap < minCap {
+	if newCap < minCap {
 		adjustedCap = minCap
 	}
 
 	// Ensure we have enough capacity for in-use objects
-	if adjustedCap <= inUse {
+	if adjustedCap < inUse {
 		adjustedCap = inUse
 	}
 
@@ -247,17 +255,24 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *ringbuffer.RingBuffer[T],
 }
 
 func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity int) error {
-	currentCapacity := p.stats.currentCapacity
+	allocAmount := newCapacity * p.config.allocationStrategy.AllocPercent / 100
 
-	toAdd := newCapacity - currentCapacity
+	// current capacity(1000) -  objects created(500)
+	// We include the ring buffer length because we're writing to the ring buffer
+	// and we don't know how objects are spread in between the channel and the ring buffer.
+	// we need to make sure we don't write more than the available space.
+	spaceAvailable := (newCapacity - p.pool.Length(false)) - p.stats.objectsCreated
+	toAdd := min(allocAmount, spaceAvailable)
 	if toAdd <= 0 {
 		return nil
 	}
 
 	for range toAdd {
 		obj := p.allocator()
+		p.stats.objectsCreated++
 
 		if err := newRingBuffer.Write(obj); err != nil {
+			p.stats.objectsCreated--
 			return err
 		}
 	}

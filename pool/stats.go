@@ -11,8 +11,9 @@ import (
 type poolStats struct {
 	mu sync.RWMutex
 
-	initialCapacity int
-	currentCapacity int
+	objectsCreated   int
+	initialCapacity  int
+	currentCapacity  int
 
 	// Fast-path accessed fields — must be atomic
 	totalGets         atomic.Uint64

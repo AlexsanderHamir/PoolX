@@ -15,12 +15,13 @@ import (
 func createDefaultConfig() *PoolConfig {
 	pgb := &poolConfigBuilder{
 		config: &PoolConfig{
-			initialCapacity:  defaultPoolCapacity,
-			hardLimit:        defaultHardLimit,
-			shrink:           defaultShrinkParameters,
-			growth:           defaultGrowthParameters,
-			fastPath:         defaultFastPath,
-			ringBufferConfig: defaultRingBufferConfig,
+			initialCapacity:    defaultPoolCapacity,
+			hardLimit:          defaultHardLimit,
+			shrink:             defaultShrinkParameters,
+			growth:             defaultGrowthParameters,
+			fastPath:           defaultFastPath,
+			ringBufferConfig:   defaultRingBufferConfig,
+			allocationStrategy: defaultAllocationStrategy,
 		},
 	}
 
@@ -85,15 +86,16 @@ func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner
 // the L1 cache and main buffer. It uses the configured fill aggressiveness to determine
 // how many objects should go to the L1 cache versus the main buffer.
 // Returns an error if object allocation or distribution fails.
-func populateL1OrBuffer[T any](poolObj *Pool[T]) error {
-	fillTarget := poolObj.config.fastPath.initialSize * poolObj.config.fastPath.fillAggressiveness / 100
+func (p *Pool[T]) populateL1OrBuffer(allocAmount int) error {
+	fillTarget := p.config.fastPath.initialSize * p.config.fastPath.fillAggressiveness / 100
 	fastPathRemaining := fillTarget
 
-	for range poolObj.config.initialCapacity {
-		obj := poolObj.allocator()
+	for range allocAmount {
+		obj := p.allocator()
+		p.stats.objectsCreated++
 
 		var err error
-		fastPathRemaining, err = poolObj.setPoolAndBuffer(obj, fastPathRemaining)
+		fastPathRemaining, err = p.setPoolAndBuffer(obj, fastPathRemaining)
 		if err != nil {
 			return fmt.Errorf("failed to set pool and buffer: %w", err)
 		}
