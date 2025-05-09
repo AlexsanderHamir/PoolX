@@ -45,4 +45,6 @@ src/pool/usefulcommands
 *.tmp
 *.log
 
-tasks.md
+actionPlan.md
+currentTask.md
+action_plan_unit

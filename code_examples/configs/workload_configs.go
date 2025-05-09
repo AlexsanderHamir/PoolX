@@ -21,7 +21,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*3).
 		// Ring buffer growth strategy:
 		// - Setting big growth and  to 1(100%) makes the pool grow once to 80k. (which is the hard limit)
-		// - Controlled growth is 1% of the current capacity (40k + 400 = 40400) (won't be used, since we hit the hard limit)
+		// - Controlled growth is 0.01(1%) of the current capacity (40k + 400 = 40400) (won't be used, since we hit the hard limit at the threshold)
 		SetRingBufferGrowthConfigs(1, 1, 0.01).
 		// Ring buffer shrink strategy:
 		// - Check every 5 seconds
