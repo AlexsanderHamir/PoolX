@@ -277,3 +277,19 @@ func (b *poolConfigBuilder) SetRingBufferBasicConfigs(block bool, rTimeout, wTim
 
 	return b
 }
+
+// SetAllocationStrategy sets the allocation strategy for the pool.
+// Parameters:
+//   - allocPercent: Percentage of objects to preallocate at initialization
+//   - allocAmount: Amount of objects to create per request
+func (b *poolConfigBuilder) SetAllocationStrategy(allocPercent int, allocAmount int) PoolConfigBuilder {
+	if allocPercent > 0 {
+		b.config.allocationStrategy.AllocPercent = allocPercent
+	}
+
+	if allocAmount > 0 {
+		b.config.allocationStrategy.AllocAmount = allocAmount
+	}
+
+	return b
+}

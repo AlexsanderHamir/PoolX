@@ -20,6 +20,7 @@ func NewPoolConfigBuilder() PoolConfigBuilder {
 	copiedGrowth := *defaultGrowthParameters
 	copiedFastPath := *defaultFastPath
 	copiedRingBufferConfig := *defaultRingBufferConfig
+	copiedAllocationStrategy := *defaultAllocationStrategy
 
 	copiedFastPath.shrink = &shrinkParameters{
 		aggressivenessLevel: copiedShrink.aggressivenessLevel,
@@ -27,12 +28,13 @@ func NewPoolConfigBuilder() PoolConfigBuilder {
 
 	pgb := &poolConfigBuilder{
 		config: &PoolConfig{
-			initialCapacity:  defaultPoolCapacity,
-			hardLimit:        defaultHardLimit,
-			shrink:           &copiedShrink,
-			growth:           &copiedGrowth,
-			fastPath:         &copiedFastPath,
-			ringBufferConfig: &copiedRingBufferConfig,
+			initialCapacity:    defaultPoolCapacity,
+			hardLimit:          defaultHardLimit,
+			shrink:             &copiedShrink,
+			growth:             &copiedGrowth,
+			fastPath:           &copiedFastPath,
+			ringBufferConfig:   &copiedRingBufferConfig,
+			allocationStrategy: &copiedAllocationStrategy,
 		},
 	}
 

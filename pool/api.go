@@ -118,6 +118,12 @@ type PoolConfigBuilder interface {
 	//   - Level is out of valid range (1-5)
 	SetFastPathShrinkAggressiveness(level AggressivenessLevel) PoolConfigBuilder
 
+	// SetAllocationStrategy configures how the pool allocates objects.
+	// Parameters:
+	//   - allocPercent: Percentage of objects to preallocate at initialization
+	//   - allocAmount: Amount of objects to create per request
+	SetAllocationStrategy(allocPercent int, allocAmount int) PoolConfigBuilder
+
 	// Single configuration methods
 	// These methods allow fine-grained control over individual parameters.
 	// Default values will be applied to unset parameters.

@@ -111,3 +111,8 @@ var defaultRingBufferConfig = &config.RingBufferConfig{
 	RTimeout: 0,
 	WTimeout: 0,
 }
+
+var defaultAllocationStrategy = &AllocationStrategy{
+	AllocPercent: 100,
+	AllocAmount:  1,
+}

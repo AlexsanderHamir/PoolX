@@ -91,6 +91,9 @@ type PoolConfig struct {
 	// ringBufferConfig configures the main pool's ring buffer.
 	// Controls blocking behavior and timeouts for the main storage.
 	ringBufferConfig *config.RingBufferConfig
+
+	// allocationStrategy configures how the pool allocates objects.
+	allocationStrategy *AllocationStrategy
 }
 
 // Getter methods for PoolConfig
@@ -329,4 +332,14 @@ type shrinkDefaults struct {
 
 	// maxShrinks is the default maximum number of consecutive shrinks
 	maxShrinks int
+}
+
+type AllocationStrategy struct {
+	// The percentage of objects to preallocate at initialization
+	// The percentage of objects to fill the pool up to when growing
+	AllocPercent int
+
+	// The amount of objects to create per request
+	// If it exceeds the ring buffer capacity it will be adjusted to the ring buffer capacity.
+	AllocAmount int
 }
