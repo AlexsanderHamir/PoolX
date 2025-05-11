@@ -82,15 +82,11 @@ func (p *Pool[T]) tryL1ResizeIfTriggered() error {
 // tryGetFromL1 attempts to retrieve an object from the L1 cache channel.
 // Returns the object and true if found, otherwise returns zero value and false.
 func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
-	var chPtr *chan T
+	var chPtr *chan T = p.cacheL1
 
 	if !locked {
 		p.mu.RLock()
-	}
-
-	chPtr = p.cacheL1
-
-	if !locked {
+		chPtr = p.cacheL1
 		p.mu.RUnlock()
 	}
 
