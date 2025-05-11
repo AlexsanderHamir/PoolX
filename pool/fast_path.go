@@ -2,7 +2,6 @@ package pool
 
 import (
 	"fmt"
-	"log"
 )
 
 // calculateNewCapacity determines the new capacity based on current capacity and growth configuration
@@ -15,11 +14,13 @@ func (p *Pool[T]) calculateNewCapacity(currentCap int) int {
 
 	if floatCurrentCap < threshold {
 		exponentialStep := floatCurrentCap * cfg.bigGrowthFactor
-		return currentCap + int(exponentialStep)
+		newCap := currentCap + int(exponentialStep)
+		return newCap
 	}
 
 	fixedStep := floatCurrentCap * cfg.controlledGrowthFactor
-	return currentCap + int(fixedStep)
+	newCap := currentCap + int(fixedStep)
+	return newCap
 }
 
 // drainOldChannel transfers objects from the old channel to the new channel or pool
@@ -113,11 +114,7 @@ func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
 func (p *Pool[T]) tryFastPathPut(obj T) bool {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[PUT] panic on fast path put — channel closed")
-			err := p.slowPathPut(obj)
-			if err != nil {
-				log.Printf("[PUT] error on slow path put, couldn't return object: %v", err)
-			}
+			p.slowPathPut(obj)
 		}
 	}()
 
@@ -251,7 +248,6 @@ func (p *Pool[T]) updateShrinkStats(newCapacity int) {
 func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[SHRINK] panic on shrink fast path — channel closed")
 		}
 	}()
 

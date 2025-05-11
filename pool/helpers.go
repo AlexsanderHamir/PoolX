@@ -16,10 +16,8 @@ func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
 // setPoolAndBuffer attempts to store an object in either the L1 cache or the main pool.
 // It returns the remaining fast path capacity and any error that occurred.
 func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
-	// recover from panic and write to main pool
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[SET] panic on setPoolAndBuffer: %v", r)
 		}
 	}()
 
@@ -92,11 +90,6 @@ func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (ableToGrow bool, err error) 
 		return false, errGrowthBlocked
 	}
 
-	spaceAvailable := p.pool.Capacity() - (p.stats.objectsCreated - p.stats.objectsDestroyed)
-	if spaceAvailable > 0 {
-		return false, nil
-	}
-
 	if p.isGrowthNeeded(fillTarget) {
 		err := p.grow()
 		if err != nil {
@@ -153,14 +146,6 @@ func (p *Pool[T]) refill(fillTarget int) error {
 		return err
 	}
 
-	if !ableToGrow && err == nil {
-		err := p.createOnDemand()
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
 	part1, part2, err := p.getItemsToMove(fillTarget)
 	if err != nil {
 		return err
@@ -179,10 +164,10 @@ func (p *Pool[T]) refill(fillTarget int) error {
 	return nil
 }
 
-func (p *Pool[T]) createOnDemand() error {
+func (p *Pool[T]) createOnDemand(fillTarget int) error {
 	allocAmount := p.config.allocationStrategy.AllocAmount
 	spaceAvailable := p.pool.Capacity() - (p.stats.objectsCreated - p.stats.objectsDestroyed)
-	allocAmount = min(allocAmount, spaceAvailable)
+	allocAmount = min(allocAmount, spaceAvailable, fillTarget)
 
 	if allocAmount == 0 {
 		return nil
@@ -230,14 +215,7 @@ func (p *Pool[T]) handleShrinkCooldown(shrinkCooldown time.Duration) (cooldownAc
 	return timeSinceLastShrink < shrinkCooldown
 }
 
-func (p *Pool[T]) tryRefillIfNeeded() (bool, error) {
-	currentCap, currentPercent := p.calculateL1Usage()
-	fillTarget := p.calculateFillTarget(currentCap)
-
-	if currentPercent > p.config.fastPath.refillPercent {
-		return true, nil
-	}
-
+func (p *Pool[T]) tryRefill(fillTarget int) (bool, error) {
 	err := p.refill(fillTarget)
 	if err != nil {
 		return false, err
@@ -348,19 +326,61 @@ func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
 	}
 }
 
-func (p *Pool[T]) handleRefillScenarios() (zero T, canProceed bool) {
-	p.mu.Lock()
+// tryGetFromL1IfWellStocked attempts to get an object from L1 cache if it's well stocked
+func (p *Pool[T]) tryGetFromL1IfWellStocked(currentPercent int) (obj T, found bool) {
+	if currentPercent > p.config.fastPath.refillPercent {
+		return p.tryGetFromL1(false)
+	}
+	return obj, false
+}
 
-	ableToRefill, err := p.tryRefillIfNeeded()
+// tryCreateAndGetFromL1 attempts to create new objects and get one from L1 cache
+func (p *Pool[T]) tryCreateAndGetFromL1(fillTarget int) (obj T, found bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	spaceAvailable := p.pool.Capacity() - (p.stats.objectsCreated - p.stats.objectsDestroyed)
+	if spaceAvailable <= 0 {
+		return obj, false
+	}
+
+	if err := p.createOnDemand(fillTarget); err != nil {
+		return obj, false
+	}
+
+	return p.tryGetFromL1(true)
+}
+
+// tryRefillAndGetFromL1 attempts to refill from main pool and get from L1 cache
+func (p *Pool[T]) tryRefillAndGetFromL1(fillTarget int) (obj T, found bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	ableToRefill, err := p.tryRefill(fillTarget)
 	if !ableToRefill && err != nil {
 		if obj, shouldContinue := p.handleRefillFailure(err); !shouldContinue {
-			p.mu.Unlock()
 			return obj, false
 		}
 	}
-	p.mu.Unlock()
 
-	if obj, found := p.tryGetFromL1(false); found {
+	return p.tryGetFromL1(true)
+}
+
+func (p *Pool[T]) handleRefillScenarios() (zero T, canProceed bool) {
+	p.mu.RLock()
+	currentCap, currentPercent := p.calculateL1Usage()
+	fillTarget := p.calculateFillTarget(currentCap)
+	p.mu.RUnlock()
+
+	if obj, found := p.tryGetFromL1IfWellStocked(currentPercent); found {
+		return obj, true
+	}
+
+	if obj, found := p.tryCreateAndGetFromL1(fillTarget); found {
+		return obj, true
+	}
+
+	if obj, found := p.tryRefillAndGetFromL1(fillTarget); found {
 		return obj, true
 	}
 

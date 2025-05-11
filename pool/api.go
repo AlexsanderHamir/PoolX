@@ -103,7 +103,7 @@ type PoolConfigBuilder[T any] interface {
 	//
 	//   - controlledGrowthFactor: smaller step size for growth when above threshold (example: 0.5 for 50% growth)
 	//   example: currentCapacity(1750) * controlledGrowthFactor(0.5) = 1750 + 875 = 2625
-	SetFastPathGrowthConfigs(thresholdFactor, controlledGrowthFactor, bigGrowthFactor float64) PoolConfigBuilder[T]
+	SetFastPathGrowthConfigs(thresholdFactor, bigGrowthFactor, controlledGrowthFactor float64) PoolConfigBuilder[T]
 
 	// SetFastPathShrinkConfigs controls the automatic shrinking behavior of the fast path.
 	// Parameters:
