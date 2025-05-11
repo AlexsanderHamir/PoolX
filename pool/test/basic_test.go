@@ -58,11 +58,12 @@ func TestPoolShrink(t *testing.T) {
 		EnforceCustomConfig().
 		SetShrinkCheckInterval(10 * time.Millisecond). // Very frequent checks
 		SetShrinkCooldown(10 * time.Millisecond).      // Short cooldown
-		SetMinUtilizationBeforeShrink(90).            // Shrink if utilization below 10%
+		SetMinUtilizationBeforeShrink(90).             // Shrink if utilization below 10%
 		SetStableUnderutilizationRounds(1).            // Only need 1 round of underutilization
-		SetShrinkPercent(50).                         // Shrink by 50%
+		SetShrinkPercent(50).                          // Shrink by 50%
 		SetMinShrinkCapacity(1).                       // Can shrink down to 1
 		SetMaxConsecutiveShrinks(5).                   // Allow multiple consecutive shrinks
+		SetFastPathBasicConfigs(32, 1, 1, 100, 20).
 		Build()
 	require.NoError(t, err)
 

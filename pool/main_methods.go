@@ -29,19 +29,11 @@ func NewPool[T any](config *PoolConfig[T], allocator func() T, cleaner func(T)) 
 		config = createDefaultConfig[T]()
 	}
 
-	if config.ringBufferConfig == nil {
-		return nil, errNilConfig
+	if err := checkConfigForNil(config); err != nil {
+		return nil, err
 	}
 
-	if config.shrink == nil {
-		return nil, errNilConfig
-	}
-
-	if config.growth == nil {
-		return nil, errNilConfig
-	}
-
-	ringBuffer, err := ringbuffer.NewWithConfig[T](config.initialCapacity, config.ringBufferConfig)
+	ringBuffer, err := ringbuffer.NewWithConfig(config.initialCapacity, config.ringBufferConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +188,9 @@ func (p *Pool[T]) preReadBlockHook() (zero T, tryAgain bool, success bool) {
 	defer p.mu.RUnlock()
 
 	attempts := p.config.fastPath.preReadBlockHookAttempts
+	if attempts == 0 {
+		return zero, false, false
+	}
 
 	chPtr := p.cacheL1
 	ch := *chPtr

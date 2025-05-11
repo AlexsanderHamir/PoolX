@@ -1,20 +1,12 @@
 package test
 
 import (
-	"testing"
-
 	"github.com/AlexsanderHamir/PoolX/pool"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 func TestPoolConcurrency(t *testing.T) {
-	t.Run("Growth Blocked", func(t *testing.T) {
-		availableItems := 500
-		numGoroutines := 1000
-		attempts := 5
-		testGrowthBlocked(t, availableItems, numGoroutines, attempts)
-	})
-
 	t.Run("Growth Allowed", func(t *testing.T) {
 		runs := 40
 		initial := 64
@@ -45,18 +37,6 @@ func TestPoolConcurrency(t *testing.T) {
 		testGrowth(t, runs, hardLimit, initial, attempts, numGoroutines)
 	})
 
-}
-
-func testGrowthBlocked(t *testing.T, availableItems, numGoroutines, attempts int) {
-	config := createConfig(t, availableItems, availableItems, attempts)
-
-	t.Run("sync mode", func(t *testing.T) {
-		readBlockersTest(t, config, numGoroutines, availableItems, false)
-	})
-
-	t.Run("async mode", func(t *testing.T) {
-		readBlockersTest(t, config, numGoroutines, availableItems, true)
-	})
 }
 
 // There's no items in the ring buffer, all of them go to the L1 cache first

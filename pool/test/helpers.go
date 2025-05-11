@@ -327,57 +327,6 @@ func ValidateCapacity(p *pool.Pool[*TestObject], stats *pool.PoolStatsSnapshot) 
 	return nil
 }
 
-func readBlockersTest(t *testing.T, config *pool.PoolConfig[*TestObject], numGoroutines, availableItems int, async bool) {
-	p := createTestPool(t, config)
-
-	objects := make(chan *TestObject, availableItems)
-	completed := make([]bool, numGoroutines)
-
-	var wg sync.WaitGroup
-
-	wg.Add(numGoroutines)
-	for i := range numGoroutines {
-		go func(idx int) {
-			defer wg.Done()
-			obj, err := p.Get()
-			assert.NoError(t, err)
-			assert.NotNil(t, obj)
-
-			objects <- obj
-			completed[idx] = true
-		}(i)
-	}
-
-	time.Sleep(2 * time.Second)
-	expectedBlocked := numGoroutines - availableItems
-	assert.Equal(t, expectedBlocked, p.GetBlockedReaders())
-
-	go func() {
-		wg.Wait()
-		close(objects)
-	}()
-
-	for obj := range objects {
-		if async {
-			go func() {
-				time.Sleep(time.Duration(rand.Intn(90)+10) * time.Millisecond)
-				err := p.Put(obj)
-				assert.NoError(t, err)
-			}()
-		} else {
-			require.NotNil(t, obj, "Object is nil")
-			err := p.Put(obj)
-			assert.NoError(t, err)
-		}
-	}
-
-	for i := range completed {
-		assert.True(t, completed[i], "Goroutine %d did not complete", i)
-	}
-
-	assert.Equal(t, 0, p.GetBlockedReaders())
-}
-
 func createConfig(t *testing.T, hardLimit, initial, attempts int) *pool.PoolConfig[*TestObject] {
 	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(initial).

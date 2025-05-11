@@ -365,3 +365,23 @@ func (p *Pool[T]) handleRefillScenarios() (zero T, canProceed bool) {
 
 	return zero, false
 }
+
+func checkConfigForNil[T any](config *PoolConfig[T]) error {
+	if config.ringBufferConfig == nil {
+		return errNilConfig
+	}
+
+	if config.shrink == nil {
+		return errNilConfig
+	}
+
+	if config.growth == nil {
+		return errNilConfig
+	}
+
+	if config.allocationStrategy == nil {
+		return errNilConfig
+	}
+
+	return nil
+}
