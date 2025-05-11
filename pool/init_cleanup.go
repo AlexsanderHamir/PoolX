@@ -6,21 +6,26 @@ import (
 	"sync"
 
 	"github.com/AlexsanderHamir/ringbuffer"
+	config "github.com/AlexsanderHamir/ringbuffer/config"
 )
 
 // createDefaultConfig creates a new PoolConfig with default values for all parameters.
 // It initializes the configuration with default values for pool capacity, hard limits,
 // statistics, shrink/growth parameters, fast path settings, and ring buffer configuration.
 // Returns a fully configured PoolConfig instance.
-func createDefaultConfig() *PoolConfig {
-	pgb := &poolConfigBuilder{
-		config: &PoolConfig{
-			initialCapacity:    defaultPoolCapacity,
-			hardLimit:          defaultHardLimit,
-			shrink:             defaultShrinkParameters,
-			growth:             defaultGrowthParameters,
-			fastPath:           defaultFastPath,
-			ringBufferConfig:   defaultRingBufferConfig,
+func createDefaultConfig[T any]() *PoolConfig[T] {
+	pgb := &poolConfigBuilder[T]{
+		config: &PoolConfig[T]{
+			initialCapacity: defaultPoolCapacity,
+			hardLimit:       defaultHardLimit,
+			shrink:          defaultShrinkParameters,
+			growth:          defaultGrowthParameters,
+			fastPath:        defaultFastPath,
+			ringBufferConfig: &config.RingBufferConfig[T]{
+				Block:    Block,
+				RTimeout: RTimeout,
+				WTimeout: WTimeout,
+			},
 			allocationStrategy: defaultAllocationStrategy,
 		},
 	}
@@ -37,7 +42,7 @@ func createDefaultConfig() *PoolConfig {
 // initializePoolStats creates and initializes the pool statistics structure with
 // the provided configuration values. It sets up initial capacity values for both
 // the main pool and L1 cache.
-func initializePoolStats(config *PoolConfig) *poolStats {
+func initializePoolStats[T any](config *PoolConfig[T]) *poolStats {
 	stats := &poolStats{mu: sync.RWMutex{}}
 	stats.initialCapacity = config.initialCapacity
 	stats.currentCapacity = config.initialCapacity
@@ -64,7 +69,7 @@ func validateAllocator[T any](allocator func() T) error {
 // configuration, allocator, cleaner, and ring buffer. It sets up the L1 cache channel
 // and initializes all necessary synchronization primitives.
 // Returns a fully initialized Pool instance or an error if initialization fails.
-func initializePoolObject[T any](config *PoolConfig, allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *ringbuffer.RingBuffer[T]) (*Pool[T], error) {
+func initializePoolObject[T any](config *PoolConfig[T], allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *ringbuffer.RingBuffer[T]) (*Pool[T], error) {
 	ch := make(chan T, config.fastPath.initialSize)
 
 	poolObj := &Pool[T]{
@@ -102,7 +107,6 @@ func (p *Pool[T]) populateL1OrBuffer(allocAmount int) error {
 	}
 	return nil
 }
-
 
 // cleanupCacheL1 performs cleanup of the L1 cache by:
 // 1. Draining all objects from the cache

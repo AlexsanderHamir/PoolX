@@ -9,7 +9,7 @@ import (
 // - hardLimit must be positive and greater than initialCapacity
 // - hardLimit must be greater than or equal to minCapacity
 // Returns an error if any validation fails.
-func (b *poolConfigBuilder) validateBasicConfig() error {
+func (b *poolConfigBuilder[T]) validateBasicConfig() error {
 	if b.config.initialCapacity <= 0 {
 		return fmt.Errorf("initialCapacity must be greater than 0, got %d", b.config.initialCapacity)
 	}
@@ -40,7 +40,7 @@ func (b *poolConfigBuilder) validateBasicConfig() error {
 // - stableUnderutilizationRounds must be positive
 // - shrinkPercent must be between 0 and 1.0
 // Returns an error if any validation fails.
-func (b *poolConfigBuilder) validateShrinkConfig() error {
+func (b *poolConfigBuilder[T]) validateShrinkConfig() error {
 	sp := b.config.shrink
 
 	if sp.maxConsecutiveShrinks < 0 {
@@ -83,7 +83,7 @@ func (b *poolConfigBuilder) validateShrinkConfig() error {
 // - growthPercent must be positive
 // - fixedGrowthFactor must be positive
 // Returns an error if any validation fails.
-func (b *poolConfigBuilder) validateGrowthConfig() error {
+func (b *poolConfigBuilder[T]) validateGrowthConfig() error {
 	gp := b.config.growth
 
 	if gp.thresholdFactor <= 0 {
@@ -110,7 +110,7 @@ func (b *poolConfigBuilder) validateGrowthConfig() error {
 // - shrinkEventsTrigger must be positive
 // - shrink parameters (minCapacity, shrinkPercent) must be positive
 // Returns an error if any validation fails.
-func (b *poolConfigBuilder) validateFastPathConfig() error {
+func (b *poolConfigBuilder[T]) validateFastPathConfig() error {
 	fp := b.config.fastPath
 
 	if fp.initialSize <= 0 {
@@ -156,14 +156,11 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 	return nil
 }
 
-
-func (b *poolConfigBuilder) validateAllocationStrategy() error {
+func (b *poolConfigBuilder[T]) validateAllocationStrategy() error {
 	as := b.config.allocationStrategy
 
-	fmt.Println("allocationStrategy", as)
-
-	if as.AllocPercent <= 0 {
-		return fmt.Errorf("allocationStrategy.AllocPercent must be greater than 0, got %d", as.AllocPercent)
+	if as.AllocPercent <= 0 || as.AllocPercent > 100 {
+		return fmt.Errorf("allocationStrategy.AllocPercent must be between 0 and 100, got %d", as.AllocPercent)
 	}
 
 	if as.AllocAmount <= 0 {

@@ -49,7 +49,7 @@ type Pool[T any] struct {
 	isGrowthBlocked atomic.Bool
 
 	// config holds all pool configuration parameters
-	config *PoolConfig
+	config *PoolConfig[T]
 
 	// Clean up objects when they're returned to the pool
 	cleaner func(T)
@@ -65,7 +65,7 @@ type Pool[T any] struct {
 // PoolConfig defines the configuration parameters for the pool.
 // It controls various aspects of pool behavior including growth, shrinking,
 // and performance characteristics.
-type PoolConfig struct {
+type PoolConfig[T any] struct {
 	// initialCapacity sets the starting size of the pool.
 	// This helps avoid initial resizing operations and provides
 	// immediate capacity for expected load.
@@ -90,34 +90,34 @@ type PoolConfig struct {
 
 	// ringBufferConfig configures the main pool's ring buffer.
 	// Controls blocking behavior and timeouts for the main storage.
-	ringBufferConfig *config.RingBufferConfig
+	ringBufferConfig *config.RingBufferConfig[T]
 
 	// allocationStrategy configures how the pool allocates objects.
 	allocationStrategy *AllocationStrategy
 }
 
 // Getter methods for PoolConfig
-func (c *PoolConfig) GetInitialCapacity() int {
+func (c *PoolConfig[T]) GetInitialCapacity() int {
 	return c.initialCapacity
 }
 
-func (c *PoolConfig) GetHardLimit() int {
+func (c *PoolConfig[T]) GetHardLimit() int {
 	return c.hardLimit
 }
 
-func (c *PoolConfig) GetGrowth() *growthParameters {
+func (c *PoolConfig[T]) GetGrowth() *growthParameters {
 	return c.growth
 }
 
-func (c *PoolConfig) GetShrink() *shrinkParameters {
+func (c *PoolConfig[T]) GetShrink() *shrinkParameters {
 	return c.shrink
 }
 
-func (c *PoolConfig) GetFastPath() *fastPathParameters {
+func (c *PoolConfig[T]) GetFastPath() *fastPathParameters {
 	return c.fastPath
 }
 
-func (c *PoolConfig) GetRingBufferConfig() *config.RingBufferConfig {
+func (c *PoolConfig[T]) GetRingBufferConfig() *config.RingBufferConfig[T] {
 	return c.ringBufferConfig
 }
 

@@ -20,13 +20,13 @@ var (
 // NewPool creates a new object pool with the given configuration, allocator, cleaner, and pool type.
 // Only pointers can be stored in the pool. The allocator function creates new objects,
 // and the cleaner function resets objects before they are reused.
-func NewPool[T any](config *PoolConfig, allocator func() T, cleaner func(T)) (PoolObj[T], error) {
+func NewPool[T any](config *PoolConfig[T], allocator func() T, cleaner func(T)) (PoolObj[T], error) {
 	if err := validateAllocator(allocator); err != nil {
 		return nil, err
 	}
 
 	if config == nil {
-		config = createDefaultConfig()
+		config = createDefaultConfig[T]()
 	}
 
 	if config.ringBufferConfig == nil {
@@ -93,19 +93,8 @@ func (p *Pool[T]) Put(obj T) error {
 	defer p.refillCond.Signal()
 	p.cleaner(obj)
 
-	p.mu.RLock()
-	pool := p.pool
-	p.mu.RUnlock()
-
-	if pool.GetBlockedReaders() > 0 {
-		err := p.slowPathPut(obj)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
 	if p.tryFastPathPut(obj) {
+		p.pool.WakeUpOneReader()
 		return nil
 	}
 
@@ -202,7 +191,7 @@ func (p *Pool[T]) grow() error {
 
 // preReadBlockHook is called before a read operation blocks on the ring buffer.
 // It attempts to get an object from L1 cache to avoid blocking.
-func (p *Pool[T]) preReadBlockHook() bool {
+func (p *Pool[T]) preReadBlockHook() (zero T, tryAgain bool, success bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -215,18 +204,14 @@ func (p *Pool[T]) preReadBlockHook() bool {
 		select {
 		case obj, ok := <-ch:
 			if !ok {
-				return false
+				return zero, false, false
 			}
-			err := p.pool.Write(obj)
-			if err != nil {
-				continue
-			}
-			return true
+			return obj, false, true
 		default:
 			if i == attempts-1 {
-				return false
+				return zero, true, false
 			}
 		}
 	}
-	return false
+	return zero, false, false
 }

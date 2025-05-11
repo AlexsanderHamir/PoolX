@@ -2,8 +2,6 @@ package pool
 
 import (
 	"time"
-
-	config "github.com/AlexsanderHamir/ringbuffer/config"
 )
 
 type AggressivenessLevel int
@@ -31,6 +29,9 @@ const (
 	defaultPreReadBlockHookAttempts                       = 3
 	defaultEnableChannelGrowth                            = true
 	defaultEnableStats                                    = false
+	Block                                                 = false
+	RTimeout                                              = 0
+	WTimeout                                              = 0
 )
 
 var defaultShrinkMap = map[AggressivenessLevel]*shrinkDefaults{
@@ -104,12 +105,6 @@ var defaultFastPath = &fastPathParameters{
 	preReadBlockHookAttempts: defaultPreReadBlockHookAttempts,
 	growth:                   defaultGrowthParameters,
 	shrink:                   defaultShrinkParameters,
-}
-
-var defaultRingBufferConfig = &config.RingBufferConfig{
-	Block:    false,
-	RTimeout: 0,
-	WTimeout: 0,
 }
 
 var defaultAllocationStrategy = &AllocationStrategy{

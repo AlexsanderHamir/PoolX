@@ -20,9 +20,9 @@ var cleaner = func(e *example) {
 	e.Age = 0
 }
 
-func setupPool(b *testing.B, config *PoolConfig) *Pool[*example] {
+func setupPool(b *testing.B, config *PoolConfig[*example]) *Pool[*example] {
 	if config == nil {
-		builder, err := NewPoolConfigBuilder().
+		builder, err := NewPoolConfigBuilder[*example]().
 			SetShrinkAggressiveness(AggressivenessExtreme)
 		if err != nil {
 			b.Fatalf("Failed to set shrink aggressiveness: %v", err)
@@ -46,7 +46,7 @@ func Benchmark_Get(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	config, err := NewPoolConfigBuilder().
+	config, err := NewPoolConfigBuilder[*example]().
 		SetInitialCapacity(128).   // defaultPoolCapacity
 		SetHardLimit(10_000_000).  // defaultHardLimit
 		SetMinShrinkCapacity(128). // defaultMinCapacity
@@ -92,7 +92,7 @@ func Benchmark_SlowPath(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	config, err := NewPoolConfigBuilder().
+	config, err := NewPoolConfigBuilder[*example]().
 		SetInitialCapacity(4096 * 1000).
 		SetHardLimit(4096 * 1000).
 		Build()
@@ -113,7 +113,7 @@ func Benchmark_Shrink(b *testing.B) {
 	debug.SetGCPercent(-1)
 	b.ReportAllocs()
 
-	config, err := NewPoolConfigBuilder().
+	config, err := NewPoolConfigBuilder[*example]().
 		SetInitialCapacity(4096 * 100).
 		SetHardLimit(4096 * 100).
 		SetMinShrinkCapacity(1).
