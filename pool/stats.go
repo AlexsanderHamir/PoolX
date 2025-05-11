@@ -41,6 +41,8 @@ type PoolStatsSnapshot struct {
 	ObjectsInUse      uint64
 	TotalGets         uint64
 	TotalGrowthEvents int
+	ObjectsCreated    int
+	ObjectsDestroyed  int
 
 	// Fast Return Stats
 	FastReturnHit  uint64
@@ -71,6 +73,8 @@ func (p *Pool[T]) PrintPoolStats() {
 	stats := p.GetPoolStatsSnapshot()
 	fmt.Printf("\n=== Pool Statistics ===\n")
 	fmt.Printf("Objects in use: %d\n", stats.ObjectsInUse)
+	fmt.Printf("Objects created: %d\n", stats.ObjectsCreated)
+	fmt.Printf("Objects destroyed: %d\n", stats.ObjectsDestroyed)
 	fmt.Printf("Available objects: %d\n", stats.AvailableObjects)
 	fmt.Printf("Current capacity: %d\n", stats.CurrentCapacity)
 	fmt.Printf("Ring buffer length: %d\n", stats.RingBufferLength)
@@ -107,6 +111,9 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 	totalGets := p.stats.totalGets.Load()
 	objectsInUse := totalGets - totalPuts
 
+	objectsCreated := p.stats.objectsCreated
+	objectsDestroyed := p.stats.objectsDestroyed
+
 	return &PoolStatsSnapshot{
 		// Basic Pool Stats
 		InitialCapacity:   p.stats.initialCapacity,
@@ -114,6 +121,8 @@ func (p *Pool[T]) GetPoolStatsSnapshot() *PoolStatsSnapshot {
 		ObjectsInUse:      objectsInUse,
 		TotalGets:         totalGets,
 		TotalGrowthEvents: p.stats.totalGrowthEvents,
+		ObjectsCreated:    objectsCreated,
+		ObjectsDestroyed:  objectsDestroyed,
 
 		// Fast Return Stats
 		FastReturnHit:  fastReturnHit,
