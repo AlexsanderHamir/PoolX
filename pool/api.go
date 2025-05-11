@@ -120,8 +120,8 @@ type PoolConfigBuilder interface {
 
 	// SetAllocationStrategy configures how the pool allocates objects.
 	// Parameters:
-	//   - allocPercent: Percentage of objects to preallocate at initialization
-	//   - allocAmount: Amount of objects to create per request
+	//   - allocPercent: Percentage of objects to preallocate at initialization and when growing
+	//   - allocAmount: Amount of objects to create per request when L1 is empty
 	SetAllocationStrategy(allocPercent int, allocAmount int) PoolConfigBuilder
 
 	// Single configuration methods

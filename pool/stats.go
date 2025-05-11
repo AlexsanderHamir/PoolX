@@ -12,6 +12,7 @@ type poolStats struct {
 	mu sync.RWMutex
 
 	objectsCreated   int
+	objectsDestroyed int
 	initialCapacity  int
 	currentCapacity  int
 

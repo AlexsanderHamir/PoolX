@@ -113,6 +113,6 @@ var defaultRingBufferConfig = &config.RingBufferConfig{
 }
 
 var defaultAllocationStrategy = &AllocationStrategy{
-	AllocPercent: 100,
-	AllocAmount:  1,
+	AllocPercent: 30,
+	AllocAmount:  30,
 }

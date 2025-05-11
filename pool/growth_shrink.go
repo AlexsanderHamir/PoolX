@@ -48,7 +48,6 @@ func (p *Pool[T]) shrinkExecution() {
 	newCapacity = p.adjustMainShrinkTarget(newCapacity, inUse)
 	p.performShrink(newCapacity, inUse)
 
-	defer p.updateObjsCreated(inUse)
 	if !p.config.fastPath.enableChannelGrowth || !p.shouldShrinkFastPath() {
 		return
 	}
@@ -57,14 +56,6 @@ func (p *Pool[T]) shrinkExecution() {
 	newCapacity = p.adjustFastPathShrinkTarget(currentCap)
 
 	p.shrinkFastPath(newCapacity, inUse)
-}
-
-func (p *Pool[T]) updateObjsCreated(inUse int) {
-	chPtr := p.cacheL1
-	ch := *chPtr
-	l1Available := len(ch)
-
-	p.stats.objectsCreated = p.pool.Length(false) + l1Available + inUse
 }
 
 // performShrink executes the actual shrinking of the main pool by creating a new ring buffer
@@ -76,7 +67,14 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int) {
 	}
 
 	newRingBuffer := p.createShrinkBuffer(newCapacity)
-	itemsToKeep := p.calculateItemsToKeep(newCapacity, inUse)
+	itemsToKeep := p.calculateItemsToKeep(newCapacity, inUse) 
+ 
+	totalItems := p.pool.Length(false)
+	destroyedCount := totalItems - itemsToKeep
+	if destroyedCount > 0 {
+		p.stats.objectsDestroyed += destroyedCount
+	}
+
 	if err := p.migrateItems(newRingBuffer, itemsToKeep); err != nil {
 		return
 	}
@@ -99,8 +97,8 @@ func (p *Pool[T]) createShrinkBuffer(newCapacity int) *ringbuffer.RingBuffer[T] 
 
 // calculateItemsToKeep determines how many items can be kept during the shrink operation
 func (p *Pool[T]) calculateItemsToKeep(newCapacity, inUse int) int {
-	availableToKeep := newCapacity - inUse
-	return min(availableToKeep, p.pool.Length(false))
+	availableToKeep := newCapacity - inUse // 1000 - 500 = 500
+	return min(availableToKeep, p.pool.Length(false))// 500 < 300 ? 300 : 500
 }
 
 // migrateItems moves items from the old buffer to the new buffer
@@ -214,10 +212,6 @@ func (p *Pool[T]) createAndPopulateBuffer(newCapacity int) (*ringbuffer.RingBuff
 
 	p.pool.Close()
 
-	if err := p.fillRemainingCapacity(newRingBuffer, newCapacity); err != nil {
-		return nil, fmt.Errorf("failed to fill remaining capacity: %w", err)
-	}
-
 	return newRingBuffer, nil
 }
 
@@ -254,27 +248,17 @@ func (p *Pool[T]) validateAndWriteItems(newRingBuffer *ringbuffer.RingBuffer[T],
 	return nil
 }
 
-func (p *Pool[T]) fillRemainingCapacity(newRingBuffer *ringbuffer.RingBuffer[T], newCapacity int) error {
+func (p *Pool[T]) fillRemainingCapacity(newCapacity int) error {
 	allocAmount := newCapacity * p.config.allocationStrategy.AllocPercent / 100
-
-	// current capacity(1000) -  objects created(500)
-	// We include the ring buffer length because we're writing to the ring buffer
-	// and we don't know how objects are spread in between the channel and the ring buffer.
-	// we need to make sure we don't write more than the available space.
-	spaceAvailable := (newCapacity - p.pool.Length(false)) - p.stats.objectsCreated
+	spaceAvailable := newCapacity - (p.stats.objectsCreated - p.stats.objectsDestroyed)
 	toAdd := min(allocAmount, spaceAvailable)
 	if toAdd <= 0 {
 		return nil
 	}
 
-	for range toAdd {
-		obj := p.allocator()
-		p.stats.objectsCreated++
-
-		if err := newRingBuffer.Write(obj); err != nil {
-			p.stats.objectsCreated--
-			return err
-		}
+	err := p.populateL1OrBuffer(toAdd)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -300,5 +284,10 @@ func (p *Pool[T]) updatePoolCapacity(newCapacity int) error {
 
 	p.pool = newRingBuffer
 	p.stats.currentCapacity = newCapacity
+
+	if err := p.fillRemainingCapacity(newCapacity); err != nil {
+		return fmt.Errorf("failed to fill remaining capacity: %w", err)
+	}
+
 	return nil
 }

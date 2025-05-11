@@ -103,6 +103,7 @@ func (p *Pool[T]) populateL1OrBuffer(allocAmount int) error {
 	return nil
 }
 
+
 // cleanupCacheL1 performs cleanup of the L1 cache by:
 // 1. Draining all objects from the cache
 // 2. Calling the cleaner function on each object

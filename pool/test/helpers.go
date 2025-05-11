@@ -378,13 +378,14 @@ func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, avai
 	assert.Equal(t, 0, p.GetBlockedReaders())
 }
 
-func createConfig(t *testing.T, hardLimit, initial, attempts int, verbose bool) *pool.PoolConfig {
+func createConfig(t *testing.T, hardLimit, initial, attempts int) *pool.PoolConfig {
 	config, err := pool.NewPoolConfigBuilder().
 		SetInitialCapacity(initial).
 		SetMinShrinkCapacity(initial). // prevent shrinking
 		SetRingBufferBlocking(true).   // prevent nil returns
 		SetHardLimit(hardLimit).
 		SetPreReadBlockHookAttempts(attempts).
+		SetAllocationStrategy(100, 20).
 		Build()
 	require.NoError(t, err)
 	return config
@@ -447,7 +448,7 @@ func testGrowth(t *testing.T, runs int, hardLimit, initial, attempts, numGorouti
 			go func() {
 				defer close(done)
 
-				config := createConfig(t, hardLimit, initial, attempts, false)
+				config := createConfig(t, hardLimit, initial, attempts)
 				hardLimitTest(t, config, numGoroutines, hardLimit, true)
 			}()
 

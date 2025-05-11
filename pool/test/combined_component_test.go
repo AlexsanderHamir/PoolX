@@ -48,7 +48,7 @@ func TestPoolConcurrency(t *testing.T) {
 }
 
 func testGrowthBlocked(t *testing.T, availableItems, numGoroutines, attempts int) {
-	config := createConfig(t, availableItems, availableItems, attempts, false)
+	config := createConfig(t, availableItems, availableItems, attempts)
 
 	t.Run("sync mode", func(t *testing.T) {
 		readBlockersTest(t, config, numGoroutines, availableItems, false)
@@ -68,6 +68,7 @@ func TestPreReadBlockHook(t *testing.T) {
 		SetRingBufferBlocking(true).
 		SetHardLimit(2).
 		SetPreReadBlockHookAttempts(3).
+		SetAllocationStrategy(100, 2).
 		Build()
 	require.NoError(t, err)
 

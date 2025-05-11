@@ -16,6 +16,13 @@ func getShrinkDefaultsMap() map[AggressivenessLevel]*shrinkDefaults {
 // setPoolAndBuffer attempts to store an object in either the L1 cache or the main pool.
 // It returns the remaining fast path capacity and any error that occurred.
 func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
+	// recover from panic and write to main pool
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[SET] panic on setPoolAndBuffer: %v", r)
+		}
+	}()
+
 	chPtr := p.cacheL1
 	ch := *chPtr
 
@@ -25,7 +32,6 @@ func (p *Pool[T]) setPoolAndBuffer(obj T, fastPathRemaining int) (int, error) {
 			fastPathRemaining--
 			return fastPathRemaining, nil
 		default:
-			// L1 cache is full, continue to main pool
 		}
 	}
 
@@ -86,7 +92,8 @@ func (p *Pool[T]) poolGrowthNeeded(fillTarget int) (ableToGrow bool, err error) 
 		return false, errGrowthBlocked
 	}
 
-	if p.stats.objectsCreated < p.pool.Capacity() {
+	spaceAvailable := p.pool.Capacity() - (p.stats.objectsCreated - p.stats.objectsDestroyed)
+	if spaceAvailable > 0 {
 		return false, nil
 	}
 
@@ -174,8 +181,12 @@ func (p *Pool[T]) refill(fillTarget int) error {
 
 func (p *Pool[T]) createOnDemand() error {
 	allocAmount := p.config.allocationStrategy.AllocAmount
-	spaceAvailable := p.pool.Capacity() - p.stats.objectsCreated
+	spaceAvailable := p.pool.Capacity() - (p.stats.objectsCreated - p.stats.objectsDestroyed)
 	allocAmount = min(allocAmount, spaceAvailable)
+
+	if allocAmount == 0 {
+		return nil
+	}
 
 	return p.populateL1OrBuffer(allocAmount)
 }

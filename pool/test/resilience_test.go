@@ -43,6 +43,7 @@ func TestResourceExhaustion(t *testing.T) {
 		SetInitialCapacity(10).
 		SetHardLimit(20).
 		SetMinShrinkCapacity(10).
+		SetAllocationStrategy(100, 20).
 		Build()
 	require.NoError(t, err)
 
