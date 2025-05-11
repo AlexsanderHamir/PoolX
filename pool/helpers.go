@@ -350,16 +350,17 @@ func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
 
 func (p *Pool[T]) handleRefillScenarios() (zero T, canProceed bool) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	ableToRefill, err := p.tryRefillIfNeeded()
 	if !ableToRefill && err != nil {
 		if obj, shouldContinue := p.handleRefillFailure(err); !shouldContinue {
+			p.mu.Unlock()
 			return obj, false
 		}
 	}
+	p.mu.Unlock()
 
-	if obj, found := p.tryGetFromL1(true); found {
+	if obj, found := p.tryGetFromL1(false); found {
 		return obj, true
 	}
 

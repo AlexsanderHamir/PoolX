@@ -2,6 +2,7 @@ package code_examples
 
 import (
 	"math/rand"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -117,34 +118,37 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 
 	const numGoroutines = 1000
 	var wg sync.WaitGroup
+	start := make(chan struct{})
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		wg.Add(numGoroutines)
-		for range numGoroutines {
-			go func() {
-				defer wg.Done()
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			for i := 0; i < b.N; i++ {
 				obj, err := pool.Get()
 				if err != nil {
 					panic(err)
 				}
-
 				obj.ID = rand.Intn(1000)
 				obj.Name = "test"
 				obj.Data = append(obj.Data, byte(rand.Intn(256)))
-
 				performWorkload(obj)
-
 				if err := pool.Put(obj); err != nil {
 					panic(err)
 				}
-			}()
-		}
-		wg.Wait()
+			}
+		}()
 	}
+
+	b.ResetTimer()
+	close(start)
+	wg.Wait()
 }
 
 func BenchmarkSyncPoolHighContention(b *testing.B) {
+	runtime.SetMutexProfileFraction(1)
 	var syncPool = sync.Pool{
 		New: func() any {
 			return &configs.Example{
