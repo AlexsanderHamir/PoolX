@@ -308,15 +308,13 @@ func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
 	select {
 	case p.refillSemaphore <- struct{}{}:
 		defer func() {
-			p.refillCond.Broadcast()
+			p.waiter.WakeAll()
 			<-p.refillSemaphore
 		}()
 		obj, canProceed := p.handleRefillScenarios()
 		return obj, canProceed
 	default:
-		p.refillMu.Lock()
-		p.refillCond.Wait()
-		p.refillMu.Unlock()
+		<-p.waiter.ch
 
 		if obj, found := p.tryGetFromL1(false); found {
 			return obj, true

@@ -80,6 +80,7 @@ func initializePoolObject[T any](config *PoolConfig[T], allocator func() T, clea
 		config:          config,
 		stats:           stats,
 		pool:            ringBuffer,
+		waiter:          NewWaiter(),
 	}
 
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
