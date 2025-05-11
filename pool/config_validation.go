@@ -155,3 +155,20 @@ func (b *poolConfigBuilder) validateFastPathConfig() error {
 
 	return nil
 }
+
+
+func (b *poolConfigBuilder) validateAllocationStrategy() error {
+	as := b.config.allocationStrategy
+
+	fmt.Println("allocationStrategy", as)
+
+	if as.AllocPercent <= 0 {
+		return fmt.Errorf("allocationStrategy.AllocPercent must be greater than 0, got %d", as.AllocPercent)
+	}
+
+	if as.AllocAmount <= 0 {
+		return fmt.Errorf("allocationStrategy.AllocAmount must be greater than 0, got %d", as.AllocAmount)
+	}
+
+	return nil
+}
