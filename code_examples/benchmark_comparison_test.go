@@ -161,13 +161,15 @@ func BenchmarkSyncPoolHighContention(b *testing.B) {
 
 	const numGoroutines = 1000
 	var wg sync.WaitGroup
+	start := make(chan struct{})
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		wg.Add(numGoroutines)
-		for range numGoroutines {
-			go func() {
-				defer wg.Done()
+	for range numGoroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			for range b.N {
 				obj := syncPool.Get().(*configs.Example)
 
 				obj.ID = rand.Intn(1000)
@@ -177,8 +179,11 @@ func BenchmarkSyncPoolHighContention(b *testing.B) {
 				performWorkload(obj)
 
 				syncPool.Put(obj)
-			}()
-		}
-		wg.Wait()
+			}
+		}()
 	}
+
+	b.ResetTimer()
+	close(start)
+	wg.Wait()
 }
