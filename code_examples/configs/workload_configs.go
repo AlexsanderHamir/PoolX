@@ -15,11 +15,11 @@ type Example struct {
 func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
-		// - Initial capacity: 50000 objects (common for high-throughput systems)
+		// - Initial capacity: 40000 objects (common for high-throughput systems)
 		// - Max capacity: 80000 objects (reasonable upper limit for most systems)
 		// - Verbose logging enabled for monitoring
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(40000, 80000, true).
+		SetPoolBasicConfigs(1000, 2000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -41,17 +41,17 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// - Shrink by 30% when triggered
 		SetRingBufferShrinkConfigs(time.Second*5, time.Second*10, 3, 50, 5, 40, 30).
 		// Fast path (L1 cache) settings:
-		// - Initial size: 64 objects
+		// - Initial size: 256 objects
 		// - Grow after 1 growth events
 		// - Shrink after 1 shrink events
 		// - Fill aggressiveness 100%
 		// - Refill when 10% empty
-		SetFastPathBasicConfigs(256, 1, 1, 100, 10).
+		SetFastPathBasicConfigs(256, 1, 1, 100, 3).
 		// Fast path growth strategy:
 		// - Exponential growth until 100x(1000%) of initial capacity (64 * 100 = 6400)
 		// - controlled growth rate: currentCapacity + (64 * 5(500%) = 320)
 		// - 100x big growth rate: currentCapacity + (64 * 100(1000%) = 6400)
-		SetFastPathGrowthConfigs(100, 5, 100).
+		SetFastPathGrowthConfigs(100, 3, 5).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
 		// - Minimum 20 objects
@@ -59,7 +59,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// Allocation strategy:
 		// - 100% allocation percent
 		// - 100 objects per allocation
-		SetAllocationStrategy(60, 100).
+		SetAllocationStrategy(100, 1000).
 		Build()
 	if err != nil {
 		panic(err)
