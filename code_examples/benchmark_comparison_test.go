@@ -120,13 +120,13 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			<-start
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				obj, err := pool.Get()
 				if err != nil {
 					panic(err)
