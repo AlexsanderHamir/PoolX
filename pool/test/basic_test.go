@@ -13,7 +13,7 @@ import (
 // blocking mode is disabled by default, we always attempt to refill / grow,
 // before hitting the retrive functions from the ring buffer, which will return nil in non-blocking mode.
 func TestPoolGrowth(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(2).
 		SetGrowthFactor(50).
 		SetFixedGrowthFactor(100).
@@ -53,7 +53,7 @@ func TestPoolGrowth(t *testing.T) {
 }
 
 func TestPoolShrink(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(32).
 		EnforceCustomConfig().
 		SetShrinkCheckInterval(10 * time.Millisecond). // Very frequent checks
@@ -127,7 +127,7 @@ func TestHardLimit(t *testing.T) {
 }
 
 func TestConfigValues(t *testing.T) {
-	defaultConfig, err := pool.NewPoolConfigBuilder().Build()
+	defaultConfig, err := pool.NewPoolConfigBuilder[*TestObject]().Build()
 	require.NoError(t, err)
 
 	originalValues := storeDefaultConfigValues(defaultConfig)
@@ -138,7 +138,7 @@ func TestConfigValues(t *testing.T) {
 }
 
 func TestDisabledChannelGrowth(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(2).
 		SetGrowthFactor(50).
 		SetFixedGrowthFactor(100).

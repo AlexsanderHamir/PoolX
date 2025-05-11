@@ -11,7 +11,7 @@ import (
 )
 
 func TestOperationsOnNewPoolAfterClose(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(100).
 		SetHardLimit(1000).
 		Build()
@@ -39,7 +39,7 @@ func TestOperationsOnNewPoolAfterClose(t *testing.T) {
 }
 
 func TestResourceExhaustion(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(10).
 		SetHardLimit(20).
 		SetMinShrinkCapacity(10).
@@ -81,7 +81,7 @@ func TestResourceExhaustion(t *testing.T) {
 
 func TestErrorHandlingScenarios(t *testing.T) {
 	t.Run("closed pool operations", func(t *testing.T) {
-		config, err := pool.NewPoolConfigBuilder().
+		config, err := pool.NewPoolConfigBuilder[*TestObject]().
 			SetInitialCapacity(10).
 			SetHardLimit(20).
 			SetMinShrinkCapacity(10).
@@ -101,7 +101,7 @@ func TestErrorHandlingScenarios(t *testing.T) {
 	})
 
 	t.Run("concurrent error recovery", func(t *testing.T) {
-		config, err := pool.NewPoolConfigBuilder().
+		config, err := pool.NewPoolConfigBuilder[*TestObject]().
 			SetInitialCapacity(10).
 			SetMinShrinkCapacity(10).
 			SetHardLimit(20).

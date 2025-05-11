@@ -79,7 +79,7 @@ type DefaultConfigValues struct {
 }
 
 // storeDefaultConfigValues stores all default configuration values
-func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
+func storeDefaultConfigValues(config *pool.PoolConfig[*TestObject]) DefaultConfigValues {
 	return DefaultConfigValues{
 		InitialCapacity:                    config.GetInitialCapacity(),
 		HardLimit:                          config.GetHardLimit(),
@@ -113,8 +113,8 @@ func storeDefaultConfigValues(config *pool.PoolConfig) DefaultConfigValues {
 }
 
 // createCustomConfig creates a custom configuration with different values
-func createCustomConfig(t *testing.T) *pool.PoolConfig {
-	config, err := pool.NewPoolConfigBuilder().
+func createCustomConfig(t *testing.T) *pool.PoolConfig[*TestObject] {
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(101210).
 		SetHardLimit(10000000028182820).
 		SetGrowthFactor(52).
@@ -148,7 +148,7 @@ func createCustomConfig(t *testing.T) *pool.PoolConfig {
 }
 
 // verifyCustomValuesDifferent verifies that custom values are different from default values
-func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, custom *pool.PoolConfig) {
+func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, custom *pool.PoolConfig[*TestObject]) {
 	assert.NotEqual(t, original.InitialCapacity, custom.GetInitialCapacity())
 	assert.NotEqual(t, original.HardLimit, custom.GetHardLimit())
 	assert.NotEqual(t, original.GrowthFactor, custom.GetGrowth().GetBigGrowthFactor())
@@ -179,8 +179,8 @@ func verifyCustomValuesDifferent(t *testing.T, original DefaultConfigValues, cus
 }
 
 // createHardLimitTestConfig creates a configuration for hard limit testing
-func createHardLimitTestConfig(t *testing.T, blocking bool) *pool.PoolConfig {
-	config, err := pool.NewPoolConfigBuilder().
+func createHardLimitTestConfig(t *testing.T, blocking bool) *pool.PoolConfig[*TestObject] {
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(10).
 		SetHardLimit(20).
 		SetMinShrinkCapacity(10).
@@ -191,7 +191,7 @@ func createHardLimitTestConfig(t *testing.T, blocking bool) *pool.PoolConfig {
 }
 
 // createTestPool creates a pool with the given configuration
-func createTestPool(t *testing.T, config *pool.PoolConfig) *pool.Pool[*TestObject] {
+func createTestPool(t *testing.T, config *pool.PoolConfig[*TestObject]) *pool.Pool[*TestObject] {
 	allocator := func() *TestObject {
 		return &TestObject{Value: 42}
 	}
@@ -302,7 +302,7 @@ func runConcurrentBlockingTest(t *testing.T, p *pool.Pool[*TestObject], numGorou
 	}
 }
 
-func testInvalidConfig(t *testing.T, name string, configFunc func() (*pool.PoolConfig, error)) {
+func testInvalidConfig(t *testing.T, name string, configFunc func() (*pool.PoolConfig[*TestObject], error)) {
 	t.Run(name, func(t *testing.T) {
 		config, err := configFunc()
 		assert.Error(t, err)
@@ -310,7 +310,7 @@ func testInvalidConfig(t *testing.T, name string, configFunc func() (*pool.PoolC
 	})
 }
 
-func testValidConfig(t *testing.T, name string, configFunc func() (*pool.PoolConfig, error)) {
+func testValidConfig(t *testing.T, name string, configFunc func() (*pool.PoolConfig[*TestObject], error)) {
 	t.Run(name, func(t *testing.T) {
 		config, err := configFunc()
 		assert.NoError(t, err)
@@ -327,7 +327,7 @@ func ValidateCapacity(p *pool.Pool[*TestObject], stats *pool.PoolStatsSnapshot) 
 	return nil
 }
 
-func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, availableItems int, async bool) {
+func readBlockersTest(t *testing.T, config *pool.PoolConfig[*TestObject], numGoroutines, availableItems int, async bool) {
 	p := createTestPool(t, config)
 
 	objects := make(chan *TestObject, availableItems)
@@ -378,8 +378,8 @@ func readBlockersTest(t *testing.T, config *pool.PoolConfig, numGoroutines, avai
 	assert.Equal(t, 0, p.GetBlockedReaders())
 }
 
-func createConfig(t *testing.T, hardLimit, initial, attempts int) *pool.PoolConfig {
-	config, err := pool.NewPoolConfigBuilder().
+func createConfig(t *testing.T, hardLimit, initial, attempts int) *pool.PoolConfig[*TestObject] {
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(initial).
 		SetMinShrinkCapacity(initial). // prevent shrinking
 		SetRingBufferBlocking(true).   // prevent nil returns
@@ -391,7 +391,7 @@ func createConfig(t *testing.T, hardLimit, initial, attempts int) *pool.PoolConf
 	return config
 }
 
-func hardLimitTest(t *testing.T, config *pool.PoolConfig, numGoroutines, hardLimit int, async bool) {
+func hardLimitTest(t *testing.T, config *pool.PoolConfig[*TestObject], numGoroutines, hardLimit int, async bool) {
 	p := createTestPool(t, config)
 	objects := make(chan *TestObject, hardLimit)
 

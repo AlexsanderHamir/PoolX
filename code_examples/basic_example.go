@@ -11,17 +11,13 @@ import (
 	"github.com/AlexsanderHamir/PoolX/pool"
 )
 
-type Example struct {
-	ID   int
-	Name string
-}
 
 func RunBasicExample() error {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
 		config,
-		func() *Example { return &Example{ID: 23, Name: "test"} },
-		func(obj *Example) {
+		func() *configs.Example { return &configs.Example{ID: 23, Name: "test"} },
+		func(obj *configs.Example) {
 			obj.ID = 0
 			obj.Name = ""
 		},

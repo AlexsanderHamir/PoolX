@@ -6,8 +6,14 @@ import (
 	"github.com/AlexsanderHamir/PoolX/pool"
 )
 
-func CreateHighThroughputConfig() *pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
+type Example struct {
+	ID   int
+	Name string
+	Data []byte
+}
+
+func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
+	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
 		// - Initial capacity: 50000 objects (common for high-throughput systems)
 		// - Max capacity: 80000 objects (reasonable upper limit for most systems)
@@ -40,7 +46,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Shrink after 1 shrink events
 		// - Fill aggressiveness 100%
 		// - Refill when 10% empty
-		SetFastPathBasicConfigs(64, 1, 1, 100, 10).
+		SetFastPathBasicConfigs(256, 1, 1, 100, 10).
 		// Fast path growth strategy:
 		// - Exponential growth until 100x(1000%) of initial capacity (64 * 100 = 6400)
 		// - controlled growth rate: currentCapacity + (64 * 5(500%) = 320)
@@ -50,6 +56,10 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 		// - Shrink by 40% when triggered
 		// - Minimum 20 objects
 		SetFastPathShrinkConfigs(40, 20).
+		// Allocation strategy:
+		// - 100% allocation percent
+		// - 100 objects per allocation
+		SetAllocationStrategy(60, 100).
 		Build()
 	if err != nil {
 		panic(err)
@@ -58,8 +68,8 @@ func CreateHighThroughputConfig() *pool.PoolConfig {
 	return poolConfig
 }
 
-func CreateMemoryConstrainedConfig() *pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
+func CreateMemoryConstrainedConfig() *pool.PoolConfig[*Example] {
+	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
 		// - Initial capacity: 16 objects (minimal for memory-constrained systems)
 		// - Max capacity: 1000 objects (strict limit for memory-constrained systems)
@@ -110,8 +120,8 @@ func CreateMemoryConstrainedConfig() *pool.PoolConfig {
 	return poolConfig
 }
 
-func CreateLowLatencyConfig() *pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
+func CreateLowLatencyConfig() *pool.PoolConfig[*Example] {
+	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
 		// - Initial capacity: 512 objects (larger for low latency)
 		// - Max capacity: 20000 objects (higher limit for burst handling)
@@ -162,8 +172,8 @@ func CreateLowLatencyConfig() *pool.PoolConfig {
 	return poolConfig
 }
 
-func CreateBatchProcessingConfig() *pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
+func CreateBatchProcessingConfig() *pool.PoolConfig[*Example] {
+	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
 		// - Initial capacity: 128 objects (balanced for batch processing)
 		// - Max capacity: 5000 objects (reasonable for batch workloads)
@@ -214,8 +224,8 @@ func CreateBatchProcessingConfig() *pool.PoolConfig {
 	return poolConfig
 }
 
-func CreateRealTimeConfig() *pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
+func CreateRealTimeConfig() *pool.PoolConfig[*Example] {
+	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
 		// - Initial capacity: 1024 objects (large for real-time systems)
 		// - Max capacity: 50000 objects (very high for burst handling)
@@ -266,8 +276,8 @@ func CreateRealTimeConfig() *pool.PoolConfig {
 	return poolConfig
 }
 
-func CreateBalancedConfig() *pool.PoolConfig {
-	poolConfig, err := pool.NewPoolConfigBuilder().
+func CreateBalancedConfig() *pool.PoolConfig[*Example] {
+	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
 		// - Initial capacity: 192 objects (balanced for general use)
 		// - Max capacity: 10000 objects (reasonable upper limit)

@@ -62,7 +62,7 @@ func testGrowthBlocked(t *testing.T, availableItems, numGoroutines, attempts int
 // There's no items in the ring buffer, all of them go to the L1 cache first
 // so we access the slow path directly which triggers the pre-read block hook.
 func TestPreReadBlockHook(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(2).
 		SetMinShrinkCapacity(2).
 		SetRingBufferBlocking(true).

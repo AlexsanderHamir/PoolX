@@ -10,13 +10,7 @@ import (
 	"github.com/AlexsanderHamir/PoolX/pool"
 )
 
-type TestObject struct {
-	ID   int
-	Name string
-	Data []byte
-}
-
-func performWorkload(obj *TestObject) {
+func performWorkload(obj *configs.Example) {
 	// Simulate CPU-intensive work
 	for range 1000 {
 		obj.Data = append(obj.Data, byte(rand.Intn(256)))
@@ -29,14 +23,14 @@ func BenchmarkPoolX(b *testing.B) {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
 		config,
-		func() *TestObject {
-			return &TestObject{
+		func() *configs.Example {
+			return &configs.Example{
 				ID:   0,
 				Name: "",
 				Data: make([]byte, 1024),
 			}
 		},
-		func(obj *TestObject) {
+		func(obj *configs.Example) {
 			obj.ID = 0
 			obj.Name = ""
 			obj.Data = obj.Data[:0]
@@ -74,7 +68,7 @@ func BenchmarkPoolX(b *testing.B) {
 func BenchmarkSyncPool(b *testing.B) {
 	var syncPool = sync.Pool{
 		New: func() any {
-			return &TestObject{
+			return &configs.Example{
 				ID:   0,
 				Name: "",
 				Data: make([]byte, 1024),
@@ -85,7 +79,7 @@ func BenchmarkSyncPool(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			obj := syncPool.Get().(*TestObject)
+			obj := syncPool.Get().(*configs.Example)
 
 			obj.ID = rand.Intn(1000)
 			obj.Name = "test"
@@ -103,14 +97,14 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
 		config,
-		func() *TestObject {
-			return &TestObject{
+		func() *configs.Example {
+			return &configs.Example{
 				ID:   0,
 				Name: "",
 				Data: make([]byte, 1024),
 			}
 		},
-		func(obj *TestObject) {
+		func(obj *configs.Example) {
 			obj.ID = 0
 			obj.Name = ""
 			obj.Data = obj.Data[:0]
@@ -153,7 +147,7 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 func BenchmarkSyncPoolHighContention(b *testing.B) {
 	var syncPool = sync.Pool{
 		New: func() any {
-			return &TestObject{
+			return &configs.Example{
 				ID:   0,
 				Name: "",
 				Data: make([]byte, 1024),
@@ -170,7 +164,7 @@ func BenchmarkSyncPoolHighContention(b *testing.B) {
 		for range numGoroutines {
 			go func() {
 				defer wg.Done()
-				obj := syncPool.Get().(*TestObject)
+				obj := syncPool.Get().(*configs.Example)
 
 				obj.ID = rand.Intn(1000)
 				obj.Name = "test"

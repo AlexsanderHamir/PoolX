@@ -63,7 +63,7 @@ func TestAllocationStrategyBasic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config, err := pool.NewPoolConfigBuilder().
+			config, err := pool.NewPoolConfigBuilder[*TestObject]().
 				SetInitialCapacity(tt.initialCap).
 				SetHardLimit(tt.hardLimit).
 				SetAllocationStrategy(tt.allocPercent, tt.allocAmount).
@@ -81,7 +81,7 @@ func TestAllocationStrategyBasic(t *testing.T) {
 }
 
 func TestAllocationStrategyBehavior(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(10).
 		SetHardLimit(100).
 		SetAllocationStrategy(50, 5). // 50% allocation percent, 5 objects per allocation
@@ -134,7 +134,7 @@ func TestAllocationStrategyBehavior(t *testing.T) {
 }
 
 func TestAllocationStrategyWithShrink(t *testing.T) {
-	config, err := pool.NewPoolConfigBuilder().
+	config, err := pool.NewPoolConfigBuilder[*TestObject]().
 		SetInitialCapacity(50).
 		SetHardLimit(100).
 		SetAllocationStrategy(50, 5). // 50% allocation percent, 5 objects per allocation
