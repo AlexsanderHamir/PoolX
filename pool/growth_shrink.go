@@ -67,8 +67,8 @@ func (p *Pool[T]) performShrink(newCapacity, inUse int) {
 	}
 
 	newRingBuffer := p.createShrinkBuffer(newCapacity)
-	itemsToKeep := p.calculateItemsToKeep(newCapacity, inUse) 
- 
+	itemsToKeep := p.calculateItemsToKeep(newCapacity, inUse)
+
 	totalItems := p.pool.Length(false)
 	destroyedCount := totalItems - itemsToKeep
 	if destroyedCount > 0 {
@@ -97,8 +97,8 @@ func (p *Pool[T]) createShrinkBuffer(newCapacity int) *ringbuffer.RingBuffer[T] 
 
 // calculateItemsToKeep determines how many items can be kept during the shrink operation
 func (p *Pool[T]) calculateItemsToKeep(newCapacity, inUse int) int {
-	availableToKeep := newCapacity - inUse // 1000 - 500 = 500
-	return min(availableToKeep, p.pool.Length(false))// 500 < 300 ? 300 : 500
+	availableToKeep := newCapacity - inUse
+	return min(availableToKeep, p.pool.Length(false))
 }
 
 // migrateItems moves items from the old buffer to the new buffer
