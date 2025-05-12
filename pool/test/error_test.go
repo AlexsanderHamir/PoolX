@@ -264,7 +264,12 @@ func TestNilConfig(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(nil, allocator, cleaner)
+	cloneTemplate := func(obj *TestObject) *TestObject {
+		dst := *obj
+		return &dst
+	}
+
+	p, err := pool.NewPool(nil, allocator, cleaner, cloneTemplate)
 	require.NoError(t, err)
 	assert.NotNil(t, p)
 }
@@ -288,7 +293,13 @@ func TestResourceCleanup(t *testing.T) {
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner)
+	cloneTemplate := func(obj *TestObject) *TestObject {
+		created.Add(1)
+		dst := *obj
+		return &dst
+	}
+
+	p, err := pool.NewPool(config, allocator, cleaner, cloneTemplate)
 	require.NoError(t, err)
 
 	objNum := 100
@@ -307,7 +318,7 @@ func TestResourceCleanup(t *testing.T) {
 	err = p.Close()
 	require.NoError(t, err)
 
-	validation := 1
+	validation := 2
 	movedToL1 := 64
 	assert.Equal(t, int64(objNum+validation), created.Load())
 	assert.Equal(t, int64(objNum+movedToL1), cleaned.Load())

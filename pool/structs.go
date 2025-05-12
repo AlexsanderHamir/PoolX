@@ -57,6 +57,13 @@ type Pool[T any] struct {
 	// Create new objects when the pool needs to grow
 	allocator func() T
 
+	// cloneTemplate creates a shallow copy of the object provided by the allocator, any reference types will be shared,
+	// delaying the initialization of the object state.
+	cloneTemplate func(T) T
+
+	// template is a template object that is used to create new objects
+	template T
+
 	// ctx and cancel manage the pool's lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc

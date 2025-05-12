@@ -34,7 +34,12 @@ func setupPool(b *testing.B, config *PoolConfig[*example]) *Pool[*example] {
 		}
 	}
 
-	p, err := NewPool(config, allocator, cleaner)
+	cloneTemplate := func(obj *example) *example {
+		dst := *obj
+		return &dst
+	}
+
+	p, err := NewPool(config, allocator, cleaner, cloneTemplate)
 	if err != nil {
 		b.Fatalf("Failed to create pool: %v", err)
 	}
@@ -52,7 +57,7 @@ func Benchmark_Get(b *testing.B) {
 		SetMinShrinkCapacity(128). // defaultMinCapacity
 		SetFastPathEnableChannelGrowth(true).
 		SetFastPathFillAggressiveness(100). // fillAggressivenessExtreme
-		SetFastPathRefillPercent(10).     // defaultRefillPercent
+		SetFastPathRefillPercent(10).       // defaultRefillPercent
 		SetFastPathGrowthEventsTrigger(3).
 		SetFastPathGrowthFactor(75).
 		SetFastPathExponentialThresholdFactor(1000).

@@ -50,18 +50,32 @@ func initializePoolStats[T any](config *PoolConfig[T]) *poolStats {
 	return stats
 }
 
-// validateAllocator verifies that the provided allocator function returns a pointer type.
+// validateType validates the provided allocator, cleaner, and cloneTemplate functions.
 // This is a critical validation as the pool requires pointer types for proper object management.
 // Returns an error if the allocator returns a non-pointer type.
-func validateAllocator[T any](allocator func() T) error {
+func validateType[T any](allocator func() T, cleaner func(T), cloner func(T) T) error {
 	var zero T
-	obj := allocator()
-	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
-		return fmt.Errorf("allocator must return a pointer, got %T", obj)
+	if reflect.TypeOf(zero).Kind() != reflect.Ptr {
+		return fmt.Errorf("type T must be a pointer type, got %T", zero)
 	}
 
-	obj = zero
-	_ = obj
+	obj := allocator()
+	if reflect.TypeOf(obj).Kind() != reflect.Ptr {
+		return fmt.Errorf("type returned by allocator must be a pointer type, got %T", obj)
+	}
+
+	if cleaner == nil {
+		return fmt.Errorf("cleaner function is nil")
+	}
+
+	if cloner == nil {
+		return fmt.Errorf("cloner function is nil")
+	}
+
+	if reflect.TypeOf(cloner(obj)).Kind() != reflect.Ptr {
+		return fmt.Errorf("type returned by cloner must be a pointer type, got %T", cloner(obj))
+	}
+
 	return nil
 }
 
@@ -69,17 +83,20 @@ func validateAllocator[T any](allocator func() T) error {
 // configuration, allocator, cleaner, and ring buffer. It sets up the L1 cache channel
 // and initializes all necessary synchronization primitives.
 // Returns a fully initialized Pool instance or an error if initialization fails.
-func initializePoolObject[T any](config *PoolConfig[T], allocator func() T, cleaner func(T), stats *poolStats, ringBuffer *ringbuffer.RingBuffer[T]) (*Pool[T], error) {
+func initializePoolObject[T any](config *PoolConfig[T], allocator func() T, cleaner func(T), cloneTemplate func(T) T, stats *poolStats, ringBuffer *ringbuffer.RingBuffer[T]) (*Pool[T], error) {
 	ch := make(chan T, config.fastPath.initialSize)
 
+	template := allocator()
 	poolObj := &Pool[T]{
 		cacheL1:         &ch,
 		refillSemaphore: make(chan struct{}, 1),
 		allocator:       allocator,
 		cleaner:         cleaner,
+		cloneTemplate:   cloneTemplate,
 		config:          config,
 		stats:           stats,
 		pool:            ringBuffer,
+		template:        template,
 	}
 
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
@@ -96,7 +113,7 @@ func (p *Pool[T]) populateL1OrBuffer(allocAmount int) error {
 	fastPathRemaining := fillTarget
 
 	for range allocAmount {
-		obj := p.allocator()
+		obj := p.cloneTemplate(p.template)
 		p.stats.objectsCreated++
 
 		var err error

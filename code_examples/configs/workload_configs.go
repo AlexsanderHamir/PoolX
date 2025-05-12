@@ -51,7 +51,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// - Exponential growth until 100x(1000%) of initial capacity (64 * 100 = 6400)
 		// - controlled growth rate: currentCapacity + (64 * 5(500%) = 320)
 		// - 100x big growth rate: currentCapacity + (64 * 100(1000%) = 6400)
-		SetFastPathGrowthConfigs(100, 3, 5).
+		SetFastPathGrowthConfigs(100, 3, 0.5).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
 		// - Minimum 20 objects

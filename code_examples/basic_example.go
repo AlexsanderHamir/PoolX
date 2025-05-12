@@ -11,7 +11,6 @@ import (
 	"github.com/AlexsanderHamir/PoolX/pool"
 )
 
-
 func RunBasicExample() error {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
@@ -21,12 +20,15 @@ func RunBasicExample() error {
 			obj.ID = 0
 			obj.Name = ""
 		},
+		func(obj *configs.Example) *configs.Example {
+			dst := *obj
+			return &dst
+		},
 	)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-
 
 	const numWorkers = 2000
 	const objectsPerWorker = 100

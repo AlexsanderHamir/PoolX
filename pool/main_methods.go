@@ -17,11 +17,17 @@ var (
 	errNilConfig        = errors.New("config is nil")
 )
 
-// NewPool creates a new object pool with the given configuration, allocator, cleaner, and pool type.
-// Only pointers can be stored in the pool. The allocator function creates new objects,
-// and the cleaner function resets objects before they are reused.
-func NewPool[T any](config *PoolConfig[T], allocator func() T, cleaner func(T)) (PoolObj[T], error) {
-	if err := validateAllocator(allocator); err != nil {
+// NewPool creates a new object pool with the given configuration.
+//
+// The allocator function creates a new object and returns a pointer to it.
+//
+// The cleaner function receives a pointer to an object and cleans it.
+//
+// The cloner function receives a pointer to an object and returns a pointer to a shallow copy of it,
+// delaying the initialization of the object state, which you will be responsible for in case of reference types,
+// otherwise all instances will share the same reference types.
+func NewPool[T any](config *PoolConfig[T], allocator func() T, cleaner func(T), cloner func(T) T) (PoolObj[T], error) {
+	if err := validateType(allocator, cleaner, cloner); err != nil {
 		return nil, err
 	}
 
@@ -40,7 +46,7 @@ func NewPool[T any](config *PoolConfig[T], allocator func() T, cleaner func(T)) 
 
 	stats := initializePoolStats(config)
 
-	poolObj, err := initializePoolObject(config, allocator, cleaner, stats, ringBuffer)
+	poolObj, err := initializePoolObject(config, allocator, cleaner, cloner, stats, ringBuffer)
 	if err != nil {
 		return nil, err
 	}

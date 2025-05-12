@@ -200,7 +200,12 @@ func createTestPool(t *testing.T, config *pool.PoolConfig[*TestObject]) *pool.Po
 		obj.Value = 0
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner)
+	cloneTemplate := func(obj *TestObject) *TestObject {
+		dst := *obj
+		return &dst
+	}
+
+	p, err := pool.NewPool(config, allocator, cleaner, cloneTemplate)
 	require.NoError(t, err)
 	return p.(*pool.Pool[*TestObject])
 }

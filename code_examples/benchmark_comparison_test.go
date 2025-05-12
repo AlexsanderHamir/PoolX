@@ -36,6 +36,10 @@ func BenchmarkPoolX(b *testing.B) {
 			obj.Name = ""
 			obj.Data = obj.Data[:0]
 		},
+		func(obj *configs.Example) *configs.Example {
+			dst := *obj
+			return &dst
+		},
 	)
 	if err != nil {
 		b.Fatal(err)
@@ -99,8 +103,6 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 		config,
 		func() *configs.Example {
 			return &configs.Example{
-				ID:   0,
-				Name: "",
 				Data: make([]byte, 1024),
 			}
 		},
@@ -108,6 +110,10 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 			obj.ID = 0
 			obj.Name = ""
 			obj.Data = obj.Data[:0]
+		},
+		func(obj *configs.Example) *configs.Example {
+			dst := *obj
+			return &dst
 		},
 	)
 	if err != nil {
