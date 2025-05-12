@@ -36,8 +36,6 @@ type Pool[T any] struct {
 
 	refillSemaphore chan struct{}
 
-	waiter *Waiter
-
 	// shrinkCond is used for blocking shrink when it reaches maxConsecutiveShrinks
 	shrinkCond *sync.Cond
 
@@ -344,41 +342,4 @@ type AllocationStrategy struct {
 	// The amount of objects to create per request
 	// If it exceeds the ring buffer capacity it will be adjusted to the ring buffer capacity.
 	AllocAmount int
-}
-
-type Waiter struct {
-	mu sync.Mutex
-	ch chan struct{}
-}
-
-func NewWaiter() *Waiter {
-	return &Waiter{ch: make(chan struct{})}
-}
-
-func (w *Waiter) Wait() {
-	<-w.ch
-}
-
-func (w *Waiter) WakeAll() {
-	w.mu.Lock()
-	close(w.ch)
-	w.ch = make(chan struct{})
-	w.mu.Unlock()
-}
-
-// wake one
-func (w *Waiter) WakeOne() {
-	defer func() {
-		if r := recover(); r != nil {
-		}
-	}()
-
-	w.mu.Lock()
-	ch := w.ch
-	w.mu.Unlock()
-
-	select {
-	case ch <- struct{}{}:
-	default:
-	}
 }

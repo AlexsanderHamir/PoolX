@@ -93,7 +93,6 @@ func BenchmarkSyncPool(b *testing.B) {
 	})
 }
 
-// Benchmark with higher contention
 func BenchmarkPoolXHighContention(b *testing.B) {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(

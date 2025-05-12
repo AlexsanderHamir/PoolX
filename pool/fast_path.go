@@ -95,7 +95,6 @@ func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
 		if !ok {
 			return zero, false
 		}
-
 		p.stats.totalGets.Add(1)
 
 		return obj, true
@@ -108,10 +107,12 @@ func (p *Pool[T]) tryGetFromL1(locked bool) (zero T, found bool) {
 // select operation. If successful, it updates hit statistics and returns true.
 // If the channel is full, it returns false to indicate a miss.
 func (p *Pool[T]) tryFastPathPut(obj T) bool {
-	defer func() {
+	defer func() bool {
 		if r := recover(); r != nil {
-			p.slowPathPut(obj)
+			err := p.slowPathPut(obj)
+			return err == nil
 		}
+		return true
 	}()
 
 	p.mu.RLock()

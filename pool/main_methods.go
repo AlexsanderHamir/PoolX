@@ -82,7 +82,10 @@ func (p *Pool[T]) Get() (zero T, err error) {
 // Put returns an object to the pool. The object will be cleaned using the cleaner function
 // before being made available for reuse.
 func (p *Pool[T]) Put(obj T) error {
-	defer p.waiter.WakeOne()
+	defer func() {
+		p.refillCond.Signal()
+	}()
+
 	p.cleaner(obj)
 
 	if p.tryFastPathPut(obj) {
