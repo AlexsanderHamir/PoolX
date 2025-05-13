@@ -164,9 +164,8 @@ func (p *Pool[T]) refill(fillTarget int) error {
 	return nil
 }
 
-func (p *Pool[T]) createOnDemand(fillTarget int) error {
+func (p *Pool[T]) createOnDemand(fillTarget int, spaceAvailable int) error {
 	allocAmount := p.config.allocationStrategy.AllocAmount
-	spaceAvailable := p.pool.Capacity() - (p.stats.objectsCreated - p.stats.objectsDestroyed)
 	allocAmount = min(allocAmount, spaceAvailable, fillTarget)
 
 	if allocAmount == 0 {
@@ -177,7 +176,7 @@ func (p *Pool[T]) createOnDemand(fillTarget int) error {
 }
 
 func (p *Pool[T]) slowPathPut(obj T) error {
-	const maxRetries = 3
+	const maxRetries = 5
 	const retryDelay = 10 * time.Millisecond
 
 	var err error
@@ -228,7 +227,7 @@ func (p *Pool[T]) tryRefill(fillTarget int) (bool, error) {
 // and the ring buffer is in blocking mode. We always try to refill the ring buffer before
 // calling the slow path.
 func (p *Pool[T]) SlowPathGet() (obj T, err error) {
-	const maxRetries = 3
+	const maxRetries = 5
 	const retryDelay = 10 * time.Millisecond
 
 	for i := range maxRetries {
@@ -304,7 +303,7 @@ func (p *Pool[T]) GetBlockedReaders() int {
 
 // tryRefillAndGetL1 attempts to refill the pool, and get an object from L1 cache.
 // It will grow in case it's allowed and needed.
-func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
+func (p *Pool[T]) tryRefillAndFromGetL1() (zero T, canProceed bool) {
 	select {
 	case p.refillSemaphore <- struct{}{}:
 		defer func() {
@@ -314,9 +313,9 @@ func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
 		obj, canProceed := p.handleRefillScenarios()
 		return obj, canProceed
 	default:
-		p.refillMu.Lock()
+		p.refillCond.L.Lock()
 		p.refillCond.Wait()
-		p.refillMu.Unlock()
+		p.refillCond.L.Unlock()
 
 		if obj, found := p.tryGetFromL1(false); found {
 			return obj, true
@@ -344,7 +343,7 @@ func (p *Pool[T]) tryCreateAndGetFromL1(fillTarget int) (obj T, found bool) {
 		return obj, false
 	}
 
-	if err := p.createOnDemand(fillTarget); err != nil {
+	if err := p.createOnDemand(fillTarget, spaceAvailable); err != nil {
 		return obj, false
 	}
 

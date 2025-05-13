@@ -22,7 +22,7 @@ import (
 // - Optional object cleanup
 // - Detailed statistics tracking
 //
-// Type parameter T must be a pointer type. Non-pointer types will cause an error.
+// Type parameter T must be a pointer type.
 type Pool[T any] struct {
 	// This provides fast access to frequently used objects without main pool contention.
 	cacheL1 *chan T
@@ -31,8 +31,7 @@ type Pool[T any] struct {
 	// It provides efficient operations and handles the bulk of object storage.
 	pool *ringbuffer.RingBuffer[T]
 
-	mu       sync.RWMutex
-	refillMu sync.Mutex
+	mu sync.RWMutex
 
 	refillSemaphore chan struct{}
 
@@ -58,7 +57,7 @@ type Pool[T any] struct {
 	allocator func() T
 
 	// cloneTemplate creates a shallow copy of the object provided by the allocator, any reference types will be shared,
-	// delaying the initialization of the object state.
+	// delaying the initialization of the object state. (which you will be responsible for in case of reference types)
 	cloneTemplate func(T) T
 
 	// template is a template object that is used to create new objects

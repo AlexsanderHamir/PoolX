@@ -27,7 +27,7 @@ var (
 // delaying the initialization of the object state, which you will be responsible for in case of reference types,
 // otherwise all instances will share the same reference types.
 func NewPool[T any](config *PoolConfig[T], allocator func() T, cleaner func(T), cloner func(T) T) (PoolObj[T], error) {
-	if err := validateType(allocator, cleaner, cloner); err != nil {
+	if err := validate(allocator, cleaner, cloner); err != nil {
 		return nil, err
 	}
 
@@ -73,7 +73,7 @@ func (p *Pool[T]) Get() (zero T, err error) {
 		return obj, nil
 	}
 
-	if obj, found := p.tryRefillAndGetL1(); found {
+	if obj, found := p.tryRefillAndFromGetL1(); found {
 		return obj, nil
 	}
 

@@ -122,8 +122,6 @@ func (p *Pool[T]) tryFastPathPut(obj T) bool {
 	ch := *chPtr
 
 	select {
-	case <-p.ctx.Done():
-		return false
 	case ch <- obj:
 		p.stats.FastReturnHit.Add(1)
 		return true
@@ -242,6 +240,8 @@ func (p *Pool[T]) updateShrinkStats(newCapacity int) {
 	p.stats.currentL1Capacity = newCapacity
 }
 
+// shrinkFastPath shrinks the L1 cache channel by creating a new channel with the specified capacity
+// and copying objects from the old channel if possible.
 func (p *Pool[T]) shrinkFastPath(newCapacity, inUse int) {
 	defer func() {
 		if r := recover(); r != nil {

@@ -53,7 +53,7 @@ func initializePoolStats[T any](config *PoolConfig[T]) *poolStats {
 // validateType validates the provided allocator, cleaner, and cloneTemplate functions.
 // This is a critical validation as the pool requires pointer types for proper object management.
 // Returns an error if the allocator returns a non-pointer type.
-func validateType[T any](allocator func() T, cleaner func(T), cloner func(T) T) error {
+func validate[T any](allocator func() T, cleaner func(T), cloner func(T) T) error {
 	var zero T
 	if reflect.TypeOf(zero).Kind() != reflect.Ptr {
 		return fmt.Errorf("type T must be a pointer type, got %T", zero)
@@ -97,10 +97,10 @@ func initializePoolObject[T any](config *PoolConfig[T], allocator func() T, clea
 		stats:           stats,
 		pool:            ringBuffer,
 		template:        template,
+		refillCond:      sync.NewCond(&sync.Mutex{}),
 	}
 
 	poolObj.shrinkCond = sync.NewCond(&poolObj.mu)
-	poolObj.refillCond = sync.NewCond(&poolObj.refillMu)
 	return poolObj, nil
 }
 
@@ -113,7 +113,12 @@ func (p *Pool[T]) populateL1OrBuffer(allocAmount int) error {
 	fastPathRemaining := fillTarget
 
 	for range allocAmount {
-		obj := p.cloneTemplate(p.template)
+		var obj T
+		if p.cloneTemplate != nil {
+			obj = p.cloneTemplate(p.template)
+		} else {
+			obj = p.allocator()
+		}
 		p.stats.objectsCreated++
 
 		var err error
