@@ -1,8 +1,23 @@
 ## Cloner Function
 
-To optimize object creation, the cloner function is used instead of the allocator(if provided). The cloner performs a shallow copy of the object, which is more efficient than repeatedly calling the allocator. However, if the object contains reference types, all instances will, by default, share the same reference. In such cases, you'll need to initialize the fields that need to be independent—this is extreme late initialization.
+The cloner function is a performance optimization mechanism that provides an efficient way to create new objects in the pool. Instead of repeatedly calling the allocator function, the cloner performs a shallow copy of a template object, which is significantly faster.
 
-If your struct doesn’t contain any reference types, you'll enjoy the full performance benefits without requiring additional initialization later on.
+### Key Benefits:
+
+1. **Performance**: Shallow copying is much faster than creating new objects from scratch
+2. **Memory Efficiency**: Reuses the template object structure
+3. **Flexibility**: Falls back to allocator if no cloner is provided
+
+### Important Considerations:
+
+- For value types (structs without references), the cloner provides optimal performance without any additional setup
+- For reference types (pointers, slices, maps), all instances will share the same references by default
+  - In such cases, you'll need to initialize the fields that require independent instances
+  - This is known as "extreme late initialization" 😂
+
+### Implementation Details:
+
+The pool maintains a template object (created by the allocator during initialization) and uses the cloner to create new instances. This approach avoids the overhead of repeatedly calling the allocator function.
 
 ### Example Internal Usage:
 
@@ -12,13 +27,15 @@ func (p *Pool[T]) populateL1OrBuffer(allocAmount int) error {
 	fastPathRemaining := fillTarget
 
 	for range allocAmount {
-        // The allocator provides the template object, which is stored on the Pool struct,
-        // to avoid calling it everytime we need a templat eobject.
-		// Use the cloner to create a shallow copy of the template object
-		obj := p.cloneTemplate(p.template)
+		var obj T
+		if p.cloneTemplate != nil {
+			obj = p.cloneTemplate(p.template)
+		} else {
+			obj = p.allocator()
+		}
+
 		p.stats.objectsCreated++
 
-		// Set the object in the pool and buffer
 		var err error
 		fastPathRemaining, err = p.setPoolAndBuffer(obj, fastPathRemaining)
 		if err != nil {
