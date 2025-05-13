@@ -5,7 +5,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml)
 
-A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios. PoolX provides fine-grained control over object lifecycle, memory management, and performance characteristics.
+A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios. 
 
 > **Documentation**:
 >
