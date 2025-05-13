@@ -159,95 +159,11 @@ config := NewPoolConfigBuilder[Example]().
     Build()
 ```
 
-## Preset Configurations
-
-PoolX comes with several preset configurations optimized for different use cases:
-
-### High Throughput
-
-```go
-config := configs.CreateHighThroughputConfig()
-```
-
-Optimized for maximum throughput with:
-
-- Large initial capacity (1000 objects)
-- Aggressive growth strategy
-- Fast path with high fill aggressiveness
-- Bulk allocation strategy
-
-### Memory Constrained
-
-```go
-config := configs.CreateMemoryConstrainedConfig()
-```
-
-Optimized for memory-constrained systems with:
-
-- Small initial capacity (16 objects)
-- Conservative growth strategy
-- Efficient memory usage
-- Strict capacity limits
-
-### Low Latency
-
-```go
-config := configs.CreateLowLatencyConfig()
-```
-
-Optimized for low latency with:
-
-- Large initial capacity (512 objects)
-- Fast growth response
-- High fast path fill rate
-- Quick shrink response
-
-### Batch Processing
-
-```go
-config := configs.CreateBatchProcessingConfig()
-```
-
-Optimized for batch workloads with:
-
-- Balanced initial capacity (128 objects)
-- Moderate growth rates
-- Efficient batch handling
-- Stable shrink behavior
-
-### Real-Time
-
-```go
-config := configs.CreateRealTimeConfig()
-```
-
-Optimized for real-time systems with:
-
-- Very large initial capacity (1024 objects)
-- Ultra-fast growth response
-- Maximum fast path fill rate
-- Minimal shrink impact
-
-### Balanced
-
-```go
-config := configs.CreateBalancedConfig()
-```
-
-General-purpose configuration with:
-
-- Moderate initial capacity (192 objects)
-- Balanced growth and shrink rates
-- Good all-around performance
-- Stable behavior
-
 ## Important Notes
 
 1. **Type Safety**: Only pointers can be stored in the pool
 2. **Default Behavior**: Ring buffer operates in blocking mode by default
 3. **Performance**: Resizing operations are expensive - tune growth/shrink parameters carefully
-4. **Configuration**: Use preset configurations for common use cases or create custom ones for specific needs
-5. **Memory Management**: Consider using memory-constrained config for systems with limited resources
 
 ## Contributing
 
