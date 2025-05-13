@@ -3,7 +3,7 @@ package configs
 import (
 	"time"
 
-	"github.com/AlexsanderHamir/PoolX/pool"
+	"github.com/AlexsanderHamir/PoolX/v2/pool"
 )
 
 type Example struct {

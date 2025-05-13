@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/PoolX/code_examples/configs"
-	"github.com/AlexsanderHamir/PoolX/pool"
+	"github.com/AlexsanderHamir/PoolX/v2/code_examples/configs"
+	"github.com/AlexsanderHamir/PoolX/v2/pool"
 )
 
 func performWorkload(obj *configs.Example) {

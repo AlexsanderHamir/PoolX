@@ -1,4 +1,4 @@
-module github.com/AlexsanderHamir/PoolX
+module github.com/AlexsanderHamir/PoolX/v2
 
 go 1.23.4
 

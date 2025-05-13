@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AlexsanderHamir/PoolX/pool"
+	"github.com/AlexsanderHamir/PoolX/v2/pool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

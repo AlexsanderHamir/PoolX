@@ -1,9 +1,10 @@
 package test
 
 import (
-	"github.com/AlexsanderHamir/PoolX/pool"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/AlexsanderHamir/PoolX/v2/pool"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPoolConcurrency(t *testing.T) {
