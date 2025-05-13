@@ -7,6 +7,11 @@
 
 A highly configurable object pool implementation designed to control object creation under high-concurrency scenarios. PoolX provides fine-grained control over object lifecycle, memory management, and performance characteristics.
 
+> **Documentation**:
+>
+> - **API Reference**: For detailed API reference and interface definitions, see [pool/api.go](../pool/api.go)
+> - **Technical Details**: For in-depth technical explanations and implementation details, see [docs/technical_explanations/](technical_explanations/)
+
 ![Flow](../assets/flow.png)
 
 ## Installation
@@ -46,7 +51,7 @@ cleaner := func(obj *Example) {
 }
 
 // If provided, this function replaces the allocator. Useful when allocation is expensive.
-// The example below performs a shallow copy. 
+// The example below performs a shallow copy.
 // If the struct contains reference types, you'll need to manually reinitialize them as needed,
 // since all instances will share the same underlying references.
 cloner := func(obj *configs.Example) *configs.Example {
