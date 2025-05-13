@@ -15,42 +15,40 @@ type Example struct {
 func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 	poolConfig, err := pool.NewPoolConfigBuilder[*Example]().
 		// Basic pool settings:
-		// - Initial capacity: 40000 objects (common for high-throughput systems)
-		// - Max capacity: 80000 objects (reasonable upper limit for most systems)
-		// - Verbose logging enabled for monitoring
+		// - Initial capacity: 1000 objects
+		// - Max capacity: 1000 objects
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(1000, 2000, true).
+		SetPoolBasicConfigs(1000, 1000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
-		// - 2 second general timeout for both operations
+		// - 3 second general timeout for both operations
 		SetRingBufferBasicConfigs(true, 0, 0, time.Second*3).
 		// Ring buffer growth strategy:
-		// - Setting big growth and  to 1(100%) makes the pool grow once to 80k. (which is the hard limit)
-		// - Controlled growth is 0.01(1%) of the current capacity (40k + 400 = 40400) (won't be used, since we hit the hard limit at the threshold)
+		// - Big growth threshold: 1 (100% of current capacity)
+		// - Big growth rate: 1 (100% growth)
+		// - Controlled growth rate: 0.01 (1% of current capacity)
 		SetRingBufferGrowthConfigs(1, 1, 0.01).
 		// Ring buffer shrink strategy:
 		// - Check every 5 seconds
 		// - Consider idle after 10 seconds from last get call
-		// - 2 second cooldown between shrinks
 		// - Minimum 3 idle checks before shrinking
-		// - 5 stable underutilization rounds
 		// - Minimum allowed to shrink to: 50 objects
 		// - Maximum allowed consecutive shrinks: 5
 		// - Shrink when utilization below 40%
 		// - Shrink by 30% when triggered
 		SetRingBufferShrinkConfigs(time.Second*5, time.Second*10, 3, 50, 5, 40, 30).
 		// Fast path (L1 cache) settings:
-		// - Initial size: 256 objects
-		// - Grow after 1 growth events
-		// - Shrink after 1 shrink events
-		// - Fill aggressiveness 100%
-		// - Refill when 10% empty
-		SetFastPathBasicConfigs(256, 1, 1, 100, 3).
+		// - Initial size: 200 objects
+		// - Grow after 1 growth event
+		// - Shrink after 1 shrink event
+		// - Fill aggressiveness: 100%
+		// - Refill when 3% empty
+		SetFastPathBasicConfigs(200, 1, 1, 100, 3).
 		// Fast path growth strategy:
-		// - Exponential growth until 100x(1000%) of initial capacity (64 * 100 = 6400)
-		// - controlled growth rate: currentCapacity + (64 * 5(500%) = 320)
-		// - 100x big growth rate: currentCapacity + (64 * 100(1000%) = 6400)
+		// - Exponential growth threshold: 100 (100x initial capacity)
+		// - Controlled growth rate: 3 (300% of current capacity)
+		// - Big growth rate: 0.5 (50% of current capacity)
 		SetFastPathGrowthConfigs(100, 3, 0.5).
 		// Fast path shrink strategy:
 		// - Shrink by 40% when triggered
@@ -59,7 +57,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// Allocation strategy:
 		// - 100% allocation percent
 		// - 100 objects per allocation
-		SetAllocationStrategy(100, 1000).
+		SetAllocationStrategy(100, 100).
 		Build()
 	if err != nil {
 		panic(err)

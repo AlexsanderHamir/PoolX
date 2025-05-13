@@ -2,7 +2,6 @@ package code_examples
 
 import (
 	"math/rand"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -17,10 +16,10 @@ func performWorkload(obj *configs.Example) {
 		obj.Data = append(obj.Data, byte(rand.Intn(256)))
 	}
 	// Simulate some I/O or network delay
-	time.Sleep(time.Microsecond * 50)
+	time.Sleep(time.Microsecond * 100)
 }
 
-func BenchmarkPoolX(b *testing.B) {
+func BenchmarkPoolXLowContention(b *testing.B) {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
 		config,
@@ -70,7 +69,7 @@ func BenchmarkPoolX(b *testing.B) {
 
 }
 
-func BenchmarkSyncPool(b *testing.B) {
+func BenchmarkSyncPoolLowContention(b *testing.B) {
 	var syncPool = sync.Pool{
 		New: func() any {
 			return &configs.Example{
@@ -88,9 +87,13 @@ func BenchmarkSyncPool(b *testing.B) {
 
 			obj.ID = rand.Intn(1000)
 			obj.Name = "test"
-			obj.Data = append(obj.Data[:0], byte(rand.Intn(256)))
+			obj.Data = append(obj.Data, byte(rand.Intn(256)))
 
 			performWorkload(obj)
+
+			obj.ID = 0
+			obj.Name = ""
+			obj.Data = obj.Data[:0]
 
 			syncPool.Put(obj)
 		}
@@ -140,6 +143,7 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 				obj.Name = "test"
 				obj.Data = append(obj.Data, byte(rand.Intn(256)))
 				performWorkload(obj)
+
 				if err := pool.Put(obj); err != nil {
 					panic(err)
 				}
@@ -153,7 +157,6 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 }
 
 func BenchmarkSyncPoolHighContention(b *testing.B) {
-	runtime.SetMutexProfileFraction(1)
 	var syncPool = sync.Pool{
 		New: func() any {
 			return &configs.Example{
@@ -177,9 +180,14 @@ func BenchmarkSyncPoolHighContention(b *testing.B) {
 
 				obj.ID = rand.Intn(1000)
 				obj.Name = "test"
-				obj.Data = append(obj.Data[:0], byte(rand.Intn(256)))
+				obj.Data = append(obj.Data, byte(rand.Intn(256)))
 
 				performWorkload(obj)
+
+				// Clean up before returning
+				obj.ID = 0
+				obj.Name = ""
+				obj.Data = obj.Data[:0]
 
 				syncPool.Put(obj)
 			}
