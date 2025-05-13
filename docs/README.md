@@ -45,9 +45,10 @@ cleaner := func(obj *Example) {
     obj.Data = nil
 }
 
-// when provided it runs on the place of the allocator, in case your allocator is expensive
-// The example below does shallow copy, in case where this struct holds reference types
-// you will need to initialize them when necessary, because all instances will share them.
+// If provided, this function replaces the allocator. Useful when allocation is expensive.
+// The example below performs a shallow copy. 
+// If the struct contains reference types, you'll need to manually reinitialize them as needed,
+// since all instances will share the same underlying references.
 cloner := func(obj *configs.Example) *configs.Example {
 			dst := *obj
 			return &dst
