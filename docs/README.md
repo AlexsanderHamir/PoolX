@@ -1,6 +1,6 @@
 # PoolX
 
-[![GoDoc](https://pkg.go.dev/badge/github.com/username/project)](https://pkg.go.dev/github.com/AlexsanderHamir/PoolX)
+[![GoDoc](https://pkg.go.dev/badge/github.com/username/project)](https://pkg.go.dev/github.com/AlexsanderHamir/PoolX/v2)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexsanderHamir/PoolX)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml)
@@ -19,14 +19,14 @@ A highly configurable object pool implementation designed to control object crea
 ## Installation
 
 ```bash
-go get github.com/AlexsanderHamir/PoolX
+go get github.com/AlexsanderHamir/PoolX/v2
 ```
 
 ## Quick Start
 
 ```go
 import (
-    "github.com/AlexsanderHamir/PoolX/pool/code_examples/configs"
+    "github.com/AlexsanderHamir/PoolX/v2/pool/code_examples/configs"
     "time"
 )
 
