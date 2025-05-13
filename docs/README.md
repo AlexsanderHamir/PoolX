@@ -11,6 +11,7 @@ A highly configurable object pool implementation designed to control object crea
 >
 > - **API Reference**: For detailed API reference and interface definitions, see [pool/api.go](../pool/api.go)
 > - **Technical Details**: For in-depth technical explanations and implementation details, see [docs/technical_explanations/](technical_explanations/)
+> - **Design**: For design decisions, architecture overview, and component interactions, see [docs/design_docs.md](design_docs.md)
 
 ![Flow](../assets/flow.png)
 
