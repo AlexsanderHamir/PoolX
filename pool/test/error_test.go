@@ -293,13 +293,13 @@ func TestResourceCleanup(t *testing.T) {
 		obj.Value = 0
 	}
 
-	cloneTemplate := func(obj *TestObject) *TestObject {
+	cloner := func(obj *TestObject) *TestObject {
 		created.Add(1)
 		dst := *obj
 		return &dst
 	}
 
-	p, err := pool.NewPool(config, allocator, cleaner, cloneTemplate)
+	p, err := pool.NewPool(config, allocator, cleaner, cloner)
 	require.NoError(t, err)
 
 	objNum := 100
@@ -318,7 +318,7 @@ func TestResourceCleanup(t *testing.T) {
 	err = p.Close()
 	require.NoError(t, err)
 
-	validation := 2
+	validation := 3
 	movedToL1 := 64
 	assert.Equal(t, int64(objNum+validation), created.Load())
 	assert.Equal(t, int64(objNum+movedToL1), cleaned.Load())
