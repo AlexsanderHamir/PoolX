@@ -96,18 +96,6 @@ Same story: a fast `select` on a channel still involves runtime machinery and at
 
 ---
 
-## Why Not Just Use Channels?
-
-| Feature                | `chan`         | Custom Atomic Structure                 |
-| ---------------------- | -------------- | --------------------------------------- |
-| Safety                 | ✅ Safe        | ❌ Must handle race conditions manually |
-| Blocking support       | ✅ Built-in    | ❌ Requires implementation              |
-| Latency under pressure | ❌ High        | ✅ Lower (with good design)             |
-| Fast-path performance  | ❌ Can degrade | ✅ Optimized with CAS                   |
-| Customizability        | ❌ Limited     | ✅ Fully customizable                   |
-
----
-
 ## Summary
 
 Using channels on the fastpath was a bad technical decision, after everything was optimized, what was supposed to be the fastpath was actually the only bottleneck.

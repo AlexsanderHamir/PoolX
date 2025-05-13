@@ -1,6 +1,6 @@
 ## Cloner Function
 
-To optimize object creation, the cloner function is used instead of the allocator. The cloner performs a shallow copy of the object, which is more efficient than repeatedly calling the allocator. However, if the object contains reference types, all instances will, by default, share the same reference. In such cases, you'll need to initialize the fields that need to be independent—this is extreme late initialization.
+To optimize object creation, the cloner function is used instead of the allocator(if provided). The cloner performs a shallow copy of the object, which is more efficient than repeatedly calling the allocator. However, if the object contains reference types, all instances will, by default, share the same reference. In such cases, you'll need to initialize the fields that need to be independent—this is extreme late initialization.
 
 If your struct doesn’t contain any reference types, you'll enjoy the full performance benefits without requiring additional initialization later on.
 

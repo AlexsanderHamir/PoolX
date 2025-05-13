@@ -28,7 +28,7 @@ The pool manages the fast path and the ring buffer, responsible for growth, shri
 
 * **Adaptive Growth**: Supports both exponential and fixed growth strategies.
 * **Intelligent Shrinking**: Configurable shrink behavior based on utilization.
-* **Fast Path Optimization**: L1 cache for high-performance access.
+* **Fast Path Optimization**: Channel for high-performance access.
 * **Memory Management**: Configurable hard limits and capacity controls.
 
 ## Configuration Options

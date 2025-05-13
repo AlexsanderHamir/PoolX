@@ -2,9 +2,9 @@
 
 ### Explanation
 
-Prior to this change, when the function was called, multiple goroutines would attempt to acquire the main lock, effectively queuing up one after the other. This caused contention, as several goroutines tried to refill or grow the pool, but only the first one would succeed in doing so, while the rest were blocked. In such cases, the initial check inside `handleRefillScenarios()` would return because the L1 cache still had objects. The issue was the unnecessary contention for the lock.
+Previously, when the refill logic was triggered, multiple goroutines would attempt to acquire the main lock, lining up one after another. This led to contention, as several goroutines tried to refill or grow the pool concurrently—but only the first would succeed. The rest, upon acquiring the lock, would quickly return after observing that the pool had been refilled, making their attempts redundant and inefficient.
 
-Now, only one goroutine attempts to refill, while the others block and wait for the refill process to complete.
+With the updated design, only **one** goroutine performs the refill, while the others **wait** for the refill to complete. This removes contention on the refill path and eliminates redundant refill attempts.
 
 ### Code
 
@@ -13,26 +13,26 @@ func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
 	select {
 	case p.refillSemaphore <- struct{}{}:
 		defer func() {
-			// Broadcast to unblock waiting goroutines after refill is done
+			// Notify all waiting goroutines once the refill is complete
 			p.refillCond.Broadcast()
-			// Release the semaphore once done
+			// Release the semaphore
 			<-p.refillSemaphore
 		}()
-		// Handle refill scenarios and return the result
+		// Perform the refill logic and return the result
 		obj, canProceed := p.handleRefillScenarios()
 		return obj, canProceed
 	default:
-		// Block until a refill is done if the semaphore is already taken
+		// Wait for the ongoing refill to complete
 		p.refillMu.Lock()
 		p.refillCond.Wait()
 		p.refillMu.Unlock()
 
-		// Try to get from L1 cache after waiting
+		// Retry from the L1 cache after waiting
 		if obj, found := p.tryGetFromL1(false); found {
 			return obj, true
 		}
 
-		// Return zero if no object is found
+		// No object was available even after refill
 		return zero, false
 	}
 }
@@ -40,10 +40,10 @@ func (p *Pool[T]) tryRefillAndGetL1() (zero T, canProceed bool) {
 
 ---
 
-### Key Improvements:
+### Key Improvements
 
-* Only one goroutine will attempt to refill the pool, while the others will wait.
-* The `Broadcast` ensures that waiting goroutines wake up after the refill process is done.
-* Semaphore is used to ensure that only one goroutine acquires the lock for refilling at any given time.
+* Only **one** goroutine is allowed to initiate the refill; others wait for the result.
+* `Broadcast` wakes up all waiting goroutines once the refill is completed.
+* A **semaphore** ensures mutual exclusion for the refill path, without blocking unnecessarily on a mutex.
 
-This revision improves efficiency by minimizing contention and ensures that only one goroutine refills the pool, reducing unnecessary operations.
+This update significantly reduces contention by preventing multiple redundant refill attempts, improving throughput and making object access more efficient under high concurrency.

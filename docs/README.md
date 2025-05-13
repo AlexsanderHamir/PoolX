@@ -19,43 +19,20 @@ go get github.com/AlexsanderHamir/PoolX
 
 ```go
 import (
-    "github.com/AlexsanderHamir/PoolX/src/pool"
+    "github.com/AlexsanderHamir/PoolX/pool/code_examples/configs"
     "time"
 )
-
-// Create a new pool configuration
-config, err := pool.NewPoolConfigBuilder().
-    // Basic pool configuration
-    SetPoolBasicConfigs(128, 5000, false, true, true).
-    // Ring buffer configuration
-    SetRingBufferBasicConfigs(true, time.Second*5, time.Second*5, time.Second*5).
-    SetRingBufferGrowthConfigs(150.0, 0.85, 1.2).
-    SetRingBufferShrinkConfigs(
-        time.Second*2,    // check interval
-        time.Second*5,    // idle threshold
-        time.Second*1,    // shrink cooldown
-        2,                // min idle before shrink
-        5,                // stable underutilization rounds
-        15,               // min capacity
-        3,                // max consecutive shrinks
-        0.3,              // min utilization before shrink
-        0.5,              // shrink percent
-    ).
-    // Fast path (L1 cache) configuration
-    SetFastPathBasicConfigs(128, 4, 4, 1.0, 0.20).
-    SetFastPathGrowthConfigs(100.0, 1.5, 0.85).
-    SetFastPathShrinkConfigs(0.7, 5).
-    Build()
-
-if err != nil {
-    panic(err)
-}
 
 // Define your object type
 type Example struct {
     ID   int
     Name string
+    Data []byte
 }
+
+// Create a new pool configuration using one of the preset configs
+// Don't use this in production, use it as inspiration.
+config := configs.CreateHighThroughputConfig()
 
 // Create allocator and cleaner functions
 allocator := func() *Example {
@@ -65,10 +42,19 @@ allocator := func() *Example {
 cleaner := func(obj *Example) {
     obj.ID = 0
     obj.Name = ""
+    obj.Data = nil
+}
+
+// when provided it runs on the place of the allocator, in case your allocator is expensive
+// The example below does shallow copy, in case where this struct holds reference types
+// you will need to initialize them when necessary, because all instances will share them.
+cloner := func(obj *configs.Example) *configs.Example {
+			dst := *obj
+			return &dst
 }
 
 // Create and use the pool
-pool, err := pool.NewPool(config, allocator, cleaner)
+pool, err := pool.NewPool(config, allocator, cleaner, cloner)
 if err != nil {
     panic(err)
 }
@@ -86,95 +72,174 @@ if err != nil {
   - Independent growth and shrink policies
   - Configurable event triggers for resizing
   - Automatic refill based on utilization
+- **Allocation Strategy**: Controls how objects are allocated in bulk
+  - Configurable allocation percentage
+  - Batch size control for efficient allocation
 
 ### 2. Configuration Options
 
-#### Pool Settings
+PoolX provides extensive configuration options through a fluent builder interface. Here are the main configuration categories:
 
-- Initial capacity and hard limits
-- Channel growth control
+#### Basic Pool Configuration
+
+- **Initial Capacity**: Starting size of both ring buffer and fast path
+- **Hard Limit**: Maximum number of objects the pool can grow to
+- **Channel Growth**: Enable/disable dynamic growth of the fast path channel
 
 #### Ring Buffer Configuration
 
-- Blocking/non-blocking operations
-- Read/write timeouts
-- Growth parameters:
-  - Exponential threshold factor
-  - Growth percentage
-  - Fixed growth factor
-- Shrink parameters:
-  - Check intervals
-  - Idle thresholds
-  - Utilization requirements
-  - Capacity limits
+- **Blocking Mode**: Control whether operations block when buffer is full/empty
+- **Timeouts**: Configure read/write operation timeouts
+- **Growth Strategy**:
+  - Threshold Factor: When to switch from exponential to controlled growth
+  - Big Growth Factor: Growth rate below threshold (e.g., 0.75 for 75% growth)
+  - Controlled Growth Factor: Fixed step size after threshold
+- **Shrink Strategy**:
+  - Check Interval: Time between shrink eligibility checks
+  - Shrink Cooldown: Minimum time between shrink operations
+  - Utilization Threshold: Minimum utilization before shrinking
+  - Stable Rounds: Required stable underutilization rounds
+  - Shrink Percent: Percentage reduction per shrink
+  - Min Capacity: Minimum pool size after shrinking
+  - Max Consecutive Shrinks: Limit on back-to-back shrinks
 
-#### Fast Path Configuration
+#### Fast Path (L1 Cache) Configuration
 
-- Initial size and capacity limits
-- Growth triggers and rates
-- Shrink policies
-- Refill behavior
-- Channel growth control
+- **Initial Size**: Starting capacity of the fast path buffer
+- **Growth Events**: Number of events before fast path grows
+- **Shrink Events**: Number of events before fast path shrinks
+- **Fill Aggressiveness**: Initial fill percentage (0-100)
+- **Refill Percent**: Threshold for refilling the fast path
+- **Growth Strategy**: Similar to ring buffer with separate parameters
+- **Shrink Strategy**: Configurable shrink behavior with aggressiveness levels
 
-For a complete list of all available configuration options and their detailed descriptions, please check the [API file](../pool/api.go) in the repository.
+#### Allocation Strategy
 
-## Common Use Cases
+- **Allocation Percent**: Percentage of objects to preallocate
+- **Allocation Amount**: Objects to create per request
 
-### High-Concurrency Web Server
+#### Aggressiveness Levels
+
+PoolX provides predefined shrink aggressiveness levels:
+
+1. **Conservative**: Minimal shrinking, prioritizes performance
+2. **Balanced**: Default setting, balanced approach
+3. **Aggressive**: More aggressive shrinking
+4. **Very Aggressive**: Heavy shrinking
+5. **Extreme**: Maximum shrinking
+
+Example configuration:
 
 ```go
-config, _ := pool.NewPoolConfigBuilder().
-    SetPoolBasicConfigs(1000, 10000, false, true, true).
-    SetRingBufferBasicConfigs(true, time.Second*5, time.Second*5, time.Second*5).
-    SetRingBufferGrowthConfigs(200.0, 0.85, 1.2).
+config := NewPoolConfigBuilder[Example]().
+    SetPoolBasicConfigs(1000, 10000, true).
+    SetRingBufferBasicConfigs(true, 100*time.Millisecond, 100*time.Millisecond, 0).
+    SetRingBufferGrowthConfigs(3000, 0.75, 0.5).
     SetRingBufferShrinkConfigs(
-        time.Second*5,
-        time.Second*30,
-        time.Second*10,
-        3,
-        1000,
-        5,
-        5,
-        0.3,
-        0.5,
+        5*time.Second,    // check interval
+        1*time.Second,    // cooldown
+        3,                // stable rounds
+        32,               // min capacity
+        3,                // max consecutive shrinks
+        20,               // min utilization
+        25,               // shrink percent
     ).
-    SetFastPathBasicConfigs(256, 4, 4, 0.8, 0.30).
-    SetFastPathGrowthConfigs(150.0, 1.5, 0.85).
-    SetFastPathShrinkConfigs(0.7, 10).
+    SetFastPathBasicConfigs(64, 3, 3, 80, 20).
+    SetFastPathGrowthConfigs(3000, 0.75, 0.5).
+    SetFastPathShrinkConfigs(25, 32).
+    SetAllocationStrategy(80, 10).
     Build()
 ```
 
-### Background Job Processor
+## Preset Configurations
+
+PoolX comes with several preset configurations optimized for different use cases:
+
+### High Throughput
 
 ```go
-config, _ := pool.NewPoolConfigBuilder().
-    SetPoolBasicConfigs(100, 1000, false, true, true).
-    SetRingBufferBasicConfigs(true, time.Second*10, time.Second*10, time.Second*10).
-    SetRingBufferGrowthConfigs(150.0, 0.50, 1.1).
-    SetRingBufferShrinkConfigs(
-        time.Second*10,
-        time.Second*60,
-        time.Second*20,
-        5,
-        100,
-        3,
-        10,
-        0.2,
-        0.7,
-    ).
-    SetFastPathBasicConfigs(64, 2, 2, 0.5, 0.50).
-    SetFastPathGrowthConfigs(100.0, 1.2, 0.90).
-    SetFastPathShrinkConfigs(0.5, 5).
-    Build()
+config := configs.CreateHighThroughputConfig()
 ```
+
+Optimized for maximum throughput with:
+
+- Large initial capacity (1000 objects)
+- Aggressive growth strategy
+- Fast path with high fill aggressiveness
+- Bulk allocation strategy
+
+### Memory Constrained
+
+```go
+config := configs.CreateMemoryConstrainedConfig()
+```
+
+Optimized for memory-constrained systems with:
+
+- Small initial capacity (16 objects)
+- Conservative growth strategy
+- Efficient memory usage
+- Strict capacity limits
+
+### Low Latency
+
+```go
+config := configs.CreateLowLatencyConfig()
+```
+
+Optimized for low latency with:
+
+- Large initial capacity (512 objects)
+- Fast growth response
+- High fast path fill rate
+- Quick shrink response
+
+### Batch Processing
+
+```go
+config := configs.CreateBatchProcessingConfig()
+```
+
+Optimized for batch workloads with:
+
+- Balanced initial capacity (128 objects)
+- Moderate growth rates
+- Efficient batch handling
+- Stable shrink behavior
+
+### Real-Time
+
+```go
+config := configs.CreateRealTimeConfig()
+```
+
+Optimized for real-time systems with:
+
+- Very large initial capacity (1024 objects)
+- Ultra-fast growth response
+- Maximum fast path fill rate
+- Minimal shrink impact
+
+### Balanced
+
+```go
+config := configs.CreateBalancedConfig()
+```
+
+General-purpose configuration with:
+
+- Moderate initial capacity (192 objects)
+- Balanced growth and shrink rates
+- Good all-around performance
+- Stable behavior
 
 ## Important Notes
 
 1. **Type Safety**: Only pointers can be stored in the pool
-2. **Default Behavior**: Ring buffer operates in non-blocking mode by default
+2. **Default Behavior**: Ring buffer operates in blocking mode by default
 3. **Performance**: Resizing operations are expensive - tune growth/shrink parameters carefully
-4. **Configuration**: Use `EnforceCustomConfig()` when you need precise control over all fields of the shrinking struct.
-5. **Aggressiveness Levels**: Use `SetShrinkAggressiveness()` for preset configurations (levels 1-5)
+4. **Configuration**: Use preset configurations for common use cases or create custom ones for specific needs
+5. **Memory Management**: Consider using memory-constrained config for systems with limited resources
 
 ## Contributing
 
