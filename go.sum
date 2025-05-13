@@ -1,9 +1,3 @@
-github.com/AlexsanderHamir/ringbuffer v0.2.0 h1:wCAsKt2pNavBBp1ysK7YMyfLTEdd6SiRMpPbtiqHde8=
-github.com/AlexsanderHamir/ringbuffer v0.2.0/go.mod h1:UpBAfNTdQ9cjARbBdiMEOJwkQFHCmgjR83L++Q0Y2UI=
-github.com/AlexsanderHamir/ringbuffer v0.3.0 h1:qyAObsrcxdNXk/3mh8wj016nfrAojbSgr3dL/9OIees=
-github.com/AlexsanderHamir/ringbuffer v0.3.0/go.mod h1:UpBAfNTdQ9cjARbBdiMEOJwkQFHCmgjR83L++Q0Y2UI=
-github.com/AlexsanderHamir/ringbuffer v0.3.1 h1:Jnn6DMMELz+SHyGpPun0bBDDMQb44GXEUUWVNG0AT7Y=
-github.com/AlexsanderHamir/ringbuffer v0.3.1/go.mod h1:UpBAfNTdQ9cjARbBdiMEOJwkQFHCmgjR83L++Q0Y2UI=
 github.com/AlexsanderHamir/ringbuffer v0.3.2 h1:qPpfbucr6OCTn/LFx29CnunEYK8BzULyNyYmIGcIwnU=
 github.com/AlexsanderHamir/ringbuffer v0.3.2/go.mod h1:UpBAfNTdQ9cjARbBdiMEOJwkQFHCmgjR83L++Q0Y2UI=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
