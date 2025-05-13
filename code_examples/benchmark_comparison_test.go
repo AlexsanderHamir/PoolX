@@ -157,8 +157,6 @@ func BenchmarkSyncPoolHighContention(b *testing.B) {
 	var syncPool = sync.Pool{
 		New: func() any {
 			return &configs.Example{
-				ID:   0,
-				Name: "",
 				Data: make([]byte, 1024),
 			}
 		},
