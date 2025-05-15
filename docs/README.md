@@ -15,8 +15,8 @@ PoolX is a generic object pool implementation for Go that provides a range of co
 ## PoolX vs sync.Pool
 
 ```
-BenchmarkSyncPoolHighContention         734095              1659 ns/op               4 B/op          0 allocs/op
-BenchmarkPoolXHighContention-8          605977              2023 ns/op              22 B/op          0 allocs/op
+BenchmarkSyncPoolHighContention         748899              1598 ns/op               4 B/op          0 allocs/op
+BenchmarkPoolXHighContention            605977              2023 ns/op              22 B/op          0 allocs/op
 ```
 
 
