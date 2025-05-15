@@ -15,9 +15,8 @@ func RunBasicExample() error {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
 		config,
-		func() *configs.Example { return &configs.Example{ID: 23, Name: "test"} },
+		func() *configs.Example { return &configs.Example{Name: "test"} },
 		func(obj *configs.Example) {
-			obj.ID = 0
 			obj.Name = ""
 		},
 		func(obj *configs.Example) *configs.Example {
@@ -55,7 +54,6 @@ func RunBasicExample() error {
 						cancel()
 						return
 					}
-					obj.ID = workerID*objectsPerWorker + j
 					obj.Name = fmt.Sprintf("Worker-%d-Object-%d", workerID, j)
 
 					time.Sleep(time.Duration(rand.Float64() * float64(time.Millisecond*400)))

@@ -11,6 +11,7 @@ import (
 )
 
 func performWorkload(obj *configs.Example) {
+	obj.Name = "test"
 	// Simulate CPU-intensive work
 	for range 1000 {
 		obj.Data = append(obj.Data, byte(rand.Intn(256)))
@@ -31,7 +32,6 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 			}
 		},
 		func(obj *configs.Example) {
-			obj.ID = 0
 			obj.Name = ""
 			obj.Data = obj.Data[:0]
 		},
@@ -45,38 +45,22 @@ func BenchmarkPoolXHighContention(b *testing.B) {
 	}
 	defer pool.Close()
 
-	const numGoroutines = 1000
-	workpergoroutine := b.N / numGoroutines
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-
-	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-
-			for range workpergoroutine {
-				obj, err := pool.Get()
-				if err != nil {
-					panic(err)
-				}
-				obj.ID = rand.Intn(1000)
-				obj.Name = "test"
-				obj.Data = append(obj.Data, byte(rand.Intn(256)))
-
-				performWorkload(obj)
-
-				if err := pool.Put(obj); err != nil {
-					panic(err)
-				}
-			}
-		}()
-	}
-
+	b.SetParallelism(1000)
 	b.ResetTimer()
-	close(start)
-	wg.Wait()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			obj, err := pool.Get()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			performWorkload(obj)
+
+			if err := pool.Put(obj); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 // go test -run=^$ -bench=^BenchmarkSyncPoolHighContention$ -benchmem -cpuprofile=cpu.out -memprofile=mem.out -trace=trace.out -mutexprofile=mutex.out
@@ -90,37 +74,18 @@ func BenchmarkSyncPoolHighContention(b *testing.B) {
 		},
 	}
 
-	const numGoroutines = 1000
-	workpergoroutine := b.N / numGoroutines
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-
-	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-
-			for range workpergoroutine {
-				obj := syncPool.Get().(*configs.Example)
-
-				obj.ID = rand.Intn(1000)
-				obj.Name = "test"
-				obj.Data = append(obj.Data, byte(rand.Intn(256)))
-
-				performWorkload(obj)
-
-				// Clean up before returning
-				obj.ID = 0
-				obj.Name = ""
-				obj.Data = obj.Data[:0]
-
-				syncPool.Put(obj)
-			}
-		}()
-	}
-
+	b.SetParallelism(1000)
 	b.ResetTimer()
-	close(start)
-	wg.Wait()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			obj := syncPool.Get().(*configs.Example)
+
+			performWorkload(obj)
+
+			obj.Name = ""
+			obj.Data = obj.Data[:0]
+
+			syncPool.Put(obj)
+		}
+	})
 }

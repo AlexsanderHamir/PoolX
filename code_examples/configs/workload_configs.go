@@ -7,7 +7,6 @@ import (
 )
 
 type Example struct {
-	ID   int
 	Name string
 	Data []byte
 }
@@ -18,7 +17,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// - Initial capacity: 1000 objects
 		// - Max capacity: 1000 objects
 		// - Channel growth enabled for dynamic resizing
-		SetPoolBasicConfigs(1000, 1000, true).
+		SetPoolBasicConfigs(20000, 20000, true).
 		// Ring buffer settings:
 		// - Blocking mode enabled for better throughput
 		// - No read/write specific timeouts (0)
@@ -44,7 +43,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// - Shrink after 1 shrink event
 		// - Fill aggressiveness: 100%
 		// - Refill when 3% empty
-		SetFastPathBasicConfigs(64, 1, 1, 100, 3).
+		SetFastPathBasicConfigs(512, 1, 1, 100, 3).
 		// Fast path growth strategy:
 		// - Exponential growth threshold: 100 (100x initial capacity)
 		// - Controlled growth rate: 3 (300% of current capacity)
@@ -57,7 +56,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// Allocation strategy:
 		// - 100% allocation percent
 		// - 100 objects per allocation
-		SetAllocationStrategy(100, 20).
+		SetAllocationStrategy(100, 50).
 		Build()
 	if err != nil {
 		panic(err)
