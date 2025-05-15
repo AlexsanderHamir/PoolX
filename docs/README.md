@@ -10,6 +10,8 @@
 ![Version](https://img.shields.io/github/v/tag/AlexsanderHamir/PoolX?sort=semver)
 
 
+PoolX is a generic object pool implementation for Go that provides a range of configurations to control object creation, destruction, and reuse.
+
 ## PoolX vs sync.Pool
 
 High contention benchmark results comparing PoolX with sync.Pool:
@@ -19,7 +21,6 @@ BenchmarkSyncPoolHighContention         734095              1659 ns/op          
 BenchmarkPoolXHighContention            615840              2027 ns/op               6 B/op          0 allocs/op
 ```
 
-PoolX is a generic object pool implementation for Go that provides a range of configurations to control object creation, destruction, and reuse.
 
 > **Documentation**:
 >
