@@ -46,3 +46,4 @@ src/pool/usefulcommands
 *.log
 
 tasks.md
+profiling_commands.md
