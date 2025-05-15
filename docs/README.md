@@ -4,6 +4,15 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml)
 
+## PoolX vs sync.Pool
+
+High contention benchmark results comparing PoolX with sync.Pool:
+
+```
+BenchmarkSyncPoolHighContention         734095              1659 ns/op               4 B/op          0 allocs/op
+BenchmarkPoolXHighContention            615840              2027 ns/op               6 B/op          0 allocs/op
+```
+
 PoolX is a high-performance, generic object pool implementation for Go that provides efficient object reuse with advanced features like two-level caching, dynamic resizing, and detailed statistics tracking.
 
 > **Documentation**:
