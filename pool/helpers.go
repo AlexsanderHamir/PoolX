@@ -1,11 +1,12 @@
 package pool
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/AlexsanderHamir/ringbuffer/errors"
+	ringbufferInternalErrs "github.com/AlexsanderHamir/ringbuffer/errors"
 )
 
 // shrinkDefaultsMap returns the default shrink configuration map based on aggressiveness levels
@@ -105,7 +106,7 @@ func (p *Pool[T]) getItemsToMove(fillTarget int) ([]T, []T, error) {
 	toMove := min(fillTarget, currentObjsAvailable)
 
 	part1, part2, err := p.pool.GetNView(toMove)
-	if err != nil && err != errors.ErrIsEmpty {
+	if err != nil && err != ringbufferInternalErrs.ErrIsEmpty {
 		return nil, nil, errRingBufferFailed
 	}
 
@@ -404,4 +405,23 @@ func checkConfigForNil[T any](config *PoolConfig[T]) error {
 	}
 
 	return nil
+}
+
+func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
+	var zero T
+	if errors.Is(refillError, errRingBufferFailed) || errors.Is(refillError, errNilObject) {
+		return zero, false
+	}
+
+	return zero, true
+}
+
+func (p *Pool[T]) IsShrunk() bool {
+	return p.stats.currentCapacity < p.config.initialCapacity
+}
+
+func (p *Pool[T]) IsGrowth() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.stats.currentCapacity > p.config.initialCapacity
 }
