@@ -1,8 +1,15 @@
 # PoolX
 
+![Build](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/AlexsanderHamir/PoolX/badge.svg?branch=main)](https://coveralls.io/github/AlexsanderHamir/PoolX?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexsanderHamir/PoolX)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/AlexsanderHamir/PoolX.svg)](https://pkg.go.dev/github.com/AlexsanderHamir/PoolX)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Issues](https://img.shields.io/github/issues/AlexsanderHamir/PoolX)
+![Last Commit](https://img.shields.io/github/last-commit/AlexsanderHamir/PoolX)
+![Code Size](https://img.shields.io/github/languages/code-size/AlexsanderHamir/PoolX)
+![Version](https://img.shields.io/github/v/tag/AlexsanderHamir/PoolX?sort=semver)
+
 
 ## PoolX vs sync.Pool
 
