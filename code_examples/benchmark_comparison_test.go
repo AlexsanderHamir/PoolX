@@ -19,14 +19,14 @@ func performWorkload(obj *configs.Example) {
 	time.Sleep(time.Microsecond * 100)
 }
 
-func BenchmarkPoolX(b *testing.B) {
+// go test -run=^$ -bench=^BenchmarkPoolXHighContention$ -benchmem -cpuprofile=cpu.out -memprofile=mem.out -trace=trace.out -mutexprofile=mutex.out
+
+func BenchmarkPoolXHighContention(b *testing.B) {
 	config := configs.CreateHighThroughputConfig()
 	pool, err := pool.NewPool(
 		config,
 		func() *configs.Example {
 			return &configs.Example{
-				ID:   0,
-				Name: "",
 				Data: make([]byte, 1024),
 			}
 		},
@@ -45,59 +45,82 @@ func BenchmarkPoolX(b *testing.B) {
 	}
 	defer pool.Close()
 
-	b.SetParallelism(1000)
+	const numGoroutines = 1000
+	workpergoroutine := b.N / numGoroutines
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	for range numGoroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			for range workpergoroutine {
+				obj, err := pool.Get()
+				if err != nil {
+					panic(err)
+				}
+				obj.ID = rand.Intn(1000)
+				obj.Name = "test"
+				obj.Data = append(obj.Data, byte(rand.Intn(256)))
+
+				performWorkload(obj)
+
+				if err := pool.Put(obj); err != nil {
+					panic(err)
+				}
+			}
+		}()
+	}
+
 	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			obj, err := pool.Get()
-			if err != nil {
-				b.Fatal(err)
-			}
-
-			// Simulate some work
-			obj.ID = rand.Intn(1000)
-			obj.Name = "test"
-			obj.Data = append(obj.Data, byte(rand.Intn(256)))
-
-			// create a function that performs a real workload
-			performWorkload(obj)
-
-			if err := pool.Put(obj); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-
+	close(start)
+	wg.Wait()
 }
 
-func BenchmarkSyncPool(b *testing.B) {
+// go test -run=^$ -bench=^BenchmarkSyncPoolHighContention$ -benchmem -cpuprofile=cpu.out -memprofile=mem.out -trace=trace.out -mutexprofile=mutex.out
+
+func BenchmarkSyncPoolHighContention(b *testing.B) {
 	var syncPool = sync.Pool{
 		New: func() any {
 			return &configs.Example{
-				ID:   0,
-				Name: "",
 				Data: make([]byte, 1024),
 			}
 		},
 	}
 
-	b.SetParallelism(1000)
+	const numGoroutines = 1000
+	workpergoroutine := b.N / numGoroutines
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	for range numGoroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+
+			for range workpergoroutine {
+				obj := syncPool.Get().(*configs.Example)
+
+				obj.ID = rand.Intn(1000)
+				obj.Name = "test"
+				obj.Data = append(obj.Data, byte(rand.Intn(256)))
+
+				performWorkload(obj)
+
+				// Clean up before returning
+				obj.ID = 0
+				obj.Name = ""
+				obj.Data = obj.Data[:0]
+
+				syncPool.Put(obj)
+			}
+		}()
+	}
+
 	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			obj := syncPool.Get().(*configs.Example)
-
-			obj.ID = rand.Intn(1000)
-			obj.Name = "test"
-			obj.Data = append(obj.Data, byte(rand.Intn(256)))
-
-			performWorkload(obj)
-
-			obj.ID = 0
-			obj.Name = ""
-			obj.Data = obj.Data[:0]
-
-			syncPool.Put(obj)
-		}
-	})
+	close(start)
+	wg.Wait()
 }

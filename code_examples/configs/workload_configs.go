@@ -44,7 +44,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// - Shrink after 1 shrink event
 		// - Fill aggressiveness: 100%
 		// - Refill when 3% empty
-		SetFastPathBasicConfigs(200, 1, 1, 100, 3).
+		SetFastPathBasicConfigs(64, 1, 1, 100, 3).
 		// Fast path growth strategy:
 		// - Exponential growth threshold: 100 (100x initial capacity)
 		// - Controlled growth rate: 3 (300% of current capacity)
@@ -57,7 +57,7 @@ func CreateHighThroughputConfig() *pool.PoolConfig[*Example] {
 		// Allocation strategy:
 		// - 100% allocation percent
 		// - 100 objects per allocation
-		SetAllocationStrategy(100, 100).
+		SetAllocationStrategy(100, 20).
 		Build()
 	if err != nil {
 		panic(err)
