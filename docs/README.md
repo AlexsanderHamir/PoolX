@@ -1,4 +1,4 @@
-# PoolX - High-Performance Object Pool for Go
+# PoolX
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexsanderHamir/PoolX)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
