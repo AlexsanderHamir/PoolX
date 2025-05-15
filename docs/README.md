@@ -10,7 +10,7 @@ PoolX is a high-performance, generic object pool implementation for Go that prov
 >
 > - **API Reference**: For detailed API reference and interface definitions, see [pool/api.go](../pool/api.go)
 > - **Technical Details**: For in-depth technical explanations and implementation details, see [docs/technical_explanations/](technical_explanations/)
-> - **Design**: For overall design decisions, see [docs/design_docs.md](design_docs.md)
+> - **Design**: For overall design decisions, see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
 > - **Code Examples**: For practical usage examples and implementation patterns, see [pool/code_examples/](../code_examples)
 
 ![Flow](../assets/flow.png)
