@@ -56,7 +56,7 @@ myPool, err := pool.NewPool(
     func(obj *MyObject) { obj.Reset() },        // cleaner
     func(obj *MyObject) *MyObject {             // cloner
         dst := *obj
-		return &dst
+	return &dst
      },
 )
 if err != nil {
