@@ -1,8 +1,16 @@
 # PoolX
 
+![Build](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/AlexsanderHamir/PoolX/badge.svg?branch=main)](https://coveralls.io/github/AlexsanderHamir/PoolX?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexsanderHamir/PoolX)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Issues](https://img.shields.io/github/issues/AlexsanderHamir/PoolX)
+![Last Commit](https://img.shields.io/github/last-commit/AlexsanderHamir/PoolX)
+![Code Size](https://img.shields.io/github/languages/code-size/AlexsanderHamir/PoolX)
+![Version](https://img.shields.io/github/v/tag/AlexsanderHamir/PoolX?sort=semver)
+
+
+PoolX is a generic object pool implementation for Go that provides a range of configurations to control object creation, destruction, and reuse.
 
 ## PoolX vs sync.Pool
 
@@ -11,7 +19,6 @@ BenchmarkSyncPoolHighContention         734095              1659 ns/op          
 BenchmarkPoolXHighContention-8          605977              2023 ns/op              22 B/op          0 allocs/op
 ```
 
-PoolX is a high-performance, generic object pool implementation for Go that provides efficient object reuse with advanced features like two-level caching, dynamic resizing, and detailed statistics tracking.
 
 > **Documentation**:
 >
@@ -48,7 +55,7 @@ myPool, err := pool.NewPool(
     func(obj *MyObject) { obj.Reset() },        // cleaner
     func(obj *MyObject) *MyObject {             // cloner
         dst := *obj
-		return &dst
+	return &dst
      },
 )
 if err != nil {
