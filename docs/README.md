@@ -19,7 +19,7 @@ BenchmarkSyncPoolHighContention         734095              1659 ns/op          
 BenchmarkPoolXHighContention            615840              2027 ns/op               6 B/op          0 allocs/op
 ```
 
-PoolX is a high-performance, generic object pool implementation for Go that provides efficient object reuse with advanced features like two-level caching, dynamic resizing, and detailed statistics tracking.
+PoolX is a generic object pool implementation for Go that provides a range of configurations to control object creation, destruction, and reuse.
 
 > **Documentation**:
 >
