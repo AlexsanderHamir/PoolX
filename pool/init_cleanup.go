@@ -68,8 +68,10 @@ func validate[T any](allocator func() T, cleaner func(T), cloner func(T) T) erro
 		return fmt.Errorf("cleaner function is nil")
 	}
 
-	if reflect.TypeOf(cloner(obj)).Kind() != reflect.Ptr {
-		return fmt.Errorf("type returned by cloner must be a pointer type, got %T", cloner(obj))
+	if cloner != nil {
+		if reflect.TypeOf(cloner(obj)).Kind() != reflect.Ptr {
+			return fmt.Errorf("type returned by cloner must be a pointer type, got %T", cloner(obj))
+		}
 	}
 
 	return nil
