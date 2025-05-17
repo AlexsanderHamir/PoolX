@@ -416,12 +416,30 @@ func (p *Pool[T]) handleRefillFailure(refillError error) (T, bool) {
 	return zero, true
 }
 
-func (p *Pool[T]) IsShrunk() bool {
+func (p *Pool[T]) IsRingBufferShrunk() bool {
 	return p.stats.currentCapacity < p.config.initialCapacity
 }
 
-func (p *Pool[T]) IsGrowth() bool {
+func (p *Pool[T]) IsFastPathShrunk() bool {
+	return p.stats.currentL1Capacity < p.config.fastPath.initialSize
+}
+
+func (p *Pool[T]) IsShrunk() bool {
+	return p.IsRingBufferShrunk() || p.IsFastPathShrunk()
+}
+
+func (p *Pool[T]) IsRingBufferGrowth() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.stats.currentCapacity > p.config.initialCapacity
+}
+
+func (p *Pool[T]) IsFastPathGrowth() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.stats.currentL1Capacity > p.config.fastPath.initialSize
+}
+
+func (p *Pool[T]) IsGrowth() bool {
+	return p.IsRingBufferGrowth() || p.IsFastPathGrowth()
 }
