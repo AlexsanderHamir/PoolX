@@ -1,4 +1,4 @@
-# PoolX - High-Performance Generic Object Pool for Go
+# PoolX
 
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue)](https://golang.org)
 [![Build](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions)
@@ -11,9 +11,12 @@
 ![Code Size](https://img.shields.io/github/languages/code-size/AlexsanderHamir/PoolX)
 ![Version](https://img.shields.io/github/v/tag/AlexsanderHamir/PoolX?sort=semver)
 
+## Overview
+
+PoolX is a high-performance, generic object pool implementation for Go that provides fine-grained control over object lifecycle management, memory allocation, and resource utilization. It's designed to be a drop-in replacement for `sync.Pool` with additional features for high-throughput applications.
+
 ## Table of Contents
 
-- [Overview](#overview)
 - [Why PoolX?](#why-poolx)
 - [Performance](#performance)
 - [Features](#features)
@@ -24,10 +27,6 @@
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
-
-## Overview
-
-PoolX is a high-performance, generic object pool implementation for Go that provides fine-grained control over object lifecycle management, memory allocation, and resource utilization. It's designed to be a drop-in replacement for `sync.Pool` with additional features for high-throughput applications.
 
 ## Why PoolX?
 
