@@ -369,7 +369,6 @@ func hardLimitTest(t *testing.T, config *pool.PoolConfig[*TestObject], numGorout
 
 	var writers sync.WaitGroup
 	for obj := range objects {
-
 		if async {
 			writers.Add(1)
 			go func() {

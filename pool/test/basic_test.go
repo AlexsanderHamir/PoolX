@@ -190,7 +190,8 @@ func TestDisabledChannelGrowth(t *testing.T) {
 
 	// Verify pool still grew despite channel growth being disabled
 	poolObj := p.(*pool.Pool[*TestObject])
-	assert.True(t, poolObj.IsGrowth())
+	assert.True(t, poolObj.IsRingBufferGrowth())
+	assert.False(t, poolObj.IsFastPathGrowth())
 
 	// Return objects
 	for _, obj := range objects {
