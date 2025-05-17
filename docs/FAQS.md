@@ -4,7 +4,7 @@
 
 ### Q: What is PoolX?
 
-A: PoolX is a high-performance object pool implementation for Go that provides efficient object reuse with features like two-level caching, dynamic resizing, and detailed statistics tracking.
+A: PoolX is a high-performance object pool implementation for Go that enables efficient object reuse. It is designed to give you strict control over the number of objects created and when they are discarded.
 
 ### Q: When should I use PoolX?
 
@@ -14,7 +14,6 @@ A: Use PoolX when:
 - Your application has high concurrency requirements
 - You want to reduce garbage collection pressure
 - You need fine-grained control over object lifecycle
-- You want to optimize memory usage
 
 ### Q: What types of objects can be pooled?
 
@@ -56,7 +55,6 @@ A: Implement a cleaner function that:
 
 ```go
 cleaner := func(obj *MyObject) {
-    obj.Reset()
     obj.Data = nil
     obj.Cache = nil
 }
@@ -68,7 +66,6 @@ A: The cloner function:
 
 - Creates shallow copies of objects
 - Delays initialization of reference types
-- Helps manage object state
 - Reduces allocation overhead
 
 ## Performance
@@ -92,7 +89,6 @@ A: Growth occurs when:
 - Available objects are low
   Shrink occurs when:
 - Pool is underutilized
-- Utilization is below threshold
 - Cooldown period has passed
 - Stable underutilization is detected
 
@@ -163,11 +159,14 @@ A: Best practices:
   Example:
 
 ```go
+type MyObject struct {
+  ID    int
+  Data  []byte
+}
+
 func (obj *MyObject) Reset() {
     obj.ID = 0
-    obj.Data = nil
-    obj.Cache = make(map[string]interface{})
-    obj.Mutex = sync.Mutex{}
+    obj.Data = obj.Data[:0]
 }
 ```
 
@@ -225,15 +224,6 @@ A: PoolX offers:
 - Controlled growth (above threshold)
 - Configurable factors for each
 - Hard limits for safety
-
-### Q: How do I implement custom allocation strategies?
-
-A: You can:
-
-- Use the allocation strategy configuration
-- Implement custom allocator function
-- Control pre-allocation percentage
-- Set batch allocation amounts
 
 ## Contributing
 

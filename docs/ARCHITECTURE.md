@@ -39,7 +39,7 @@ if float64(currentCapacity) < exponentialThreshold {
 The growth strategy uses a threshold-based approach where:
 
 - Below threshold: Growth is exponential, calculated as a percentage of current capacity
-- Above threshold: Growth is controlled, using a smaller fixed percentage
+- Above threshold: Growth is controlled, using a smaller percentage
 - Threshold is calculated as a factor of the initial capacity
 
 #### Shrink Strategy
@@ -162,10 +162,10 @@ var (
 
 ### 3. Pointer Safety and Resizing
 
-Since resizing may replace the underlying ring buffer or channel, existing pointers can become stale and unsafe to use. This is handled through:
+Since resizing may replace the underlying ring buffer or channel, existing pointers to those data structures can become stale and unsafe to use. This is handled through:
 
 - Fast path: Falling back to the slow path when contention is detected
-- Slow path: Retrying the operation to ensure correctness
+- Slow path: Retrying the operation to ensure it acquires the updated pointer
 
 ### 4. Blocking Behavior
 

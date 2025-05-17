@@ -9,7 +9,6 @@
 ![Code Size](https://img.shields.io/github/languages/code-size/AlexsanderHamir/PoolX)
 ![Version](https://img.shields.io/github/v/tag/AlexsanderHamir/PoolX?sort=semver)
 
-
 PoolX is a generic object pool implementation for Go that provides a range of configurations to control object creation, destruction, and reuse.
 
 ## PoolX vs sync.Pool
@@ -19,13 +18,13 @@ BenchmarkSyncPoolHighContention         748899              1598 ns/op          
 BenchmarkPoolXHighContention            605977              2023 ns/op              22 B/op          0 allocs/op
 ```
 
-
 > **Documentation**:
 >
 > - **API Reference**: For detailed API reference and interface definitions, see [pool/api.go](../pool/api.go)
 > - **Technical Details**: For in-depth technical explanations and implementation details, see [docs/technical_explanations/](technical_explanations/)
 > - **Design**: For overall design decisions, see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
 > - **Code Examples**: For practical usage examples and implementation patterns, see [pool/code_examples/](../code_examples)
+> - **FAQ**: For frequently asked questions and common troubleshooting, see [docs/FAQS.md](FAQS.md)
 
 ![Flow](../assets/flow.png)
 
