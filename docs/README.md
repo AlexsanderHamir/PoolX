@@ -15,6 +15,8 @@
 
 PoolX is a high-performance, generic object pool implementation for Go that provides fine-grained control over object lifecycle management, memory allocation, and resource utilization.
 
+![Flow](../assets/flow.png)
+
 ## Table of Contents
 
 - [Why PoolX?](#why-poolx)
@@ -225,8 +227,6 @@ PoolX is particularly useful in the following scenarios:
 > - **Design**: For overall design decisions, see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
 > - **Code Examples**: For practical usage examples and implementation patterns, see [pool/code_examples/](../code_examples)
 > - **FAQ**: For frequently asked questions and common troubleshooting, see [docs/FAQS.md](FAQS.md)
-
-![Flow](../assets/flow.png)
 
 ## Best Practices
 
