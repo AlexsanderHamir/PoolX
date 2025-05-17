@@ -1,32 +1,50 @@
-# PoolX
+# PoolX - High-Performance Generic Object Pool for Go
 
-![Build](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)
+[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue)](https://golang.org)
+[![Build](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions)
 [![Coverage Status](https://coveralls.io/repos/github/AlexsanderHamir/PoolX/badge.svg?branch=main)](https://coveralls.io/github/AlexsanderHamir/PoolX?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexsanderHamir/PoolX)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GoDoc](https://godoc.org/github.com/AlexsanderHamir/PoolX?status.svg)](https://godoc.org/github.com/AlexsanderHamir/PoolX)
 ![Issues](https://img.shields.io/github/issues/AlexsanderHamir/PoolX)
 ![Last Commit](https://img.shields.io/github/last-commit/AlexsanderHamir/PoolX)
 ![Code Size](https://img.shields.io/github/languages/code-size/AlexsanderHamir/PoolX)
 ![Version](https://img.shields.io/github/v/tag/AlexsanderHamir/PoolX?sort=semver)
 
-PoolX is a generic object pool implementation for Go that provides a range of configurations to control object creation, destruction, and reuse.
+## Table of Contents
 
-## PoolX vs sync.Pool
+- [Overview](#overview)
+- [Why PoolX?](#why-poolx)
+- [Performance](#performance)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Configuration Options](#configuration-options)
+- [Use Cases](#use-cases)
+- [Best Practices](#best-practices)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Overview
+
+PoolX is a high-performance, generic object pool implementation for Go that provides fine-grained control over object lifecycle management, memory allocation, and resource utilization. It's designed to be a drop-in replacement for `sync.Pool` with additional features for high-throughput applications.
+
+## Why PoolX?
+
+PoolX offers several advantages over standard Go object pools:
+
+- **Fine-grained Control**: Extensive configuration options for different use cases, control object lifecycle
+- **Memory Efficiency**: Intelligent object reuse and cleanup strategies
+- **Type Safety**: Generic implementation ensures compile-time type checking
+
+## Performance
+
+PoolX is not a direct replacement for `sync.Pool`, it's supposed to be used to control resource consumption, if used in the same way as `sync.Pool` you will get worse performance:
 
 ```
 BenchmarkSyncPoolHighContention         748899              1598 ns/op               4 B/op          0 allocs/op
 BenchmarkPoolXHighContention            605977              2023 ns/op              22 B/op          0 allocs/op
 ```
-
-> **Documentation**:
->
-> - **API Reference**: For detailed API reference and interface definitions, see [pool/api.go](../pool/api.go)
-> - **Technical Details**: For in-depth technical explanations and implementation details, see [docs/technical_explanations/](technical_explanations/)
-> - **Design**: For overall design decisions, see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
-> - **Code Examples**: For practical usage examples and implementation patterns, see [pool/code_examples/](../code_examples)
-> - **FAQ**: For frequently asked questions and common troubleshooting, see [docs/FAQS.md](FAQS.md)
-
-![Flow](../assets/flow.png)
 
 ## Features
 
@@ -191,6 +209,26 @@ Statistics include:
 - Growth and shrink events
 - L1 cache metrics
 
+## Use Cases
+
+PoolX is particularly useful in the following scenarios:
+
+1. **Resource Limitation**: The system restricts the creation to a maximum of X objects.
+2. **Rapid Cleanup**: Objects must be aggressively removed as soon as they become unnecessary.
+3. **Object Caching**: To minimize creation overhead, objects are reused whenever possible—even if this results in increased memory usage, since cleanup is less aggressive in this mode.
+
+## Documentation
+
+> **Documentation**:
+>
+> - **API Reference**: For detailed API reference and interface definitions, see [pool/api.go](../pool/api.go)
+> - **Technical Details**: For in-depth technical explanations and implementation details, see [docs/technical_explanations/](technical_explanations/)
+> - **Design**: For overall design decisions, see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+> - **Code Examples**: For practical usage examples and implementation patterns, see [pool/code_examples/](../code_examples)
+> - **FAQ**: For frequently asked questions and common troubleshooting, see [docs/FAQS.md](FAQS.md)
+
+![Flow](../assets/flow.png)
+
 ## Best Practices
 
 1. **Object Types**: Always use pointer types for pooled objects
@@ -212,8 +250,20 @@ config := pool.NewPoolConfigBuilder[MyObject]().
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome contributions! Here's how you can help:
+
+1. **Report Bugs**: Open an issue with detailed reproduction steps
+2. **Feature Requests**: Suggest new features or improvements
+3. **Code Contributions**: Submit pull requests with clear descriptions
+4. **Documentation**: Help improve documentation and examples
+5. **Testing**: Add test cases or improve test coverage
+
+See our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+**Keywords**: Go object pool, generic pool, high-performance pool, memory optimization, resource management, concurrent pool, Go generics, object reuse, memory efficiency, high-throughput, low-latency, connection pool, buffer pool, sync.Pool alternative
