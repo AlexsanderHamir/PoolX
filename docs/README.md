@@ -71,7 +71,11 @@ myPool, err := pool.NewPool(
     config,
     func() *MyObject { return &MyObject{} },    // allocator
     func(obj *MyObject) { obj.Reset() },        // cleaner
-    func(obj *MyObject) *MyObject {             // cloner
+
+      // For large structs, prefer cloning over allocating to save memory.
+     // Note: This will delay initialization, as reference types will share underlying data.
+    // It's your responsibility to initialize when yoou need it.
+    func(obj *MyObject) *MyObject {             // cloner 
         dst := *obj
 	return &dst
      },
