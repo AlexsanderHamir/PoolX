@@ -13,7 +13,6 @@ The cloner function is a performance optimization mechanism that provides an eff
 - For value types (structs without references), the cloner provides optimal performance without any additional setup
 - For reference types (pointers, slices, maps), all instances will share the same references by default
   - In such cases, you'll need to initialize the fields that require independent instances
-  - This is known as "extreme late initialization" 😂
 
 ### Implementation Details:
 
