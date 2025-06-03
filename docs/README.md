@@ -13,7 +13,7 @@
 
 ## Overview
 
-PoolX is a high-performance, generic object pool implementation for Go that provides fine-grained control over object lifecycle management and resource utilization. It's designed for scenarios where you need precise control over resource consumption, rather than as a direct replacement for `sync.Pool`.
+PoolX is a high-performance, generic object pool implementation for Go that provides fine-grained control over object lifecycle management and resource utilization. It's designed for scenarios where you need precise control over resource consumption under high concurrency, rather than as a direct replacement for `sync.Pool`.
 
 ![Flow](../assets/flow.png)
 
