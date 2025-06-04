@@ -1,6 +1,6 @@
 # PoolX
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.23%2B-blue)](https://golang.org)
 [![Build](https://github.com/AlexsanderHamir/PoolX/actions/workflows/test.yml/badge.svg)](https://github.com/AlexsanderHamir/PoolX/actions)
 [![Coverage Status](https://coveralls.io/repos/github/AlexsanderHamir/PoolX/badge.svg?branch=main)](https://coveralls.io/github/AlexsanderHamir/PoolX?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/AlexsanderHamir/PoolX)](https://goreportcard.com/report/github.com/AlexsanderHamir/PoolX)
