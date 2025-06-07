@@ -173,7 +173,3 @@ We welcome contributions! See our [Contributing Guidelines](CONTRIBUTING.md) for
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-**Keywords**: Go object pool, generic pool, high-performance pool, memory optimization, resource management, concurrent pool, Go generics, object reuse, memory efficiency, high-throughput, low-latency, connection pool, buffer pool, sync.Pool alternative
