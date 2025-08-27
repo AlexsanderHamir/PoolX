@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	github.com/AlexsanderHamir/ringbuffer v0.3.2
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 )
 
 require (
